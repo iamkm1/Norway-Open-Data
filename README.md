@@ -31,14 +31,21 @@ The npm package has not been published yet. After the first npm release, install
 npm install norway-open-data-sdk
 ```
 
-To work from the repository today:
+Until then, build a local package tarball:
 
 ```bash
 git clone https://github.com/iamkm1/Norway-Open-Data.git
 cd Norway-Open-Data
 corepack pnpm install
 corepack pnpm build
+corepack pnpm pack
+
+# Run this from your application directory:
+npm install /absolute/path/to/Norway-Open-Data/norway-open-data-sdk-0.1.0.tgz
 ```
+
+The remaining development commands use `pnpm`. If it is not available directly, run them as
+`corepack pnpm <command>`.
 
 ## Minimal quick start
 
@@ -50,6 +57,8 @@ const { data: company } = await norway.companies.get("923609016");
 
 console.log(company.name);
 ```
+
+This example assumes an existing TypeScript setup that compiles or runs `.ts` files.
 
 CommonJS is also supported:
 
@@ -103,6 +112,8 @@ Create one client and share it for the lifetime of your application:
 ```ts
 import { NorwayOpenData } from "norway-open-data-sdk";
 
+const nveApiKey = process.env.NVE_HYDAPI_KEY;
+
 const norway = new NorwayOpenData({
   applicationName: "my-company-my-application",
   contactEmail: "developer@example.no",
@@ -112,11 +123,7 @@ const norway = new NorwayOpenData({
     enabled: true,
     maxEntries: 250,
   },
-  credentials: {
-    nve: {
-      apiKey: process.env.NVE_HYDAPI_KEY,
-    },
-  },
+  ...(nveApiKey === undefined ? {} : { credentials: { nve: { apiKey: nveApiKey } } }),
 });
 ```
 
@@ -226,6 +233,7 @@ try {
 
 The exported error classes are:
 
+- `OpenDataError` (base class)
 - `ConfigurationError`
 - `InputValidationError`
 - `NotFoundError`
@@ -237,9 +245,9 @@ The exported error classes are:
 All extend `OpenDataError`. Applicable errors include `provider`, `statusCode`, `retryAfter` and
 `cause`. The SDK never logs automatically.
 
-Only HTTP 429, 502, 503, 504 and temporary network failures are retried. Retries use exponential
-jitter capped at five seconds and honor `Retry-After`. Validation errors and HTTP 400, 401, 403 and
-404 are not retried.
+Only HTTP 429, 502, 503, 504, request timeouts and temporary network failures are retried. Retries
+use exponential jitter capped at five seconds and honor `Retry-After`. Validation errors and HTTP
+400, 401, 403 and 404 are not retried.
 
 ## Caching
 
@@ -298,8 +306,13 @@ For the larger built-package smoke run:
 
 ```bash
 pnpm build
+NORWAY_OPEN_DATA_APPLICATION_NAME=my-company-local-test \
+NORWAY_OPEN_DATA_CONTACT_EMAIL=developer@example.no \
 pnpm smoke
 ```
+
+In PowerShell, the two `$env:` values set above remain available for `pnpm smoke` in the same
+terminal session.
 
 Live tests depend on network availability and current provider contracts. They are intentionally
 excluded from ordinary unit tests and CI.
