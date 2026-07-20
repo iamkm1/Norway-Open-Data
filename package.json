@@ -1,0 +1,93 @@
+{
+  "name": "norway-open-data-sdk",
+  "version": "0.1.0",
+  "description": "One TypeScript interface for Norway's open public APIs.",
+  "keywords": [
+    "norway",
+    "norge",
+    "open-data",
+    "public-data",
+    "government-data",
+    "ssb",
+    "brreg",
+    "kartverket",
+    "entur",
+    "met",
+    "data-norge",
+    "norges-bank",
+    "stortinget",
+    "nvdb",
+    "nve",
+    "typescript",
+    "sdk"
+  ],
+  "license": "MIT",
+  "author": "",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "PROVIDERS.md",
+    "CONTRIBUTING.md",
+    "CHANGELOG.md",
+    "docs/examples.md",
+    "docs/architecture.md",
+    "docs/release-checklist.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@10.13.1",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:live": "cross-env RUN_LIVE_TESTS=true vitest run tests/live",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "docs": "typedoc",
+    "changeset": "changeset",
+    "release": "pnpm build && changeset publish",
+    "smoke": "tsx scripts/smoke-test.ts"
+  },
+  "dependencies": {
+    "zod": "^4.0.5"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.29.5",
+    "@eslint/js": "^9.31.0",
+    "@types/node": "^24.0.15",
+    "@vitest/coverage-v8": "^3.2.4",
+    "cross-env": "^7.0.3",
+    "eslint": "^9.31.0",
+    "eslint-config-prettier": "^10.1.5",
+    "prettier": "^3.6.2",
+    "tsup": "^8.5.0",
+    "tsx": "^4.23.1",
+    "typedoc": "^0.28.7",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.38.0",
+    "vitest": "^3.2.4"
+  }
+}

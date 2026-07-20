@@ -1,0 +1,48 @@
+{
+  "version": "2.0",
+  "class": "dataset",
+  "label": "Population",
+  "updated": "2026-01-01T07:00:00Z",
+  "id": ["Region", "ContentsCode", "Tid"],
+  "size": [2, 1, 2],
+  "dimension": {
+    "Region": {
+      "label": "region",
+      "category": {
+        "index": {
+          "1106": 0,
+          "0301": 1
+        },
+        "label": {
+          "1106": "Haugesund",
+          "0301": "Oslo"
+        }
+      }
+    },
+    "ContentsCode": {
+      "label": "contents",
+      "category": {
+        "index": {
+          "Population": 0
+        },
+        "label": {
+          "Population": "Persons"
+        }
+      }
+    },
+    "Tid": {
+      "label": "year",
+      "category": {
+        "index": {
+          "2024": 0,
+          "2025": 1
+        },
+        "label": {
+          "2024": "2024",
+          "2025": "2025"
+        }
+      }
+    }
+  },
+  "value": [38000, null, 710000, 720000]
+}

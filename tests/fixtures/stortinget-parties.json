@@ -1,0 +1,11 @@
+{
+  "respons_dato_tid": "/Date(1784581318236+0200)/",
+  "versjon": "1.6",
+  "partier_liste": [
+    { "id": "A", "navn": "Arbeiderpartiet", "representert_parti": true },
+    { "id": "H", "navn": "Høyre", "representert_parti": true },
+    { "id": "FrP", "navn": "Fremskrittspartiet", "representert_parti": true }
+  ],
+  "sesjon_id": "2025-2026",
+  "stortingsperiode_id": "2025-2029"
+}

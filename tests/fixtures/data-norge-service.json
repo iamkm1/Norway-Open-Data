@@ -1,0 +1,22 @@
+{
+  "id": "e6d67648-aa31-3fb0-8e21-64c8494adc64",
+  "uri": "https://api.met.no/weatherapi/subseasonal/1.0/",
+  "type": "dataservices",
+  "title": {
+    "en": "Subseasonal"
+  },
+  "description": {
+    "en": "Long-term weather forecasts for Nordic locations."
+  },
+  "publisher": {
+    "id": "971274042",
+    "uri": "https://data.norge.no/organizations/971274042",
+    "name": "Meteorologisk institutt",
+    "orgPath": "/STAT/972417882/971274042"
+  },
+  "license": {
+    "uri": "http://publications.europa.eu/resource/authority/licence/CC_BY_4_0",
+    "code": "CC BY 4.0"
+  },
+  "page": ["https://api.met.no/weatherapi/subseasonal/1.0/documentation"]
+}

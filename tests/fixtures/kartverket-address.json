@@ -1,0 +1,24 @@
+{
+  "metadata": {
+    "treffPerSide": 10,
+    "totaltAntallTreff": 1,
+    "side": 0
+  },
+  "adresser": [
+    {
+      "adressenavn": "Haraldsgata",
+      "adressetekst": "Haraldsgata 100",
+      "nummer": 100,
+      "bokstav": "",
+      "kommunenummer": "1106",
+      "kommunenavn": "HAUGESUND",
+      "poststed": "HAUGESUND",
+      "postnummer": "5528",
+      "representasjonspunkt": {
+        "epsg": "EPSG:4258",
+        "lat": 59.4111516,
+        "lon": 5.2711408
+      }
+    }
+  ]
+}

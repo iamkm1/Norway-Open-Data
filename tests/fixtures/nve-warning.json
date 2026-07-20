@@ -1,0 +1,14 @@
+[
+  {
+    "RegId": 123,
+    "RegionId": 3001,
+    "RegionName": "Svalbard øst",
+    "DangerLevel": "2",
+    "DangerLevelName": "Moderat",
+    "MainText": "Vær varsom.",
+    "ValidFrom": "2026-07-20T00:00:00",
+    "ValidTo": "2026-07-20T23:59:59",
+    "CountyList": [{ "Id": "21", "Name": "Svalbard" }],
+    "MunicipalityList": [{ "Id": "2100", "Name": "Svalbard" }]
+  }
+]

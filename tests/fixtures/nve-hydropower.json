@@ -1,0 +1,13 @@
+[
+  {
+    "VannKraftverkID": 2,
+    "Navn": "Adamselv",
+    "Kommune": "Lebesby",
+    "KommuneNr": "24",
+    "MaksYtelse": 50,
+    "MidProd_91_20": 196.366,
+    "Kraftverkstatus": "Idrift",
+    "ErIDrift": true,
+    "providerExtension": "preserved only in raw"
+  }
+]

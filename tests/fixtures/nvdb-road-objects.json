@@ -1,0 +1,46 @@
+{
+  "objekter": [
+    {
+      "id": 79558610,
+      "metadata": {
+        "type": { "id": 105, "navn": "Fartsgrense" },
+        "versjon": 2,
+        "startdato": "2008-10-27"
+      },
+      "egenskaper": [
+        {
+          "id": 2021,
+          "navn": "Fartsgrense",
+          "verdi": 90,
+          "enhet": { "id": 7, "navn": "Kilometer/time", "kortnavn": "km/h" },
+          "egenskapstype": "Heltallenum"
+        },
+        {
+          "id": 220001,
+          "navn": "Relasjoner",
+          "innhold": [{ "id": 12345, "type": "Eksempel" }],
+          "egenskapstype": "Liste"
+        }
+      ],
+      "geometri": {
+        "wkt": "LINESTRING (5.71804143 58.88418998,5.71799251 58.88508413)",
+        "srid": 4326,
+        "egengeometri": false
+      },
+      "lokasjon": {
+        "kommuner": [1103, 1108],
+        "fylker": [11],
+        "vegsystemreferanser": [{ "kortform": "EV39 S101D1 m0-757" }]
+      }
+    }
+  ],
+  "metadata": {
+    "antall": 12,
+    "returnert": 1,
+    "sidestørrelse": 1,
+    "neste": {
+      "start": "79558610:2",
+      "href": "https://nvdbapiles.atlas.vegvesen.no/vegobjekter/api/v4/vegobjekter/105?start=79558610%3A2"
+    }
+  }
+}

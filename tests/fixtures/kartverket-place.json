@@ -1,0 +1,29 @@
+{
+  "metadata": {
+    "side": 1,
+    "totaltAntallTreff": 1,
+    "treffPerSide": 10
+  },
+  "navn": [
+    {
+      "fylker": [
+        {
+          "fylkesnavn": "Oslo",
+          "fylkesnummer": "03"
+        }
+      ],
+      "kommuner": [
+        {
+          "kommunenavn": "Oslo",
+          "kommunenummer": "0301"
+        }
+      ],
+      "navneobjekttype": "By",
+      "representasjonspunkt": {
+        "nord": 59.91187,
+        "øst": 10.73353
+      },
+      "skrivemåte": "Oslo"
+    }
+  ]
+}

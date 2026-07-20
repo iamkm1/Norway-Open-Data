@@ -1,0 +1,27 @@
+{
+  "respons_dato_tid": "/Date(1784578388974+0200)/",
+  "versjon": "1.6",
+  "sesjon_id": "2025-2026",
+  "moter_liste": [
+    {
+      "dagsorden_nummer": 1,
+      "id": 11513,
+      "ikke_motedag_tekst": null,
+      "merknad": "Stortingsmøte",
+      "mote_dato_tid": "/Date(1759316400000+0200)/",
+      "mote_rekkefolge": 1,
+      "mote_ting": 1,
+      "referat_id": "refs-202526-10-01"
+    },
+    {
+      "dagsorden_nummer": -1,
+      "id": -1,
+      "ikke_motedag_tekst": "Ingen møte denne dagen",
+      "merknad": null,
+      "mote_dato_tid": "/Date(1759402800000+0200)/",
+      "mote_rekkefolge": 1,
+      "mote_ting": 0,
+      "referat_id": null
+    }
+  ]
+}

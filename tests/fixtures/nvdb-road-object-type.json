@@ -1,0 +1,26 @@
+{
+  "id": 105,
+  "navn": "Fartsgrense",
+  "kortnavn": "fagr",
+  "beskrivelse": "Høyeste tillatte hastighet på en vegstrekning.",
+  "status": "NVDB, ok",
+  "sensitiv": false,
+  "kategorier": [{ "id": 19, "navn": "Vegnett - Regulering - Trafikk" }],
+  "egenskapstyper": [
+    {
+      "id": 2021,
+      "navn": "Fartsgrense",
+      "beskrivelse": "Høyeste tillatte hastighet.",
+      "egenskapstype": "Heltallenum",
+      "obligatorisk_verdi": true,
+      "sensitivitet": 0,
+      "enhet": { "id": 7, "navn": "Kilometer/time", "kortnavn": "km/h" }
+    },
+    {
+      "id": 9999,
+      "navn": "Skjermet egenskap",
+      "egenskapstype": "Tekst",
+      "sensitivitet": 2
+    }
+  ]
+}

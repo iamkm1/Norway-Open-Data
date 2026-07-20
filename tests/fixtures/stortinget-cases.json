@@ -1,0 +1,36 @@
+{
+  "respons_dato_tid": "/Date(1784578479969+0200)/",
+  "versjon": "1.6",
+  "sesjon_id": "2025-2026",
+  "saker_liste": [
+    {
+      "id": 200386,
+      "tittel": "Riksrevisjonens undersøkelse av Bane NORs eiendomsvirksomhet",
+      "korttittel": "Riksrevisjonens undersøkelse av Bane NOR",
+      "henvisning": "Dokument 3:19 (2025–2026)",
+      "status": 3,
+      "type": 2,
+      "sist_oppdatert_dato": "/Date(1782338400000+0200)/",
+      "komite": null
+    },
+    {
+      "id": 63033,
+      "tittel": "Representantforslag om endring i eierseksjonsloven",
+      "korttittel": "Demokrati i sameier",
+      "henvisning": "Dokument 8:140 S",
+      "status": 1,
+      "type": 2,
+      "dato": "/Date(1434578400000+0200)/",
+      "komite": { "id": "KOMMFORV", "navn": "Kommunal- og forvaltningskomiteen" }
+    },
+    {
+      "id": 200400,
+      "tittel": "Forslag til endring i en lov",
+      "korttittel": "Lovforslag",
+      "henvisning": null,
+      "status": 2,
+      "type": 3,
+      "komite": { "id": "JUSTIS", "navn": "Justiskomiteen" }
+    }
+  ]
+}

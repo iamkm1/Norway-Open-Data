@@ -1,0 +1,47 @@
+{
+  "hits": [
+    {
+      "id": "fd3f4eaa-ae1b-3f02-b54c-a93e74a2c7af",
+      "uri": "https://dataut.vegvesen.no/dataset/e6206546-3153-4310-83df-5cd4190a78d8",
+      "searchType": "DATASET",
+      "title": {
+        "nb": "Værdata",
+        "en": "Road weather data"
+      },
+      "description": {
+        "nb": "Meteorologiske måleverdier fra værstasjoner langs vegnettet."
+      },
+      "organization": {
+        "id": "971032081",
+        "uri": "https://data.norge.no/organizations/971032081",
+        "orgPath": "/STAT/972417904/971032081",
+        "name": "Statens vegvesen",
+        "prefLabel": {
+          "nb": "Statens vegvesen"
+        }
+      },
+      "accessRights": {
+        "uri": "http://publications.europa.eu/resource/authority/access-right/PUBLIC",
+        "code": "PUBLIC",
+        "prefLabel": {
+          "en": "public",
+          "nb": "allmenn tilgang"
+        }
+      }
+    }
+  ],
+  "aggregations": {
+    "accessRights": [
+      {
+        "key": "PUBLIC",
+        "count": 1
+      }
+    ]
+  },
+  "page": {
+    "currentPage": 0,
+    "size": 1,
+    "totalElements": 1,
+    "totalPages": 1
+  }
+}

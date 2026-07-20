@@ -1,0 +1,17 @@
+node_modules/
+dist/
+coverage/
+docs/api/
+.env
+.env.*
+!.env.example
+.npmrc
+*.pem
+*.key
+*.p12
+*.pfx
+*.log
+*.tgz
+.DS_Store
+.idea/
+.vscode/

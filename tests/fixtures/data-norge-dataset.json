@@ -1,0 +1,48 @@
+{
+  "id": "fd3f4eaa-ae1b-3f02-b54c-a93e74a2c7af",
+  "uri": "https://dataut.vegvesen.no/dataset/e6206546-3153-4310-83df-5cd4190a78d8",
+  "type": "datasets",
+  "title": {
+    "nb": "Værdata",
+    "en": "Road weather data"
+  },
+  "description": {
+    "nb": "Meteorologiske måleverdier fra værstasjoner langs vegnettet."
+  },
+  "publisher": {
+    "id": "971032081",
+    "uri": "https://data.norge.no/organizations/971032081",
+    "name": "Statens vegvesen",
+    "orgPath": "/STAT/972417904/971032081"
+  },
+  "accessRights": {
+    "uri": "http://publications.europa.eu/resource/authority/access-right/PUBLIC",
+    "code": "PUBLIC"
+  },
+  "landingPage": ["https://dataut.vegvesen.no/weather"],
+  "distribution": [
+    {
+      "title": {
+        "nb": "Værdata som JSON"
+      },
+      "accessURL": [
+        {
+          "uri": "https://dataut.vegvesen.no/weather/api"
+        }
+      ],
+      "downloadURL": "https://dataut.vegvesen.no/weather.json",
+      "fdkFormat": [
+        {
+          "code": "JSON",
+          "name": "JSON",
+          "type": "FILE_TYPE"
+        }
+      ],
+      "license": [
+        {
+          "uri": "https://data.norge.no/nlod/no/2.0"
+        }
+      ]
+    }
+  ]
+}

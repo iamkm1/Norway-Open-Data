@@ -1,0 +1,31 @@
+name: Feature request
+description: Propose a public API or provider improvement.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What developer problem should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed API
+      description: Include a small TypeScript usage example if possible.
+    validations:
+      required: true
+  - type: input
+    id: official-docs
+    attributes:
+      label: Official provider documentation
+      description: Required for new or changed provider operations.
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Data scope
+      options:
+        - label: The proposal uses only open, non-personal public data.
+          required: true

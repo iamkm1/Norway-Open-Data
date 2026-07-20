@@ -1,0 +1,29 @@
+{
+  "respons_dato_tid": "/Date(1784581318470+0200)/",
+  "versjon": "1.6",
+  "sak_id": 63033,
+  "sak_votering_liste": [
+    {
+      "antall_for": 45,
+      "antall_ikke_tilstede": 65,
+      "antall_mot": 59,
+      "sak_id": 63033,
+      "vedtatt": false,
+      "votering_id": 7523,
+      "votering_resultat_type": 0,
+      "votering_resultat_type_tekst": null,
+      "votering_tid": "/Date(1465324556977+0200)/"
+    },
+    {
+      "antall_for": -1,
+      "antall_ikke_tilstede": -1,
+      "antall_mot": -1,
+      "sak_id": 63033,
+      "vedtatt": true,
+      "votering_id": 7524,
+      "votering_resultat_type": 5,
+      "votering_resultat_type_tekst": "Enstemmig vedtatt",
+      "votering_tid": "/Date(1465324577010+0200)/"
+    }
+  ]
+}

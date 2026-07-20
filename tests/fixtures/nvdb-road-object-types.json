@@ -1,0 +1,16 @@
+[
+  {
+    "id": 105,
+    "navn": "Fartsgrense",
+    "kortnavn": "fagr",
+    "beskrivelse": "Høyeste tillatte hastighet på en vegstrekning.",
+    "status": "NVDB, ok",
+    "sensitiv": false,
+    "kategorier": [{ "id": 19, "navn": "Vegnett - Regulering - Trafikk" }]
+  },
+  {
+    "id": 871,
+    "navn": "Skjermet vegobjekttype",
+    "sensitiv": true
+  }
+]

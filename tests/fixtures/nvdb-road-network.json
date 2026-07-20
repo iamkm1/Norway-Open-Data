@@ -1,0 +1,30 @@
+{
+  "objekter": [
+    {
+      "veglenkesekvensid": 281042,
+      "veglenkenummer": 1,
+      "segmentnummer": 5,
+      "startposisjon": 0,
+      "sluttposisjon": 0.49906761,
+      "type": "HOVED",
+      "detaljnivå": "Vegtrase og kjørebane",
+      "typeVeg": "Enkel bilveg",
+      "geometri": {
+        "wkt": "LINESTRING (6.05278514 59.28048865,6.05321338 59.2804539)",
+        "srid": 4326
+      },
+      "lengde": 562.066,
+      "fylke": 11,
+      "kommune": 1103,
+      "vegsystemreferanse": { "kortform": "PV4058 S2D1 m0-562" }
+    }
+  ],
+  "metadata": {
+    "returnert": 1,
+    "sidestørrelse": 1,
+    "neste": {
+      "start": "281042:5",
+      "href": "https://nvdbapiles.atlas.vegvesen.no/vegnett/api/v4/veglenkesekvenser/segmentert?start=281042%3A5"
+    }
+  }
+}

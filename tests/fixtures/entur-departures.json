@@ -1,0 +1,29 @@
+{
+  "data": {
+    "stopPlace": {
+      "id": "NSR:StopPlace:548",
+      "name": "Stavanger stadion",
+      "estimatedCalls": [
+        {
+          "realtime": true,
+          "cancellation": false,
+          "aimedDepartureTime": "2026-07-20T12:00:00+02:00",
+          "expectedDepartureTime": "2026-07-20T12:02:00+02:00",
+          "destinationDisplay": {
+            "frontText": "Sentrum"
+          },
+          "serviceJourney": {
+            "journeyPattern": {
+              "line": {
+                "id": "RUT:Line:1",
+                "publicCode": "1",
+                "name": "Stadion–Sentrum",
+                "transportMode": "bus"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

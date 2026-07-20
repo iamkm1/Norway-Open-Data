@@ -1,0 +1,38 @@
+{
+  "organisasjonsnummer": "923609016",
+  "navn": "EKSEMPEL TEKNOLOGI AS",
+  "organisasjonsform": {
+    "kode": "AS",
+    "beskrivelse": "Aksjeselskap"
+  },
+  "naeringskode1": {
+    "kode": "62.010",
+    "beskrivelse": "Programmeringstjenester"
+  },
+  "naeringskode2": {
+    "kode": "63.110",
+    "beskrivelse": "Databehandling"
+  },
+  "forretningsadresse": {
+    "adresse": ["Haraldsgata 100"],
+    "postnummer": "5528",
+    "poststed": "HAUGESUND",
+    "kommune": "HAUGESUND",
+    "kommunenummer": "1106"
+  },
+  "postadresse": {
+    "adresse": ["Postboks 10"],
+    "postnummer": "5501",
+    "poststed": "HAUGESUND",
+    "kommune": "HAUGESUND",
+    "kommunenummer": "1106"
+  },
+  "registreringsdatoEnhetsregisteret": "2019-10-01",
+  "stiftelsesdato": "2019-09-01",
+  "registrertIMvaregisteret": true,
+  "registrertIArbeidsgiverregisteret": true,
+  "konkurs": false,
+  "underAvvikling": false,
+  "antallAnsatte": 12,
+  "hjemmeside": "https://example.no"
+}
