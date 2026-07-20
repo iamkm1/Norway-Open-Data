@@ -5,6 +5,7 @@
   "plugin": [],
   "excludePrivate": true,
   "excludeInternal": true,
+  "ignoredHighlightLanguages": ["mermaid", "powershell"],
   "readme": "README.md",
   "name": "Norway Open Data SDK"
 }

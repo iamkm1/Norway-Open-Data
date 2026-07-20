@@ -42,9 +42,14 @@
     "LICENSE",
     "PROVIDERS.md",
     "CONTRIBUTING.md",
+    "CODE_OF_CONDUCT.md",
     "CHANGELOG.md",
     "docs/examples.md",
     "docs/architecture.md",
+    "docs/capabilities.md",
+    "docs/testing.md",
+    "docs/adding-a-provider.md",
+    "docs/api-stability.md",
     "docs/release-checklist.md"
   ],
   "engines": {

@@ -36,8 +36,8 @@ Each adapter is kept under `src/providers/<provider>/` and normally contains:
 - `client.ts` (or focused clients) for request construction and normalization;
 - `index.ts` for provider-local exports.
 
-Provider additions require mocked fixtures, unit tests, an opt-in low-volume live check, public
-exports, examples, metadata, attribution notes, and smoke-test coverage.
+See [Adding a provider](adding-a-provider.md) for adapter structure, validation, privacy, testing,
+documentation and review requirements.
 
 ## Formats
 
