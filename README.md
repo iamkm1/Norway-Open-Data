@@ -249,8 +249,11 @@ const norway = new NorwayOpenData({
   cache: { enabled: true, maxEntries: 250 },
 });
 
-const company = await norway.companies.get("923609016");
-console.log(company.cached);
+const first = await norway.companies.get("923609016");
+console.log(first.cached); // false
+
+const second = await norway.companies.get("923609016");
+console.log(second.cached); // true
 ```
 
 Caching is disabled by default. When enabled, each client uses a bounded in-memory TTL/LRU cache
@@ -258,8 +261,6 @@ with provider-specific TTLs. Failures are never cached, and `{ bypassCache: true
 reads and writes. See [Architecture](docs/architecture.md) for implementation details.
 
 ## Documentation
-
-### Architecture
 
 ```mermaid
 flowchart LR
