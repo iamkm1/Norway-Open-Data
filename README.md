@@ -16,8 +16,8 @@ Stortinget, Statens vegvesen and NVE.
 - 45 public methods
 - Runtime-validated responses
 - ESM, CommonJS and TypeScript support
-- 111 automated tests
-- 95% statement and line coverage
+- 186 automated tests
+- 94% statement and line coverage
 
 Requests go directly from your Node.js application to the official APIs. The SDK has no hosted
 backend, database, account system or scraping layer.

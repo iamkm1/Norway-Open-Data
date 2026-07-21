@@ -3,7 +3,9 @@
 All notable user-visible changes are recorded here. The project follows semantic versioning once
 published.
 
-## Unreleased
+## 0.1.1 - 2026-07-21
+
+First public release. (0.1.0 was published briefly and superseded by release hardening before general use.)
 
 ### Added
 
