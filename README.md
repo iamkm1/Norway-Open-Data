@@ -26,8 +26,6 @@ backend, database, account system or scraping layer.
 
 Requires Node.js 20 or newer. TypeScript declarations are included.
 
-The npm package is not published yet. After publication:
-
 ```bash
 npm install norway-open-data-sdk
 ```
@@ -46,7 +44,7 @@ corepack pnpm pack
 Install the generated tarball from another project:
 
 ```bash
-npm install /path/to/Norway-Open-Data/norway-open-data-sdk-0.1.0.tgz
+npm install /path/to/Norway-Open-Data/norway-open-data-sdk-0.1.1.tgz
 ```
 
 ## Quick start
