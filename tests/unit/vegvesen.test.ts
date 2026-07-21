@@ -226,6 +226,97 @@ describe("VegvesenClient", () => {
     expect(response.data.pagination).toEqual({ returned: 0, pageSize: 100 });
   });
 
+  it.each(["objects", "network"] as const)(
+    "round-trips opaque %s continuation tokens without trimming",
+    async (kind) => {
+      const payload = kind === "objects" ? nvdbRoadObjects : nvdbRoadNetwork;
+      const { fetch, mock } = sequenceFetch(jsonResponse(payload));
+      const client = createClient(fetch);
+      if (kind === "objects") {
+        await client.searchRoadObjects({ typeId: 105, start: " token with spaces " });
+      } else {
+        await client.getRoadNetwork({ start: " token with spaces " });
+      }
+      const url = new URL(String(mock.mock.calls[0]?.[0]));
+      expect(url.searchParams.get("start")).toBe(" token with spaces ");
+    },
+  );
+
+  it.each([
+    {
+      objekter: nvdbRoadObjects.objekter,
+      metadata: { returnert: 0, sidestørrelse: 1 },
+    },
+    {
+      objekter: nvdbRoadObjects.objekter,
+      metadata: { returnert: 1, sidestørrelse: 0 },
+    },
+    {
+      objekter: nvdbRoadObjects.objekter,
+      metadata: { antall: 0, returnert: 1, sidestørrelse: 1 },
+    },
+    {
+      objekter: [],
+      metadata: {
+        returnert: 0,
+        sidestørrelse: 100,
+        neste: { start: "", href: "https://nvdbapiles.atlas.vegvesen.no/next" },
+      },
+    },
+  ])("rejects malformed NVDB pagination metadata", async (payload) => {
+    const { fetch } = sequenceFetch(jsonResponse(payload));
+    await expect(createClient(fetch).searchRoadObjects({ typeId: 105 })).rejects.toBeInstanceOf(
+      ResponseValidationError,
+    );
+  });
+
+  it("preserves final and missing-total page semantics", async () => {
+    const finalPage = {
+      ...nvdbRoadObjects,
+      metadata: { returnert: 1, sidestørrelse: 1 },
+    };
+    const { fetch } = sequenceFetch(jsonResponse(finalPage));
+    const response = await createClient(fetch).searchRoadObjects({ typeId: 105 });
+    expect(response.data.pagination).toEqual({ returned: 1, pageSize: 1 });
+  });
+
+  it("blocks sensitive response types and properties from normalized and raw output", async () => {
+    const publicType = nvdbRoadObjectTypes[0];
+    if (publicType === undefined) throw new Error("NVDB type fixture must contain a public type.");
+    const typeList = sequenceFetch(
+      jsonResponse([...nvdbRoadObjectTypes, { ...publicType, id: 871, sensitiv: false }]),
+    );
+    const listed = await createClient(typeList.fetch).getRoadObjectTypes({ includeRaw: true });
+    expect(listed.data.some((type) => type.id === 871)).toBe(false);
+    expect(JSON.stringify(listed.raw)).not.toContain('"id":871');
+
+    const blockedObjectPayload = structuredClone(nvdbRoadObjects);
+    const blockedObject = blockedObjectPayload.objekter[0];
+    if (blockedObject === undefined) throw new Error("NVDB object fixture must contain an object.");
+    blockedObject.metadata.type.id = 871;
+    const blocked = sequenceFetch(jsonResponse(blockedObjectPayload));
+    await expect(
+      createClient(blocked.fetch).searchRoadObjects({ typeId: 105 }, { includeRaw: true }),
+    ).rejects.toBeInstanceOf(ResponseValidationError);
+
+    const propertyPayload = structuredClone(nvdbRoadObjects);
+    const object = propertyPayload.objekter[0];
+    if (object === undefined) throw new Error("NVDB object fixture must contain an object.");
+    object.egenskaper.push({
+      id: 999999,
+      navn: "blocked-property-marker",
+      verdi: "blocked-property-value",
+      sensitivitet: 1,
+    } as unknown as (typeof object.egenskaper)[number]);
+    const properties = sequenceFetch(jsonResponse(propertyPayload));
+    const response = await createClient(properties.fetch).searchRoadObjects(
+      { typeId: 105 },
+      { includeRaw: true },
+    );
+    expect(JSON.stringify(response.data)).not.toContain("blocked-property");
+    expect(JSON.stringify(response.raw)).not.toContain("blocked-property");
+  });
+
   it("uses the provider metadata cache TTL when caching is enabled", async () => {
     const { fetch, mock } = sequenceFetch(jsonResponse(nvdbRoadObjectType));
     const client = createClient(fetch, "cache-test", true);

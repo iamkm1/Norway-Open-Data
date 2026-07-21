@@ -4,7 +4,7 @@ import { createResponse, HttpClient } from "../../core/client.js";
 import { InputValidationError, NotFoundError, ResponseValidationError } from "../../core/errors.js";
 import { providers, responseSource } from "../../core/metadata.js";
 import type { OpenDataResponse, QueryParameters, RequestOptions } from "../../core/types.js";
-import { parseCsvRecords } from "./csv.js";
+import { parseCsvDocument } from "./csv.js";
 import {
   csvTextSchema,
   exchangeRateInputSchema,
@@ -61,10 +61,19 @@ function queryForDates(parameters: {
   return { format: "csv-both", locale: "en", lastNObservations: 1 };
 }
 
-function parseRows<T>(csv: string, schema: z.ZodType<T>, description: string): T[] {
+function parseRows<T>(
+  csv: string,
+  schema: z.ZodType<T>,
+  description: string,
+  requiredColumns: readonly string[],
+): T[] {
   let records: Array<Record<string, string>>;
   try {
-    records = parseCsvRecords(csv);
+    const parsedCsv = parseCsvDocument(csv);
+    if (requiredColumns.some((column) => !parsedCsv.header.includes(column))) {
+      throw new Error("CSV response omitted required columns.");
+    }
+    records = parsedCsv.records;
   } catch (cause) {
     throw new ResponseValidationError(`Norges Bank returned malformed ${description} CSV.`, {
       provider: "norges-bank",
@@ -144,13 +153,41 @@ function normalizeInterestRows(
   name: string,
   seriesId: string,
 ): InterestRateObservation[] {
-  return rows.map((row) => ({
-    date: row.TIME_PERIOD,
-    value: Number(row.OBS_VALUE),
-    name,
-    seriesId,
-  }));
+  return rows.map((row) => {
+    const value = Number(row.OBS_VALUE);
+    if (!Number.isFinite(value)) {
+      throw new ResponseValidationError("Norges Bank returned an invalid interest-rate value.", {
+        provider: "norges-bank",
+      });
+    }
+    return { date: row.TIME_PERIOD, value, name, seriesId };
+  });
 }
+
+const EXCHANGE_RATE_COLUMNS = [
+  "FREQ",
+  "BASE_CUR",
+  "QUOTE_CUR",
+  "TENOR",
+  "DECIMALS",
+  "CALCULATED",
+  "UNIT_MULT",
+  "COLLECTION",
+  "TIME_PERIOD",
+  "OBS_VALUE",
+] as const;
+const POLICY_RATE_COLUMNS = [
+  "FREQ",
+  "INSTRUMENT_TYPE",
+  "TENOR",
+  "UNIT_MEASURE",
+  "DECIMALS",
+  "COLLECTION",
+  "TIME_PERIOD",
+  "OBS_VALUE",
+  "CALC_METHOD",
+] as const;
+const NOWA_COLUMNS = POLICY_RATE_COLUMNS;
 
 /** Client for Norges Bank's anonymous SDMX REST data warehouse. */
 export class NorgesBankClient {
@@ -292,13 +329,18 @@ export class NorgesBankClient {
     options?: RequestOptions,
   ): Promise<{ observations: RawCurrencyObservation[]; raw: string; cached: boolean }> {
     const seriesId = `EXR/B.${currency}.NOK.SP`;
-    const result = await this.#requestCsv(seriesId, query, "exchange-rate", options);
-    const rows = parseRows(result.data, exchangeRateRowSchema, "exchange-rate");
-    if (rows.some((row) => row.BASE_CUR !== currency)) {
-      throw new ResponseValidationError("Norges Bank returned a different currency series.", {
-        provider: "norges-bank",
-      });
-    }
+    const validate = (csv: string): RawExchangeRateRow[] => {
+      const rows = parseRows(csv, exchangeRateRowSchema, "exchange-rate", EXCHANGE_RATE_COLUMNS);
+      if (rows.some((row) => row.BASE_CUR !== currency)) {
+        throw new ResponseValidationError("Norges Bank returned a different currency series.", {
+          provider: "norges-bank",
+        });
+      }
+      rows.map(normalizeOfficialRate);
+      return rows;
+    };
+    const result = await this.#requestCsv(seriesId, query, "exchange-rate", validate, options);
+    const rows = validate(result.data);
     return {
       observations: rows.map(normalizeOfficialRate),
       raw: result.data,
@@ -320,8 +362,20 @@ export class NorgesBankClient {
         cause: parsed.error,
       });
     }
-    const result = await this.#requestCsv(seriesId, queryForDates(parsed.data), name, options);
-    const rows = parseRows(result.data, schema, name);
+    const requiredColumns = seriesId === NOWA_SERIES ? NOWA_COLUMNS : POLICY_RATE_COLUMNS;
+    const validate = (csv: string): T[] => {
+      const rows = parseRows(csv, schema, name, requiredColumns);
+      normalizeInterestRows(rows, name, seriesId);
+      return rows;
+    };
+    const result = await this.#requestCsv(
+      seriesId,
+      queryForDates(parsed.data),
+      name,
+      validate,
+      options,
+    );
+    const rows = validate(result.data);
     return createResponse(
       normalizeInterestRows(rows, name, seriesId),
       responseSource(providers.norgesBank),
@@ -335,6 +389,7 @@ export class NorgesBankClient {
     seriesId: string,
     query: QueryParameters,
     description: string,
+    validate: (csv: string) => unknown,
     options?: RequestOptions,
   ): Promise<TextResult> {
     try {
@@ -345,6 +400,10 @@ export class NorgesBankClient {
         headers: { Accept: "text/csv" },
         responseType: "text",
         schema: csvTextSchema,
+        transform: (data) => {
+          validate(data);
+          return data;
+        },
         options,
         cacheTtlMs: RATES_TTL_MS,
       });

@@ -356,6 +356,26 @@ export class StortingetClient {
           parsed.data.periodId === undefined ? undefined : parsed.data.includeDeputies,
       },
       schema: representativeListResponseSchema,
+      transform: (data) => {
+        const representatives = data.representanter_liste ?? data.dagensrepresentanter_liste;
+        if (representatives === undefined) {
+          throw new ResponseValidationError("Stortinget returned no representative list.", {
+            provider: "stortinget",
+          });
+        }
+        representatives.map(normalizeRepresentative);
+        if (
+          parsed.data.periodId !== undefined &&
+          data.stortingsperiode_id != null &&
+          data.stortingsperiode_id !== parsed.data.periodId
+        ) {
+          throw new ResponseValidationError(
+            "Stortinget returned a different parliamentary period than requested.",
+            { provider: "stortinget" },
+          );
+        }
+        return data;
+      },
       options,
       cacheTtlMs: PEOPLE_TTL_MS,
     });
@@ -387,6 +407,21 @@ export class StortingetClient {
       url: `${BASE_URL}/person`,
       query: { format: "json", personid: parsed.data },
       schema: representativeSchema,
+      transform: (data) => {
+        if (data.id == null) {
+          throw new NotFoundError("Stortinget representative was not found.", {
+            provider: "stortinget",
+          });
+        }
+        if (data.id !== parsed.data) {
+          throw new ResponseValidationError(
+            "Stortinget returned a different representative than requested.",
+            { provider: "stortinget" },
+          );
+        }
+        normalizeRepresentative(data);
+        return data;
+      },
       options,
       cacheTtlMs: PEOPLE_TTL_MS,
     });
@@ -447,6 +482,15 @@ export class StortingetClient {
       url: `${BASE_URL}/saker`,
       query: { format: "json", sesjonid: parsed.data.sessionId },
       schema: casesResponseSchema,
+      transform: (data) => {
+        if (parsed.data.sessionId !== undefined && data.sesjon_id !== parsed.data.sessionId) {
+          throw new ResponseValidationError(
+            "Stortinget returned a different parliamentary session than requested.",
+            { provider: "stortinget" },
+          );
+        }
+        return data;
+      },
       options,
       cacheTtlMs: PARLIAMENTARY_DATA_TTL_MS,
     });
@@ -489,6 +533,17 @@ export class StortingetClient {
       url: `${BASE_URL}/sak`,
       query: { format: "json", sakid: normalizedId },
       schema: parliamentaryCaseSchema,
+      transform: (data) => {
+        if (String(data.id) !== normalizedId) {
+          throw new ResponseValidationError(
+            "Stortinget returned a different case than requested.",
+            {
+              provider: "stortinget",
+            },
+          );
+        }
+        return data;
+      },
       options,
       cacheTtlMs: PARLIAMENTARY_DATA_TTL_MS,
     });
@@ -512,6 +567,18 @@ export class StortingetClient {
       url: `${BASE_URL}/voteringer`,
       query: { format: "json", sakid: normalizedId },
       schema: votesResponseSchema,
+      transform: (data) => {
+        if (
+          String(data.sak_id) !== normalizedId ||
+          data.sak_votering_liste.some((vote) => String(vote.sak_id) !== normalizedId)
+        ) {
+          throw new ResponseValidationError(
+            "Stortinget returned votes for a different case than requested.",
+            { provider: "stortinget" },
+          );
+        }
+        return data;
+      },
       options,
       cacheTtlMs: PARLIAMENTARY_DATA_TTL_MS,
     });
@@ -542,6 +609,15 @@ export class StortingetClient {
         status: parsed.data.status ?? "alle",
       },
       schema: questionsResponseSchema,
+      transform: (data) => {
+        if (parsed.data.sessionId !== undefined && data.sesjon_id !== parsed.data.sessionId) {
+          throw new ResponseValidationError(
+            "Stortinget returned questions for a different session than requested.",
+            { provider: "stortinget" },
+          );
+        }
+        return data;
+      },
       options,
       cacheTtlMs: PARLIAMENTARY_DATA_TTL_MS,
     });
@@ -567,6 +643,15 @@ export class StortingetClient {
       url: `${BASE_URL}/moter`,
       query: { format: "json", sesjonid: parsed.data.sessionId },
       schema: meetingsResponseSchema,
+      transform: (data) => {
+        if (parsed.data.sessionId !== undefined && data.sesjon_id !== parsed.data.sessionId) {
+          throw new ResponseValidationError(
+            "Stortinget returned meetings for a different session than requested.",
+            { provider: "stortinget" },
+          );
+        }
+        return data;
+      },
       options,
       cacheTtlMs: PARLIAMENTARY_DATA_TTL_MS,
     });

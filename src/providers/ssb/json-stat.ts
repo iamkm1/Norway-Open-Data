@@ -13,6 +13,67 @@ function orderedCodes(index: Record<string, number> | string[]): string[] {
     .map(([code]) => code);
 }
 
+function validateJsonStatStructure(dataset: JsonStatDataset, validateValues: boolean): number {
+  if (dataset.version !== "2.0" || dataset.class !== "dataset") {
+    throw new ResponseValidationError("SSB returned a non-JSON-stat2 dataset.", {
+      provider: "ssb",
+    });
+  }
+  if (dataset.id.length !== dataset.size.length || new Set(dataset.id).size !== dataset.id.length) {
+    throw new ResponseValidationError("SSB JSON-stat2 dimensions are inconsistent.", {
+      provider: "ssb",
+    });
+  }
+  for (const [dimensionIndex, code] of dataset.id.entries()) {
+    const dimension = dataset.dimension[code];
+    if (dimension === undefined) {
+      throw new ResponseValidationError(`SSB JSON-stat2 dimension "${code}" is missing.`, {
+        provider: "ssb",
+      });
+    }
+    const codes = orderedCodes(dimension.category.index);
+    if (codes.length !== dataset.size[dimensionIndex] || new Set(codes).size !== codes.length) {
+      throw new ResponseValidationError(
+        `SSB JSON-stat2 dimension "${code}" has an inconsistent size.`,
+        { provider: "ssb" },
+      );
+    }
+    if (!Array.isArray(dimension.category.index)) {
+      const positions = Object.values(dimension.category.index).sort((left, right) => left - right);
+      if (positions.some((position, index) => position !== index)) {
+        throw new ResponseValidationError(
+          `SSB JSON-stat2 dimension "${code}" has invalid category positions.`,
+          { provider: "ssb" },
+        );
+      }
+    }
+  }
+  const cellCount = dataset.size.reduce((total, size) => total * size, 1);
+  if (!Number.isSafeInteger(cellCount)) {
+    throw new ResponseValidationError("SSB JSON-stat2 cell count is not safe to process.", {
+      provider: "ssb",
+    });
+  }
+  if (validateValues) {
+    if (Array.isArray(dataset.value)) {
+      if (dataset.value.length !== cellCount) {
+        throw new ResponseValidationError("SSB JSON-stat2 value count is inconsistent.", {
+          provider: "ssb",
+        });
+      }
+    } else if (
+      Object.keys(dataset.value).some(
+        (offset) => !/^(?:0|[1-9]\d*)$/.test(offset) || Number(offset) >= cellCount,
+      )
+    ) {
+      throw new ResponseValidationError("SSB JSON-stat2 sparse value offsets are invalid.", {
+        provider: "ssb",
+      });
+    }
+  }
+  return cellCount;
+}
+
 /** Converts JSON-stat2 dimensions into the SDK metadata representation. */
 export function jsonStatDimensions(dataset: JsonStatDataset): StatisticsDimension[] {
   return dataset.id.map((code) => {
@@ -40,6 +101,7 @@ export function parseTableMetadata(
   tableId: string,
   dataset: JsonStatDataset,
 ): StatisticsTableMetadata {
+  validateJsonStatStructure(dataset, false);
   return {
     tableId,
     ...(dataset.label === undefined ? {} : { title: dataset.label }),
@@ -55,21 +117,8 @@ function observationAt(values: JsonStatDataset["value"], offset: number): number
 
 /** Flattens an SSB JSON-stat2 multidimensional cube into deterministic rows. */
 export function parseJsonStat(tableId: string, dataset: JsonStatDataset): StatisticsResult {
-  if (dataset.id.length !== dataset.size.length) {
-    throw new ResponseValidationError("SSB JSON-stat2 id and size arrays have different lengths.", {
-      provider: "ssb",
-    });
-  }
+  const cellCount = validateJsonStatStructure(dataset, true);
   const dimensions = jsonStatDimensions(dataset);
-  for (const [index, dimension] of dimensions.entries()) {
-    if (dimension.values.length !== dataset.size[index]) {
-      throw new ResponseValidationError(
-        `SSB JSON-stat2 dimension "${dimension.code}" has an inconsistent size.`,
-        { provider: "ssb" },
-      );
-    }
-  }
-  const cellCount = dataset.size.reduce((total, size) => total * size, 1);
   const rows: Array<Record<string, string | number | null>> = [];
   for (let offset = 0; offset < cellCount; offset += 1) {
     const row: Record<string, string | number | null> = {};

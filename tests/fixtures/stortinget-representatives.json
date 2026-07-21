@@ -1,23 +1,35 @@
 {
-  "respons_dato_tid": "/Date(1784581231617+0200)/",
-  "versjon": "1.6",
+  "respons_dato_tid": "/Date(1767225600000)/",
+  "versjon": "test-fixture-1",
   "stortingsperiode_id": "2025-2029",
   "representanter_liste": [
     {
-      "id": "MARNIL",
-      "fornavn": "Marius Arion",
-      "etternavn": "Nilsen",
-      "parti": { "id": "FrP", "navn": "Fremskrittspartiet" },
-      "fylke": { "id": "AA", "navn": "Aust-Agder" },
+      "id": "TESTREP1",
+      "fornavn": "Eksempel",
+      "etternavn": "Representant",
+      "parti": {
+        "id": "TP",
+        "navn": "Testpartiet"
+      },
+      "fylke": {
+        "id": "99",
+        "navn": "Testfylke"
+      },
       "vara_representant": false
     },
     {
-      "id": "ABIR",
-      "fornavn": "Abid",
-      "etternavn": "Raja",
-      "parti": { "id": "V", "navn": "Venstre" },
-      "fylke": { "id": "Ak", "navn": "Akershus" },
-      "vara_representant": false
+      "id": "TESTREP2",
+      "fornavn": "Eksempel",
+      "etternavn": "Vararepresentant",
+      "parti": {
+        "id": "TP",
+        "navn": "Testpartiet"
+      },
+      "fylke": {
+        "id": "98",
+        "navn": "Eksempelfylke"
+      },
+      "vara_representant": true
     }
   ]
 }

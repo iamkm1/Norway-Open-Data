@@ -27,8 +27,10 @@ describe("configuration", () => {
     { retries: -1 },
     { contactEmail: "not-an-email" },
     { applicationName: "" },
+    { applicationName: "valid\r\nInjected: header" },
     { cache: { maxEntries: 0 } },
     { credentials: { nve: { apiKey: "" } } },
+    { credentials: { nve: { apiKey: "valid\r\nInjected: header" } } },
   ])("rejects invalid configuration: %o", (config) => {
     expect(() => new NorwayOpenData(config)).toThrow(ConfigurationError);
   });

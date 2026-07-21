@@ -1,7 +1,7 @@
 import ssbFixture from "../fixtures/ssb-json-stat.json" with { type: "json" };
 import { describe, expect, it } from "vitest";
 
-import { InputValidationError, NorwayOpenData } from "../../src/index.js";
+import { InputValidationError, NorwayOpenData, ResponseValidationError } from "../../src/index.js";
 import { parseJsonStat } from "../../src/providers/ssb/json-stat.js";
 import { jsonResponse, sequenceFetch } from "./helpers.js";
 
@@ -81,5 +81,38 @@ describe("SSB PxWeb v2", () => {
         selections: { Tid: ["top(1)"], Region: ["*"] },
       }),
     ).resolves.toBeDefined();
+  });
+
+  it("rejects malformed JSON-stat2 metadata and does not cache it", async () => {
+    const malformed = {
+      ...ssbFixture,
+      dimension: {},
+    };
+    const { fetch, mock } = sequenceFetch(jsonResponse(malformed), jsonResponse(ssbFixture));
+    const statistics = new NorwayOpenData({
+      fetch,
+      retries: 0,
+      cache: { enabled: true },
+    }).statistics;
+    await expect(statistics.getTableMetadata("07459")).rejects.toBeInstanceOf(
+      ResponseValidationError,
+    );
+    await expect(statistics.getTableMetadata("07459")).resolves.toBeDefined();
+    expect(mock).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    { ...ssbFixture, version: "1.0" },
+    { ...ssbFixture, class: "error" },
+    { ...ssbFixture, id: ["Region"], size: [2], dimension: {} },
+    { ...ssbFixture, value: [1] },
+  ])("rejects malformed JSON-stat2 query output", async (payload) => {
+    const { fetch } = sequenceFetch(jsonResponse(ssbFixture), jsonResponse(payload));
+    await expect(
+      new NorwayOpenData({ fetch, retries: 0 }).statistics.queryRaw({
+        tableId: "07459",
+        selections: { Region: ["1106"] },
+      }),
+    ).rejects.toBeInstanceOf(ResponseValidationError);
   });
 });

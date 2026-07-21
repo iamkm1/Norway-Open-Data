@@ -197,10 +197,26 @@ describe("Norges Bank SDMX data", () => {
   });
 
   it("rejects malformed CSV and caches valid observations", async () => {
-    const malformed = sequenceFetch(textResponse("FREQ,BASE_CUR\nB,EUR,extra\n"));
-    await expect(
-      createClient(malformed.fetch).getExchangeRate({ from: "EUR" }),
-    ).rejects.toBeInstanceOf(ResponseValidationError);
+    const malformed = sequenceFetch(
+      textResponse("FREQ,BASE_CUR\nB,EUR,extra\n"),
+      textResponse(eurLatestCsv),
+    );
+    const semanticClient = createClient(malformed.fetch, true);
+    await expect(semanticClient.getExchangeRate({ from: "EUR" })).rejects.toBeInstanceOf(
+      ResponseValidationError,
+    );
+    await expect(semanticClient.getExchangeRate({ from: "EUR" })).resolves.toBeDefined();
+    expect(malformed.mock).toHaveBeenCalledTimes(2);
+
+    const html = sequenceFetch(textResponse("<html>provider error</html>"));
+    await expect(createClient(html.fetch).getExchangeRates({ from: "EUR" })).rejects.toBeInstanceOf(
+      ResponseValidationError,
+    );
+
+    const infinite = sequenceFetch(textResponse(policyRateCsv.replace("4.25", "9".repeat(400))));
+    await expect(createClient(infinite.fetch).getPolicyRate()).rejects.toBeInstanceOf(
+      ResponseValidationError,
+    );
 
     const cached = sequenceFetch(textResponse(eurLatestCsv));
     const client = createClient(cached.fetch, true);

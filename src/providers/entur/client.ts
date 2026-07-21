@@ -6,6 +6,7 @@ import {
   InputValidationError,
   NotFoundError,
   ProviderError,
+  ResponseValidationError,
 } from "../../core/errors.js";
 import { providers, responseSource } from "../../core/metadata.js";
 import type { OpenDataResponse, RequestOptions } from "../../core/types.js";
@@ -35,12 +36,7 @@ const GEOCODER_URL = "https://api.entur.io/geocoder/v1/autocomplete";
 const AUTOCOMPLETE_TTL_MS = 5 * 60 * 1_000;
 const REALTIME_TTL_MS = 20 * 1_000;
 
-const dateTimeSchema = z
-  .union([z.date(), z.string().min(1)])
-  .optional()
-  .refine((value) => value === undefined || !Number.isNaN(new Date(value).getTime()), {
-    message: "dateTime must be a valid Date or date-time string.",
-  });
+const dateTimeSchema = z.union([z.date(), z.iso.datetime({ offset: true })]).optional();
 
 const autocompleteSchema = z
   .object({
@@ -326,6 +322,20 @@ export class EnturClient {
       },
       headers: { "ET-Client-Name": applicationName },
       schema: departuresResponseSchema,
+      transform: (data) => {
+        assertGraphQlSuccess(data);
+        const stopPlace = data.data?.stopPlace;
+        if (stopPlace === null) normalizeDepartures(data);
+        if (stopPlace !== undefined && stopPlace?.id !== parsed.data.stopPlaceId) {
+          throw new ResponseValidationError(
+            "Entur returned a different stop place than requested.",
+            {
+              provider: "entur",
+            },
+          );
+        }
+        return data;
+      },
       options,
       cacheTtlMs: REALTIME_TTL_MS,
     });
@@ -365,6 +375,10 @@ export class EnturClient {
       },
       headers: { "ET-Client-Name": applicationName },
       schema: journeysResponseSchema,
+      transform: (data) => {
+        assertGraphQlSuccess(data);
+        return data;
+      },
       options,
       cacheTtlMs: REALTIME_TTL_MS,
     });

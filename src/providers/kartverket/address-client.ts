@@ -86,16 +86,16 @@ export class KartverketAddressClient {
       cacheTtlMs: ADDRESS_TTL_MS,
     });
     let items = result.data.adresser.map(normalizeAddress);
+    let total: number | undefined = result.data.metadata.totaltAntallTreff;
     if (parsed.data.countyCode !== undefined) {
-      items = items.filter((item) => item.countyCode === parsed.data.countyCode).slice(0, limit);
+      const filtered = items.filter((item) => item.countyCode === parsed.data.countyCode);
+      total = result.data.metadata.totaltAntallTreff <= MAX_RESULTS ? filtered.length : undefined;
+      items = filtered.slice(0, limit);
     }
     return createResponse(
       {
         items,
-        total:
-          parsed.data.countyCode === undefined
-            ? result.data.metadata.totaltAntallTreff
-            : items.length,
+        ...(total === undefined ? {} : { total }),
       },
       responseSource(providers.kartverket),
       result.data,

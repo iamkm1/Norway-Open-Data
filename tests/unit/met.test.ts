@@ -1,7 +1,12 @@
 import forecastFixture from "../fixtures/met-forecast.json" with { type: "json" };
 import { describe, expect, it } from "vitest";
 
-import { InputValidationError, NorwayOpenData, version } from "../../src/index.js";
+import {
+  InputValidationError,
+  NorwayOpenData,
+  ResponseValidationError,
+  version,
+} from "../../src/index.js";
 import { jsonResponse, sequenceFetch } from "./helpers.js";
 
 describe("MetClient", () => {
@@ -60,5 +65,23 @@ describe("MetClient", () => {
     await expect(sdk.weather.forecast({ latitude: -91, longitude: 0 })).rejects.toBeInstanceOf(
       InputValidationError,
     );
+  });
+
+  it.each([
+    { ...forecastFixture, geometry: { coordinates: [999, -999] } },
+    {
+      ...forecastFixture,
+      properties: { ...forecastFixture.properties, timeseries: [] },
+    },
+  ])("rejects malformed or empty forecast responses", async (payload) => {
+    const { fetch } = sequenceFetch(jsonResponse(payload));
+    await expect(
+      new NorwayOpenData({
+        applicationName: "example-validation",
+        contactEmail: "weather@example.no",
+        fetch,
+        retries: 0,
+      }).weather.forecast({ latitude: 60, longitude: 10 }),
+    ).rejects.toBeInstanceOf(ResponseValidationError);
   });
 });

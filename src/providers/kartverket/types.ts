@@ -6,6 +6,8 @@ export type NorwegianAddress = {
   letter?: string;
   postalCode?: string;
   postalPlace?: string;
+  countryCode?: string;
+  countryName?: string;
   municipalityCode?: string;
   municipalityName?: string;
   countyCode?: string;
@@ -26,7 +28,8 @@ export type AddressSearchParameters = {
 /** Address search data and provider pagination counts. */
 export type AddressSearchResult = {
   items: NorwegianAddress[];
-  total: number;
+  /** Exact matching count when the provider response makes it knowable. */
+  total?: number;
 };
 
 /** Parameters for Kartverket place-name search. */

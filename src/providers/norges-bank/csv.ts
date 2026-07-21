@@ -1,5 +1,8 @@
 /** @internal */
-export function parseCsvRecords(csv: string): Array<Record<string, string>> {
+export function parseCsvDocument(csv: string): {
+  header: string[];
+  records: Array<Record<string, string>>;
+} {
   const rows: string[][] = [];
   let row: string[] = [];
   let field = "";
@@ -50,8 +53,14 @@ export function parseCsvRecords(csv: string): Array<Record<string, string>> {
   }
   if (new Set(header).size !== header.length) throw new Error("CSV header contains duplicates.");
 
-  return rows.map((values) => {
+  const records = rows.map((values) => {
     if (values.length !== header.length) throw new Error("CSV row has an unexpected column count.");
     return Object.fromEntries(header.map((column, index) => [column, values[index] ?? ""]));
   });
+  return { header, records };
+}
+
+/** @internal */
+export function parseCsvRecords(csv: string): Array<Record<string, string>> {
+  return parseCsvDocument(csv).records;
 }

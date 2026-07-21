@@ -225,5 +225,25 @@ describe("NVE clients", () => {
         startDate: "2026-07-20",
       }),
     ).rejects.toBeInstanceOf(ResponseValidationError);
+
+    const missingStationData = sequenceFetch(jsonResponse({ itemCount: 1 }));
+    await expect(
+      new NorwayOpenData({
+        fetch: missingStationData.fetch,
+        retries: 0,
+        credentials: { nve: { apiKey: "test-hydapi-key" } },
+      }).hazards.getHydrologyStations(),
+    ).rejects.toBeInstanceOf(ResponseValidationError);
+
+    const nullStationId = sequenceFetch(
+      jsonResponse({ itemCount: 1, data: [{ stationId: null }] }),
+    );
+    await expect(
+      new NorwayOpenData({
+        fetch: nullStationId.fetch,
+        retries: 0,
+        credentials: { nve: { apiKey: "test-hydapi-key" } },
+      }).hazards.getHydrologyStations(),
+    ).rejects.toBeInstanceOf(ResponseValidationError);
   });
 });

@@ -2,6 +2,20 @@ import { z } from "zod";
 
 const nullableString = z.string().nullable().optional();
 const nullableBoolean = z.boolean().nullable().optional();
+const nullableDateTime = z.iso.datetime({ offset: true }).nullable().optional();
+const coordinatesSchema = z
+  .array(z.number())
+  .min(2)
+  .max(3)
+  .superRefine((coordinates, context) => {
+    const [longitude, latitude] = coordinates;
+    if (longitude === undefined || longitude < -180 || longitude > 180) {
+      context.addIssue({ code: "custom", message: "Invalid longitude." });
+    }
+    if (latitude === undefined || latitude < -90 || latitude > 90) {
+      context.addIssue({ code: "custom", message: "Invalid latitude." });
+    }
+  });
 
 export const autocompleteResponseSchema = z
   .object({
@@ -10,7 +24,7 @@ export const autocompleteResponseSchema = z
         .object({
           geometry: z
             .object({
-              coordinates: z.array(z.number()).min(2),
+              coordinates: coordinatesSchema,
             })
             .loose()
             .optional(),
@@ -25,6 +39,11 @@ export const autocompleteResponseSchema = z
                 .nullable()
                 .optional(),
             })
+            .refine(
+              (value) =>
+                (value.name?.trim().length ?? 0) > 0 || (value.label?.trim().length ?? 0) > 0,
+              { message: "Autocomplete feature omitted its name." },
+            )
             .loose(),
         })
         .loose(),
@@ -52,17 +71,17 @@ const estimatedCallSchema = z
   .object({
     realtime: nullableBoolean,
     cancellation: nullableBoolean,
-    aimedDepartureTime: nullableString,
-    expectedDepartureTime: nullableString,
-    aimedArrivalTime: nullableString,
-    expectedArrivalTime: nullableString,
+    aimedDepartureTime: nullableDateTime,
+    expectedDepartureTime: nullableDateTime,
+    aimedArrivalTime: nullableDateTime,
+    expectedArrivalTime: nullableDateTime,
     quay: quaySchema.nullable().optional(),
   })
   .loose();
 
 const graphQlErrorSchema = z
   .object({
-    message: z.string(),
+    message: z.string().min(1),
   })
   .loose();
 
@@ -72,8 +91,8 @@ export const departuresResponseSchema = z
       .object({
         stopPlace: z
           .object({
-            id: z.string(),
-            name: z.string(),
+            id: z.string().min(1),
+            name: z.string().min(1),
             estimatedCalls: z.array(
               estimatedCallSchema.extend({
                 destinationDisplay: z
@@ -120,16 +139,16 @@ export const journeysResponseSchema = z
             tripPatterns: z.array(
               z
                 .object({
-                  startTime: nullableString,
-                  endTime: nullableString,
-                  duration: z.number().nullable().optional(),
+                  startTime: nullableDateTime,
+                  endTime: nullableDateTime,
+                  duration: z.number().nonnegative().nullable().optional(),
                   legs: z.array(
                     z
                       .object({
                         mode: nullableString,
-                        distance: z.number().nullable().optional(),
-                        expectedStartTime: nullableString,
-                        expectedEndTime: nullableString,
+                        distance: z.number().nonnegative().nullable().optional(),
+                        expectedStartTime: nullableDateTime,
+                        expectedEndTime: nullableDateTime,
                         line: lineSchema.nullable().optional(),
                         fromEstimatedCall: estimatedCallSchema.nullable().optional(),
                         toEstimatedCall: estimatedCallSchema.nullable().optional(),

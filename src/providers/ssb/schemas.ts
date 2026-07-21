@@ -16,8 +16,8 @@ const dimensionSchema = z
 
 export const jsonStatSchema = z
   .object({
-    version: z.string(),
-    class: z.string(),
+    version: z.literal("2.0"),
+    class: z.literal("dataset"),
     label: z.string().optional(),
     updated: z.string().optional(),
     id: z.array(z.string()).min(1),

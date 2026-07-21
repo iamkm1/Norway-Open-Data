@@ -1,11 +1,7 @@
 {
-  "respons_dato_tid": "/Date(1784578081478+0200)/",
-  "versjon": "1.6",
-  "doedsdato": null,
-  "epostadresse": null,
-  "etternavn": "Nilsen",
-  "foedselsdato": null,
-  "fornavn": "Marius Arion",
-  "id": "MARNIL",
-  "kjoenn": null
+  "respons_dato_tid": "/Date(1767225600000)/",
+  "versjon": "test-fixture-1",
+  "id": "TESTREP1",
+  "fornavn": "Eksempel",
+  "etternavn": "Representant"
 }

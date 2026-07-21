@@ -21,7 +21,7 @@ export const addressResponseSchema = z
     adresser: z.array(
       z
         .object({
-          adressetekst: nullableString,
+          adressetekst: z.string().min(1),
           adressenavn: nullableString,
           nummer: z.number().nullable().optional(),
           bokstav: nullableString,
@@ -49,7 +49,7 @@ const areaSchema = z
 
 const spellingSchema = z
   .object({
-    skrivemåte: z.string(),
+    skrivemåte: z.string().min(1),
   })
   .loose();
 
@@ -63,12 +63,15 @@ export const placeResponseSchema = z
     navn: z.array(
       z
         .object({
-          skrivemåte: z.string().optional(),
+          skrivemåte: z.string().min(1).optional(),
           navneobjekttype: z.string().nullable().optional(),
           kommuner: z.array(areaSchema).optional(),
           fylker: z.array(areaSchema).optional(),
           representasjonspunkt: pointSchema.optional(),
           stedsnavn: z.array(spellingSchema).optional(),
+        })
+        .refine((value) => value.skrivemåte !== undefined || (value.stedsnavn?.length ?? 0) > 0, {
+          message: "A place-name result must include a usable spelling.",
         })
         .loose(),
     ),

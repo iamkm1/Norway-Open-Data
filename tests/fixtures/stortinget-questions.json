@@ -1,21 +1,29 @@
 {
-  "respons_dato_tid": "/Date(1784578532065+0200)/",
-  "versjon": "1.6",
+  "respons_dato_tid": "/Date(1767225600000)/",
+  "versjon": "test-fixture-1",
   "sesjon_id": "2025-2026",
   "sporsmal_liste": [
     {
-      "id": 126831,
-      "legacy_id": 109448,
-      "sporsmal_nummer": 3359,
-      "tittel": "Hvordan vil regjeringen følge opp saken?",
+      "id": 900001,
+      "legacy_id": 800001,
+      "sporsmal_nummer": 42,
+      "tittel": "Syntetisk spørsmål brukt i en lokal test",
       "type": 5,
       "status": 1,
       "sesjon_id": "2025-2026",
-      "datert_dato": "/Date(1782805706000+0200)/",
-      "sendt_dato": "/Date(1782892195637+0200)/",
-      "besvart_dato": "/Date(1783942170015+0200)/",
-      "sporsmal_fra": { "id": "SIHJE", "fornavn": "Silje", "etternavn": "Hjemdal" },
-      "besvart_av": { "id": "LVA", "fornavn": "Lene", "etternavn": "Vågslid" }
+      "datert_dato": "/Date(1767225600000)/",
+      "sendt_dato": "/Date(1767312000000)/",
+      "besvart_dato": "/Date(1767398400000)/",
+      "sporsmal_fra": {
+        "id": "TESTASK1",
+        "fornavn": "Eksempel",
+        "etternavn": "Spørrer"
+      },
+      "besvart_av": {
+        "id": "TESTANS1",
+        "fornavn": "Eksempel",
+        "etternavn": "Svarperson"
+      }
     }
   ]
 }

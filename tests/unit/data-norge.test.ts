@@ -183,6 +183,33 @@ describe("Data.norge catalogue", () => {
     expect(mock).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    { currentPage: 0, size: 1, totalElements: 3, totalPages: 3 },
+    { currentPage: 1, size: 1, totalElements: 3, totalPages: 3 },
+    { currentPage: 2, size: 1, totalElements: 3, totalPages: 3 },
+  ])("preserves coherent single-type page metadata: %o", async (page) => {
+    const { fetch } = sequenceFetch(jsonResponse({ ...searchFixture, page }));
+    const response = await createClient(fetch).search({ query: "weather", type: ["dataset"] });
+    expect(response.data.pagination).toEqual({
+      page: page.currentPage,
+      size: page.size,
+      totalItems: page.totalElements,
+      totalPages: page.totalPages,
+    });
+  });
+
+  it.each([
+    { currentPage: 0, size: 0, totalElements: 1, totalPages: 0 },
+    { currentPage: 0, size: 1, totalElements: 1, totalPages: 0 },
+    { currentPage: 0, size: 1, totalElements: 0, totalPages: 0 },
+    { currentPage: 0, size: 1, totalPages: 1 },
+  ])("rejects malformed provider pagination: %o", async (page) => {
+    const { fetch } = sequenceFetch(jsonResponse({ ...searchFixture, page }));
+    await expect(createClient(fetch).search({ query: "weather" })).rejects.toBeInstanceOf(
+      ResponseValidationError,
+    );
+  });
+
   it("rejects invalid identifiers and malformed responses", async () => {
     const fetch = vi.fn() as unknown as typeof globalThis.fetch;
     const client = createClient(fetch);
@@ -212,5 +239,21 @@ describe("Data.norge catalogue", () => {
       constructor: RateLimitError,
       retryAfter: 60,
     });
+  });
+
+  it("does not cache malformed Turtle and verifies resource response identity", async () => {
+    const turtle = sequenceFetch(
+      new Response("this is not publisher Turtle"),
+      new Response(dataNorgePublisherTurtle),
+    );
+    const client = createClient(turtle.fetch, true);
+    await expect(client.getPublisher("991825827")).rejects.toBeInstanceOf(ResponseValidationError);
+    await expect(client.getPublisher("991825827")).resolves.toBeDefined();
+    expect(turtle.mock).toHaveBeenCalledTimes(2);
+
+    const mismatch = sequenceFetch(jsonResponse({ ...datasetFixture, id: "different-id" }));
+    await expect(createClient(mismatch.fetch).getDataset(datasetFixture.id)).rejects.toBeInstanceOf(
+      ResponseValidationError,
+    );
   });
 });

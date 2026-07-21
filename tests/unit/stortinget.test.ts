@@ -41,12 +41,12 @@ describe("StortingetClient", () => {
     );
 
     expect(response.data[0]).toEqual({
-      id: "MARNIL",
-      firstName: "Marius Arion",
-      lastName: "Nilsen",
-      fullName: "Marius Arion Nilsen",
-      party: { id: "FrP", name: "Fremskrittspartiet" },
-      county: "Aust-Agder",
+      id: "TESTREP1",
+      firstName: "Eksempel",
+      lastName: "Representant",
+      fullName: "Eksempel Representant",
+      party: { id: "TP", name: "Testpartiet" },
+      county: "Testfylke",
     });
     expect(response.raw).toEqual({
       stortingsperiode_id: "2025-2029",
@@ -63,22 +63,111 @@ describe("StortingetClient", () => {
 
   it("gets one representative through the public person export", async () => {
     const { fetch, mock } = sequenceFetch(jsonResponse(stortingetRepresentative));
-    const response = await makeClient(fetch).getRepresentative(" MARNIL ", { includeRaw: true });
+    const response = await makeClient(fetch).getRepresentative(" TESTREP1 ", { includeRaw: true });
 
     expect(response.data).toEqual({
-      id: "MARNIL",
-      firstName: "Marius Arion",
-      lastName: "Nilsen",
-      fullName: "Marius Arion Nilsen",
+      id: "TESTREP1",
+      firstName: "Eksempel",
+      lastName: "Representant",
+      fullName: "Eksempel Representant",
     });
     expect(response.raw).toEqual({
-      id: "MARNIL",
-      fornavn: "Marius Arion",
-      etternavn: "Nilsen",
+      id: "TESTREP1",
+      fornavn: "Eksempel",
+      etternavn: "Representant",
     });
     const url = new URL(String(mock.mock.calls[0]?.[0]));
     expect(url.pathname).toBe("/eksport/person");
-    expect(url.searchParams.get("personid")).toBe("MARNIL");
+    expect(url.searchParams.get("personid")).toBe("TESTREP1");
+  });
+
+  it("strips sensitive representative and question fields from normalized and raw output", async () => {
+    const sensitiveMarker = "SENSITIVE-STORTINGET-MARKER";
+    const representativePayload = {
+      ...stortingetRepresentative,
+      epostadresse: sensitiveMarker,
+      foedselsdato: sensitiveMarker,
+      kjoenn: sensitiveMarker,
+      telefonnummer: sensitiveMarker,
+      kontaktinformasjon: { epost: sensitiveMarker },
+    };
+    const questionPayload = {
+      ...stortingetQuestions,
+      sporsmal_liste: stortingetQuestions.sporsmal_liste.map((question) => ({
+        ...question,
+        sporsmal_fra: {
+          ...question.sporsmal_fra,
+          epostadresse: sensitiveMarker,
+          foedselsdato: sensitiveMarker,
+          kjoenn: sensitiveMarker,
+        },
+        besvart_av: {
+          ...question.besvart_av,
+          epostadresse: sensitiveMarker,
+          telefonnummer: sensitiveMarker,
+        },
+      })),
+    };
+    const { fetch } = sequenceFetch(
+      jsonResponse(representativePayload),
+      jsonResponse(questionPayload),
+    );
+    const client = makeClient(fetch);
+
+    const representative = await client.getRepresentative("TESTREP1", { includeRaw: true });
+    const questions = await client.getQuestions({}, { includeRaw: true });
+    const serialized = JSON.stringify({ representative, questions });
+
+    expect(serialized).not.toContain(sensitiveMarker);
+    for (const field of [
+      "epostadresse",
+      "foedselsdato",
+      "kjoenn",
+      "telefonnummer",
+      "kontaktinformasjon",
+    ]) {
+      expect(serialized).not.toContain(field);
+    }
+  });
+
+  it("does not expose sensitive provider markers through validation errors or logs", async () => {
+    const sensitiveMarker = "SENSITIVE-STORTINGET-ERROR-MARKER";
+    const consoleSpies = [
+      vi.spyOn(console, "debug").mockImplementation(() => undefined),
+      vi.spyOn(console, "error").mockImplementation(() => undefined),
+      vi.spyOn(console, "info").mockImplementation(() => undefined),
+      vi.spyOn(console, "log").mockImplementation(() => undefined),
+      vi.spyOn(console, "warn").mockImplementation(() => undefined),
+    ];
+
+    try {
+      const { fetch } = sequenceFetch(
+        jsonResponse({
+          id: 7,
+          fornavn: "Eksempel",
+          etternavn: "Representant",
+          epostadresse: sensitiveMarker,
+        }),
+      );
+      let thrown: unknown;
+
+      try {
+        await makeClient(fetch).getRepresentative("TESTREP1");
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(ResponseValidationError);
+      const serializedError = JSON.stringify({
+        message: thrown instanceof Error ? thrown.message : thrown,
+        cause: thrown instanceof Error ? thrown.cause : undefined,
+      });
+      const serializedLogs = JSON.stringify(consoleSpies.flatMap((spy) => spy.mock.calls));
+      expect(serializedError).not.toContain(sensitiveMarker);
+      expect(serializedLogs).not.toContain(sensitiveMarker);
+    } finally {
+      for (const spy of consoleSpies) spy.mockRestore();
+    }
   });
 
   it("converts Stortinget's null-person response into NotFoundError", async () => {
@@ -153,6 +242,34 @@ describe("StortingetClient", () => {
     });
   });
 
+  it("derives exact local pagination when the full export has no pagination metadata", async () => {
+    const mock = vi.fn(async () => jsonResponse(stortingetCases));
+    const client = makeClient(mock as typeof globalThis.fetch);
+
+    const first = await client.searchCases({ page: 0, size: 1 });
+    const middle = await client.searchCases({ page: 1, size: 1 });
+    const final = await client.searchCases({ page: 2, size: 1 });
+    const outOfRange = await client.searchCases({ page: 3, size: 1 });
+    const empty = await client.searchCases({ query: "no-local-match", page: 0, size: 1 });
+
+    expect(first.data.items).toHaveLength(1);
+    expect(middle.data.items).toHaveLength(1);
+    expect(final.data.items).toHaveLength(1);
+    expect(outOfRange.data.items).toEqual([]);
+    expect(empty.data.items).toEqual([]);
+    expect(first.data.pagination).toEqual({ page: 0, size: 1, totalItems: 3, totalPages: 3 });
+    expect(middle.data.pagination).toEqual({ page: 1, size: 1, totalItems: 3, totalPages: 3 });
+    expect(final.data.pagination).toEqual({ page: 2, size: 1, totalItems: 3, totalPages: 3 });
+    expect(outOfRange.data.pagination).toEqual({
+      page: 3,
+      size: 1,
+      totalItems: 3,
+      totalPages: 3,
+    });
+    expect(empty.data.pagination).toEqual({ page: 0, size: 1, totalItems: 0, totalPages: 0 });
+    expect(mock).toHaveBeenCalledTimes(5);
+  });
+
   it("gets and normalizes one detailed case", async () => {
     const { fetch, mock } = sequenceFetch(jsonResponse(stortingetCase));
     const response = await makeClient(fetch).getCase("63033");
@@ -195,14 +312,14 @@ describe("StortingetClient", () => {
     });
 
     expect(response.data[0]).toMatchObject({
-      id: "126831",
-      legacyId: "109448",
-      number: 3359,
+      id: "900001",
+      legacyId: "800001",
+      number: 42,
       type: "skriftlig_sporsmal",
       status: "besvart",
       session: "2025-2026",
-      askedBy: { id: "SIHJE", fullName: "Silje Hjemdal" },
-      answeredBy: { id: "LVA", fullName: "Lene Vågslid" },
+      askedBy: { id: "TESTASK1", fullName: "Eksempel Spørrer" },
+      answeredBy: { id: "TESTANS1", fullName: "Eksempel Svarperson" },
     });
     expect(response.data[0]?.sentAt).toMatch(/^2026-/);
     const url = new URL(String(mock.mock.calls[0]?.[0]));
@@ -271,6 +388,25 @@ describe("StortingetClient", () => {
     expect(first.cached).toBe(false);
     expect(second.cached).toBe(true);
     expect(mock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not cache semantically invalid representative responses", async () => {
+    const { fetch, mock } = sequenceFetch(
+      jsonResponse({ ...stortingetRepresentatives, stortingsperiode_id: "2021-2025" }),
+      jsonResponse(stortingetRepresentatives),
+    );
+    const client = makeClient(fetch, true);
+
+    await expect(client.getRepresentatives({ periodId: "2025-2029" })).rejects.toBeInstanceOf(
+      ResponseValidationError,
+    );
+    const valid = await client.getRepresentatives({ periodId: "2025-2029" });
+    const cached = await client.getRepresentatives({ periodId: "2025-2029" });
+
+    expect(valid.cached).toBe(false);
+    expect(cached.cached).toBe(true);
+    expect(cached.data[0]?.id).toBe("TESTREP1");
+    expect(mock).toHaveBeenCalledTimes(2);
   });
 
   it("preserves sparse optional data and labels unknown provider enum additions", async () => {

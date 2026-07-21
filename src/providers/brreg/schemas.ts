@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 const nullableString = z.string().nullable().optional();
+const nonblankString = z.string().refine((value) => value.trim().length > 0);
 const codeSchema = z
   .object({
     kode: z.string(),
@@ -23,6 +24,8 @@ const addressSchema = z
       .optional(),
     postnummer: nullableString,
     poststed: nullableString,
+    land: nullableString,
+    landkode: nullableString,
     kommune: z.union([municipalitySchema, z.string()]).nullable().optional(),
     kommunenummer: nullableString,
   })
@@ -30,8 +33,8 @@ const addressSchema = z
 
 export const companySchema = z
   .object({
-    organisasjonsnummer: z.string(),
-    navn: z.string(),
+    organisasjonsnummer: z.string().regex(/^\d{9}$/),
+    navn: nonblankString,
     organisasjonsform: codeSchema.nullable().optional(),
     naeringskode1: codeSchema.nullable().optional(),
     naeringskode2: codeSchema.nullable().optional(),
@@ -61,12 +64,25 @@ export const companySearchSchema = z
       .optional(),
     page: z
       .object({
-        size: z.number().int().nonnegative(),
+        size: z.number().int().positive(),
         totalElements: z.number().int().nonnegative(),
         totalPages: z.number().int().nonnegative(),
         number: z.number().int().nonnegative(),
       })
+      .superRefine((page, context) => {
+        const expectedPages =
+          page.totalElements === 0 ? 0 : Math.ceil(page.totalElements / page.size);
+        if (page.totalPages !== expectedPages) {
+          context.addIssue({ code: "custom", message: "Inconsistent Brreg page totals." });
+        }
+      })
       .loose(),
+  })
+  .superRefine((response, context) => {
+    const entities = response._embedded?.enheter ?? response._embedded?.underenheter ?? [];
+    if (entities.length > response.page.size || entities.length > response.page.totalElements) {
+      context.addIssue({ code: "custom", message: "Inconsistent Brreg returned-item count." });
+    }
   })
   .loose();
 

@@ -64,7 +64,10 @@ export const timeSeriesInputSchema = z
     }
   });
 
-const decimalStringSchema = z.string().regex(/^-?(?:\d+(?:\.\d+)?|\.\d+)$/);
+const decimalStringSchema = z
+  .string()
+  .regex(/^-?(?:\d+(?:\.\d+)?|\.\d+)$/)
+  .refine((value) => Number.isFinite(Number(value)));
 const integerStringSchema = z.string().regex(/^-?\d+$/);
 
 export const exchangeRateRowSchema = z

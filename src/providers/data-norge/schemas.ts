@@ -72,9 +72,15 @@ export const catalogSearchHitSchema = z
 const pageSchema = z
   .object({
     currentPage: z.number().int().nonnegative(),
-    size: z.number().int().nonnegative(),
+    size: z.number().int().positive(),
     totalElements: z.number().int().nonnegative(),
     totalPages: z.number().int().nonnegative(),
+  })
+  .superRefine((page, context) => {
+    const expectedPages = page.totalElements === 0 ? 0 : Math.ceil(page.totalElements / page.size);
+    if (page.totalPages !== expectedPages) {
+      context.addIssue({ code: "custom", message: "Inconsistent Data.norge page totals." });
+    }
   })
   .loose();
 
@@ -90,6 +96,14 @@ export const catalogSearchResponseSchema = z
     hits: z.array(catalogSearchHitSchema),
     aggregations: z.record(z.string(), z.array(aggregationBucketSchema)),
     page: pageSchema,
+  })
+  .superRefine((response, context) => {
+    if (
+      response.hits.length > response.page.size ||
+      response.hits.length > response.page.totalElements
+    ) {
+      context.addIssue({ code: "custom", message: "Inconsistent Data.norge returned-item count." });
+    }
   })
   .loose();
 

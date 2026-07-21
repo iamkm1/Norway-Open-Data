@@ -72,6 +72,8 @@ const roadObjectPropertySchema = z
     navn: z.string(),
     verdi: z.unknown().optional(),
     innhold: z.unknown().optional(),
+    sensitivitet: z.number().int().nonnegative().optional(),
+    sensitiv: z.boolean().optional(),
     enhet: unitSchema.nullable().optional(),
   })
   .loose();
@@ -98,7 +100,10 @@ export const roadObjectSchema = z
 
 const nextPageSchema = z
   .object({
-    start: z.string(),
+    start: z
+      .string()
+      .min(1)
+      .refine((value) => value.trim().length > 0),
     href: z.url(),
   })
   .loose();
@@ -107,7 +112,7 @@ const pageMetadataSchema = z
   .object({
     antall: z.number().int().nonnegative().optional(),
     returnert: z.number().int().nonnegative(),
-    sidestørrelse: z.number().int().nonnegative(),
+    sidestørrelse: z.number().int().positive(),
     neste: nextPageSchema.nullable().optional(),
   })
   .loose();
@@ -116,6 +121,16 @@ export const roadObjectSearchResponseSchema = z
   .object({
     objekter: z.array(roadObjectSchema),
     metadata: pageMetadataSchema,
+  })
+  .superRefine((response, context) => {
+    if (
+      response.metadata.returnert !== response.objekter.length ||
+      response.metadata.returnert > response.metadata.sidestørrelse ||
+      (response.metadata.antall !== undefined &&
+        response.metadata.antall < response.metadata.returnert)
+    ) {
+      context.addIssue({ code: "custom", message: "Inconsistent NVDB pagination metadata." });
+    }
   })
   .loose();
 
@@ -146,6 +161,16 @@ export const roadNetworkResponseSchema = z
   .object({
     objekter: z.array(roadNetworkSegmentSchema),
     metadata: pageMetadataSchema,
+  })
+  .superRefine((response, context) => {
+    if (
+      response.metadata.returnert !== response.objekter.length ||
+      response.metadata.returnert > response.metadata.sidestørrelse ||
+      (response.metadata.antall !== undefined &&
+        response.metadata.antall < response.metadata.returnert)
+    ) {
+      context.addIssue({ code: "custom", message: "Inconsistent NVDB pagination metadata." });
+    }
   })
   .loose();
 

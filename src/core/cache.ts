@@ -30,8 +30,12 @@ export class MemoryCache {
   /** Inserts an entry and evicts the least-recently-used entry if necessary. */
   set<T>(key: string, value: T, ttlMs: number): void {
     if (ttlMs <= 0) return;
+    const now = this.#now();
+    for (const [entryKey, entry] of this.#entries) {
+      if (entry.expiresAt <= now) this.#entries.delete(entryKey);
+    }
     this.#entries.delete(key);
-    this.#entries.set(key, { value, expiresAt: this.#now() + ttlMs });
+    this.#entries.set(key, { value, expiresAt: now + ttlMs });
     while (this.#entries.size > this.#maxEntries) {
       const oldestKey = this.#entries.keys().next().value as string | undefined;
       if (oldestKey === undefined) break;

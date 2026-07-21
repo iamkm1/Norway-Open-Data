@@ -66,6 +66,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:package": "tsx scripts/test-package.ts",
     "test:live": "cross-env RUN_LIVE_TESTS=true vitest run tests/live",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",

@@ -21,7 +21,9 @@ function comparableAddress(address: NorwegianAddress): string {
 }
 
 function same(left: string | undefined, right: string | undefined): boolean {
-  return left !== undefined && right !== undefined && normalized(left) === normalized(right);
+  if (left === undefined || right === undefined) return false;
+  const normalizedLeft = normalized(left);
+  return normalizedLeft.length > 0 && normalizedLeft === normalized(right);
 }
 
 /** Deterministically selects the strongest official-address match. */
@@ -30,11 +32,13 @@ export function selectAddressMatch(
   candidates: NorwegianAddress[],
 ): AddressMatch | undefined {
   const expectedAddress = comparableAddress(businessAddress);
-  const ranked = candidates.map((address, index) => {
+  const ranked = candidates.flatMap((address, index) => {
+    if (address.latitude === undefined || address.longitude === undefined) return [];
     const addressMatches =
       expectedAddress.length > 0 && comparableAddress(address) === expectedAddress;
     const postalMatches = same(businessAddress.postalCode, address.postalCode);
     const municipalityMatches = same(businessAddress.municipalityCode, address.municipalityCode);
+    if (!addressMatches) return [];
     let score = 1;
     let matchConfidence: AddressMatch["matchConfidence"] = "possible";
     if (addressMatches && postalMatches && municipalityMatches) {
@@ -44,7 +48,7 @@ export function selectAddressMatch(
       score = 2;
       matchConfidence = "high";
     }
-    return { address, score, matchConfidence, index };
+    return [{ address, score, matchConfidence, index }];
   });
   ranked.sort((left, right) => right.score - left.score || left.index - right.index);
   const best = ranked[0];

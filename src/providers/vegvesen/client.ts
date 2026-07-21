@@ -1,7 +1,11 @@
 import { z } from "zod";
 
 import { createResponse, HttpClient } from "../../core/client.js";
-import { ConfigurationError, InputValidationError } from "../../core/errors.js";
+import {
+  ConfigurationError,
+  InputValidationError,
+  ResponseValidationError,
+} from "../../core/errors.js";
 import { providers, responseSource } from "../../core/metadata.js";
 import type { OpenDataResponse, RequestOptions } from "../../core/types.js";
 import {
@@ -61,7 +65,11 @@ const roadObjectSearchParametersSchema = z.object({
   roadReference: z.string().trim().min(1).optional(),
   boundingBox: boundingBoxSchema.optional(),
   pageSize: z.number().int().positive().optional(),
-  start: z.string().trim().min(1).optional(),
+  start: z
+    .string()
+    .min(1)
+    .refine((value) => value.trim().length > 0)
+    .optional(),
 });
 
 const roadNetworkParametersSchema = z.object({
@@ -73,7 +81,11 @@ const roadNetworkParametersSchema = z.object({
     .min(1)
     .optional(),
   pageSize: z.number().int().positive().optional(),
-  start: z.string().trim().min(1).optional(),
+  start: z
+    .string()
+    .min(1)
+    .refine((value) => value.trim().length > 0)
+    .optional(),
 });
 
 function normalizeGeometry(
@@ -130,20 +142,22 @@ export function normalizeRoadObject(raw: RawRoadObject): RoadObject {
     typeId: raw.metadata.type.id,
     ...(raw.metadata.type.navn === undefined ? {} : { typeName: raw.metadata.type.navn }),
     ...(raw.metadata.versjon === undefined ? {} : { version: raw.metadata.versjon }),
-    properties: raw.egenskaper.map((property) => {
-      const value = Object.hasOwn(property, "verdi")
-        ? property.verdi
-        : Object.hasOwn(property, "innhold")
-          ? property.innhold
-          : null;
-      const unit = property.enhet?.kortnavn ?? property.enhet?.navn;
-      return {
-        ...(property.id === undefined ? {} : { id: property.id }),
-        name: property.navn,
-        value,
-        ...(unit === undefined ? {} : { unit }),
-      };
-    }),
+    properties: raw.egenskaper
+      .filter((property) => (property.sensitivitet ?? 0) === 0 && property.sensitiv !== true)
+      .map((property) => {
+        const value = Object.hasOwn(property, "verdi")
+          ? property.verdi
+          : Object.hasOwn(property, "innhold")
+            ? property.innhold
+            : null;
+        const unit = property.enhet?.kortnavn ?? property.enhet?.navn;
+        return {
+          ...(property.id === undefined ? {} : { id: property.id }),
+          name: property.navn,
+          value,
+          ...(unit === undefined ? {} : { unit }),
+        };
+      }),
     ...(location === undefined ? {} : { location }),
   };
 }
@@ -185,6 +199,24 @@ function sanitizeRoadObjectType(raw: RawRoadObjectType): RawRoadObjectType {
             (property) => (property.sensitivitet ?? 0) === 0,
           ),
         }),
+  };
+}
+
+function isBlockedTypeId(typeId: number): boolean {
+  return DOCUMENTED_SENSITIVE_TYPE_IDS.has(typeId);
+}
+
+function sanitizeRoadObject(raw: RawRoadObject, expectedTypeId: number): RawRoadObject {
+  if (raw.metadata.type.id !== expectedTypeId || isBlockedTypeId(raw.metadata.type.id)) {
+    throw new ResponseValidationError("NVDB returned a blocked or unexpected road-object type.", {
+      provider: "vegvesen",
+    });
+  }
+  return {
+    ...raw,
+    egenskaper: raw.egenskaper.filter(
+      (property) => (property.sensitivitet ?? 0) === 0 && property.sensitiv !== true,
+    ),
   };
 }
 
@@ -261,10 +293,14 @@ export class VegvesenClient {
       query: { inkluder: "minimum" },
       headers,
       schema: roadObjectTypeListSchema,
+      transform: (data) =>
+        data
+          .filter((type) => !type.sensitiv && !isBlockedTypeId(type.id))
+          .map(sanitizeRoadObjectType),
       options,
       cacheTtlMs: TYPE_METADATA_TTL_MS,
     });
-    const publicTypes = result.data.filter((type) => !type.sensitiv).map(sanitizeRoadObjectType);
+    const publicTypes = result.data;
     return createResponse(
       publicTypes.map(normalizeRoadObjectType),
       responseSource(providers.vegvesen),
@@ -288,17 +324,19 @@ export class VegvesenClient {
       query: { inkluder: "alle" },
       headers,
       schema: roadObjectTypeSchema,
+      transform: (data) => {
+        if (data.id !== parsedTypeId || data.sensitiv || isBlockedTypeId(data.id)) {
+          throw new ResponseValidationError(
+            "NVDB returned blocked or unexpected road-object type metadata.",
+            { provider: "vegvesen" },
+          );
+        }
+        return sanitizeRoadObjectType(data);
+      },
       options,
       cacheTtlMs: TYPE_METADATA_TTL_MS,
     });
-    if (result.data.sensitiv) assertPublicTypeId(result.data.id);
-    if (result.data.sensitiv) {
-      throw new InputValidationError(
-        `NVDB road-object type ${result.data.id} is sensitive and is not supported by this SDK.`,
-        { provider: "vegvesen" },
-      );
-    }
-    const publicType = sanitizeRoadObjectType(result.data);
+    const publicType = result.data;
     return createResponse(
       normalizeRoadObjectType(publicType),
       responseSource(providers.vegvesen),
@@ -338,6 +376,10 @@ export class VegvesenClient {
       },
       headers,
       schema: roadObjectSearchResponseSchema,
+      transform: (data) => ({
+        ...data,
+        objekter: data.objekter.map((object) => sanitizeRoadObject(object, parsed.data.typeId)),
+      }),
       options,
       cacheTtlMs: ROAD_DATA_TTL_MS,
     });
@@ -369,6 +411,17 @@ export class VegvesenClient {
       },
       headers,
       schema: roadObjectSchema,
+      transform: (data) => {
+        if (data.id !== parsedObjectId) {
+          throw new ResponseValidationError(
+            "NVDB returned a different road object than requested.",
+            {
+              provider: "vegvesen",
+            },
+          );
+        }
+        return sanitizeRoadObject(data, parsedTypeId);
+      },
       options,
       cacheTtlMs: ROAD_DATA_TTL_MS,
     });

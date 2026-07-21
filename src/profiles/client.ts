@@ -13,10 +13,18 @@ const profileSource = {
 };
 
 function hasUsableAddress(address: CompanyProfile["company"]["businessAddress"]): boolean {
+  const addressText = address?.addressText?.trim();
+  const countryCode = address?.countryCode?.trim().toUpperCase();
+  const countryName = address?.countryName?.trim().toUpperCase();
   return (
     address !== undefined &&
-    (address.addressText?.trim().length ?? 0) > 0 &&
-    (address.municipalityCode !== undefined || address.postalCode !== undefined)
+    addressText !== undefined &&
+    addressText.length > 0 &&
+    !/^(?:P\.?\s*O\.?\s*BOX|POSTBOKS|PB\.?)(?:\s|$)/iu.test(addressText) &&
+    (countryCode === undefined || countryCode === "NO" || countryCode === "NOR") &&
+    (countryName === undefined || ["NORGE", "NOREG", "NORWAY"].includes(countryName)) &&
+    ((address.municipalityCode !== undefined && /^\d{4}$/.test(address.municipalityCode)) ||
+      (address.postalCode !== undefined && /^\d{4}$/.test(address.postalCode)))
   );
 }
 

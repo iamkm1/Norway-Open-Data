@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { createResponse, HttpClient } from "../../core/client.js";
-import { InputValidationError } from "../../core/errors.js";
+import { InputValidationError, ResponseValidationError } from "../../core/errors.js";
 import { providers, responseSource } from "../../core/metadata.js";
 import type { OpenDataResponse, RequestOptions } from "../../core/types.js";
 import type { NorwegianAddress } from "../kartverket/types.js";
@@ -32,6 +32,11 @@ const searchSchema = z.object({
 
 /** Removes spaces and validates a Norwegian nine-digit organization number. */
 export function normalizeOrganizationNumber(value: string): string {
+  if (typeof value !== "string") {
+    throw new InputValidationError("Organization number must be a string.", {
+      provider: "brreg",
+    });
+  }
   const normalized = value.replaceAll(/\s/g, "");
   if (!/^\d{9}$/.test(normalized)) {
     throw new InputValidationError("Organization number must contain exactly nine digits.", {
@@ -55,6 +60,8 @@ function normalizeAddress(raw: NonNullable<RawCompany["forretningsadresse"]>): N
     ...(addressText === undefined ? {} : { addressText }),
     ...(raw.postnummer == null ? {} : { postalCode: raw.postnummer }),
     ...(raw.poststed == null ? {} : { postalPlace: raw.poststed }),
+    ...(raw.landkode == null ? {} : { countryCode: raw.landkode }),
+    ...(raw.land == null ? {} : { countryName: raw.land }),
     ...(municipalityCode == null ? {} : { municipalityCode }),
     ...(municipalityName == null ? {} : { municipalityName }),
     ...(municipalityCode == null ? {} : { countyCode: municipalityCode.slice(0, 2) }),
@@ -158,6 +165,15 @@ export class BrregClient {
       provider: "brreg",
       url: `${BASE_URL}/enheter/${normalized}`,
       schema: companySchema,
+      transform: (data) => {
+        if (data.organisasjonsnummer !== normalized) {
+          throw new ResponseValidationError(
+            "Brreg returned a different organization than requested.",
+            { provider: "brreg" },
+          );
+        }
+        return data;
+      },
       options,
       cacheTtlMs: COMPANY_TTL_MS,
     });
@@ -221,6 +237,15 @@ export class BrregClient {
       provider: "brreg",
       url: `${BASE_URL}/underenheter/${normalized}`,
       schema: companySchema,
+      transform: (data) => {
+        if (data.organisasjonsnummer !== normalized) {
+          throw new ResponseValidationError(
+            "Brreg returned a different sub-entity than requested.",
+            { provider: "brreg" },
+          );
+        }
+        return data;
+      },
       options,
       cacheTtlMs: COMPANY_TTL_MS,
     });

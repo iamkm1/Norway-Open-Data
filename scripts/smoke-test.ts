@@ -1,4 +1,8 @@
-import { NorwayOpenData } from "norway-open-data-sdk";
+import type { NorwayOpenData as NorwayOpenDataType } from "../src/index.js";
+
+const { NorwayOpenData } = (await import(new URL("../dist/index.js", import.meta.url).href)) as {
+  NorwayOpenData: typeof NorwayOpenDataType;
+};
 
 const norway = new NorwayOpenData({
   applicationName: process.env.NORWAY_OPEN_DATA_APPLICATION_NAME,

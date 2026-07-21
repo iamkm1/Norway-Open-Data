@@ -2,7 +2,7 @@ import addressFixture from "../fixtures/kartverket-address.json" with { type: "j
 import placeFixture from "../fixtures/kartverket-place.json" with { type: "json" };
 import { describe, expect, it } from "vitest";
 
-import { InputValidationError, NorwayOpenData } from "../../src/index.js";
+import { InputValidationError, NorwayOpenData, ResponseValidationError } from "../../src/index.js";
 import { jsonResponse, sequenceFetch } from "./helpers.js";
 
 describe("Kartverket clients", () => {
@@ -31,14 +31,35 @@ describe("Kartverket clients", () => {
   });
 
   it("filters addresses by county where the API has no direct county parameter", async () => {
-    const { fetch, mock } = sequenceFetch(jsonResponse(addressFixture));
+    const firstAddress = addressFixture.adresser[0];
+    if (firstAddress === undefined) throw new Error("Address fixture must contain one result.");
+    const payload = {
+      metadata: { totaltAntallTreff: 2 },
+      adresser: [firstAddress, { ...firstAddress, adressetekst: "Haraldsgata 102", nummer: 102 }],
+    };
+    const { fetch, mock } = sequenceFetch(jsonResponse(payload));
     const response = await new NorwayOpenData({ fetch, retries: 0 }).addresses.search({
       query: "Haraldsgata",
       countyCode: "11",
       limit: 1,
     });
     expect(response.data.items).toHaveLength(1);
+    expect(response.data.total).toBe(2);
     expect(new URL(String(mock.mock.calls[0]?.[0])).searchParams.get("treffPerSide")).toBe("1000");
+  });
+
+  it("omits a county-filtered total when the fetched provider window is incomplete", async () => {
+    const { fetch } = sequenceFetch(
+      jsonResponse({
+        ...addressFixture,
+        metadata: { totaltAntallTreff: 1_001 },
+      }),
+    );
+    const response = await new NorwayOpenData({ fetch, retries: 0 }).addresses.search({
+      query: "Haraldsgata",
+      countyCode: "11",
+    });
+    expect(response.data.total).toBeUndefined();
   });
 
   it("normalizes place search and nearby query fields", async () => {
@@ -89,5 +110,18 @@ describe("Kartverket clients", () => {
   ])("validates coordinate ranges: %o", async (coordinates) => {
     const sdk = new NorwayOpenData({ fetch: async () => jsonResponse({}) });
     await expect(sdk.places.nearby(coordinates)).rejects.toBeInstanceOf(InputValidationError);
+  });
+
+  it.each([
+    { metadata: { totaltAntallTreff: 1 }, adresser: [{}] },
+    { metadata: { totaltAntallTreff: 1 }, navn: [{}] },
+  ])("rejects provider list entries without usable data", async (payload) => {
+    const { fetch } = sequenceFetch(jsonResponse(payload));
+    const sdk = new NorwayOpenData({ fetch, retries: 0 });
+    const request =
+      "adresser" in payload
+        ? sdk.addresses.search({ query: "x" })
+        : sdk.places.search({ query: "x" });
+    await expect(request).rejects.toBeInstanceOf(ResponseValidationError);
   });
 });

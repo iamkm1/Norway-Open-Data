@@ -19,7 +19,13 @@ import { StortingetClient } from "./providers/stortinget/client.js";
 import { VegvesenClient } from "./providers/vegvesen/client.js";
 
 const configSchema = z.object({
-  applicationName: z.string().trim().min(1).optional(),
+  applicationName: z
+    .string()
+    .trim()
+    .min(1)
+    .max(200)
+    .refine((value) => !/[\r\n]/.test(value))
+    .optional(),
   contactEmail: z.email().optional(),
   timeoutMs: z.number().int().positive().optional(),
   retries: z.number().int().min(0).max(10).optional(),
@@ -35,7 +41,13 @@ const configSchema = z.object({
     .object({
       nve: z
         .object({
-          apiKey: z.string().trim().min(1).optional(),
+          apiKey: z
+            .string()
+            .trim()
+            .min(1)
+            .max(500)
+            .refine((value) => !/[\r\n]/.test(value))
+            .optional(),
         })
         .optional(),
     })

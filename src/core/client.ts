@@ -12,6 +12,19 @@ import { delay, parseRetryAfter, RETRYABLE_STATUS_CODES, retryDelayMs } from "./
 import type { HttpResult, QueryParameters, RequestOptions, ResolvedConfig } from "./types.js";
 
 type HttpMethod = "GET" | "POST";
+const REDIRECT_STATUS_CODES = new Set([301, 302, 303, 307, 308]);
+const MAX_REDIRECTS = 5;
+const REDACTED = "[REDACTED]";
+const SENSITIVE_HEADER_NAMES = new Set([
+  "authorization",
+  "cookie",
+  "et-client-name",
+  "proxy-authorization",
+  "set-cookie",
+  "user-agent",
+  "x-api-key",
+  "x-client",
+]);
 
 /** @internal */
 export type HttpRequest<T> = {
@@ -25,6 +38,8 @@ export type HttpRequest<T> = {
   responseType?: "json" | "text";
   options?: RequestOptions;
   cacheTtlMs?: number;
+  /** Performs provider-specific semantic validation or sanitization before caching. */
+  transform?: (data: T) => T;
 };
 
 function addQuery(url: string, query?: QueryParameters): string {
@@ -56,6 +71,53 @@ function retryAfterSeconds(retryAfterMs: number | undefined): number | undefined
   return retryAfterMs === undefined ? undefined : Math.ceil(retryAfterMs / 1_000);
 }
 
+function cloneCacheValue<T>(value: T): T {
+  return value !== null && typeof value === "object" ? structuredClone(value) : value;
+}
+
+function redactString(value: string, secrets: readonly string[]): string {
+  if (secrets.includes(value)) return REDACTED;
+  return secrets.reduce(
+    (redacted, secret) => (secret.length >= 8 ? redacted.replaceAll(secret, REDACTED) : redacted),
+    value,
+  );
+}
+
+function redactSensitiveData(value: unknown, secrets: readonly string[]): unknown {
+  if (typeof value === "string") return redactString(value, secrets);
+  if (Array.isArray(value)) return value.map((item) => redactSensitiveData(item, secrets));
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).flatMap(([key, child]) =>
+        SENSITIVE_HEADER_NAMES.has(key.toLowerCase())
+          ? []
+          : [[key, redactSensitiveData(child, secrets)]],
+      ),
+    );
+  }
+  return value;
+}
+
+function sanitizedCause(cause: unknown, secrets: readonly string[]): unknown {
+  if (cause instanceof Error) {
+    const error = new Error(redactString(cause.message, secrets));
+    error.name = cause.name;
+    return error;
+  }
+  return redactSensitiveData(cause, secrets);
+}
+
+function cancellationError(
+  provider: string,
+  cause: unknown,
+  secrets: readonly string[],
+): ProviderError {
+  return new ProviderError(`${provider} request was cancelled by the caller.`, {
+    provider,
+    cause: sanitizedCause(cause, secrets),
+  });
+}
+
 /**
  * Internal fetch-based HTTP client shared by every provider.
  *
@@ -72,6 +134,13 @@ export class HttpClient {
 
   /** Executes a validated JSON GET or POST request. */
   async request<T>(request: HttpRequest<T>): Promise<HttpResult<T>> {
+    if (isSignalAborted(request.options?.signal)) {
+      throw cancellationError(
+        request.provider,
+        request.options?.signal?.reason,
+        this.#sensitiveValues(new Headers(request.headers)),
+      );
+    }
     const method = request.method ?? "GET";
     const url = addQuery(request.url, request.query);
     const cacheTtlMs = this.#config.cache.ttlMs ?? request.cacheTtlMs;
@@ -91,11 +160,18 @@ export class HttpClient {
 
     if (canCache) {
       const cached = this.#cache.get<T>(cacheKey);
-      if (cached !== undefined) return { data: cached, cached: true };
+      if (cached !== undefined) return { data: cloneCacheValue(cached), cached: true };
     }
 
     const data = await this.#fetchWithRetries({ ...request, method, url });
-    if (canCache) this.#cache.set(cacheKey, data, cacheTtlMs);
+    if (isSignalAborted(request.options?.signal)) {
+      throw cancellationError(
+        request.provider,
+        request.options?.signal?.reason,
+        this.#sensitiveValues(requestHeaders),
+      );
+    }
+    if (canCache) this.#cache.set(cacheKey, cloneCacheValue(data), cacheTtlMs);
     return { data, cached: false };
   }
 
@@ -120,12 +196,11 @@ export class HttpClient {
     request: HttpRequest<T> & { method: HttpMethod; url: string },
   ): Promise<T> {
     const callerSignal = request.options?.signal;
+    const requestHeaders = new Headers(request.headers);
+    const secrets = this.#sensitiveValues(requestHeaders);
     for (let attempt = 0; attempt <= this.#config.retries; attempt += 1) {
       if (isSignalAborted(callerSignal)) {
-        throw new ProviderError(`${request.provider} request was cancelled by the caller.`, {
-          provider: request.provider,
-          cause: callerSignal?.reason,
-        });
+        throw cancellationError(request.provider, callerSignal?.reason, secrets);
       }
       const timeoutController = new AbortController();
       const combinedController = new AbortController();
@@ -153,7 +228,7 @@ export class HttpClient {
           init.body = JSON.stringify(request.body);
         }
 
-        const response = await this.#config.fetch(request.url, init);
+        const response = await this.#fetchWithSafeRedirects(request.provider, request.url, init);
         if (!response.ok) {
           const retryAfterMs = parseRetryAfter(response.headers.get("Retry-After"));
           if (RETRYABLE_STATUS_CODES.has(response.status) && attempt < this.#config.retries) {
@@ -183,16 +258,18 @@ export class HttpClient {
         try {
           payload = request.responseType === "text" ? await response.text() : await response.json();
         } catch (cause) {
+          if (isSignalAborted(callerSignal) || timeoutExpired) throw cause;
           throw new ResponseValidationError(
             `${request.provider} returned an unreadable ${request.responseType ?? "json"} response.`,
             {
               provider: request.provider,
               statusCode: response.status,
-              cause,
+              cause: sanitizedCause(cause, secrets),
             },
           );
         }
-        const parsed = request.schema.safeParse(payload);
+        const sanitizedPayload = redactSensitiveData(payload, secrets);
+        const parsed = request.schema.safeParse(sanitizedPayload);
         if (!parsed.success) {
           throw new ResponseValidationError(
             `${request.provider} returned a response with an unexpected structure.`,
@@ -203,30 +280,34 @@ export class HttpClient {
             },
           );
         }
-        return parsed.data;
+        return request.transform === undefined ? parsed.data : request.transform(parsed.data);
       } catch (error) {
         if (error instanceof ResponseValidationError || error instanceof ProviderError) throw error;
         if (isSignalAborted(callerSignal)) {
-          throw new ProviderError(`${request.provider} request was cancelled by the caller.`, {
-            provider: request.provider,
-            cause: error,
-          });
+          throw cancellationError(request.provider, error, secrets);
         }
         if (timeoutExpired) {
           if (attempt < this.#config.retries) continue;
           throw new RequestTimeoutError(
             `${request.provider} request timed out after ${this.#config.timeoutMs}ms.`,
-            { provider: request.provider, cause: error },
+            { provider: request.provider, cause: sanitizedCause(error, secrets) },
           );
         }
         if (isTemporaryNetworkError(error)) {
           if (attempt < this.#config.retries) {
-            await delay(retryDelayMs(attempt), callerSignal);
+            try {
+              await delay(retryDelayMs(attempt), callerSignal);
+            } catch (delayError) {
+              if (isSignalAborted(callerSignal)) {
+                throw cancellationError(request.provider, delayError, secrets);
+              }
+              throw delayError;
+            }
             continue;
           }
           throw new ProviderError(`${request.provider} request failed due to a network error.`, {
             provider: request.provider,
-            cause: error,
+            cause: sanitizedCause(error, secrets),
           });
         }
         throw error;
@@ -237,6 +318,64 @@ export class HttpClient {
       }
     }
     throw new ProviderError(`${request.provider} request failed.`);
+  }
+
+  async #fetchWithSafeRedirects(
+    provider: string,
+    initialUrl: string,
+    initialInit: RequestInit,
+  ): Promise<Response> {
+    let url = initialUrl;
+    let init: RequestInit = { ...initialInit, redirect: "manual" };
+    for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects += 1) {
+      const response = await this.#config.fetch(url, init);
+      if (!REDIRECT_STATUS_CODES.has(response.status)) return response;
+      const location = response.headers.get("Location");
+      if (location === null) return response;
+      if (redirects === MAX_REDIRECTS) {
+        throw new ProviderError(`${provider} exceeded the redirect limit.`, {
+          provider,
+          statusCode: response.status,
+        });
+      }
+      let target: URL;
+      try {
+        target = new URL(location, url);
+      } catch {
+        throw new ProviderError(`${provider} returned an invalid redirect location.`, {
+          provider,
+          statusCode: response.status,
+        });
+      }
+      if (target.origin !== new URL(url).origin) {
+        throw new ProviderError(`${provider} attempted a cross-origin redirect.`, {
+          provider,
+          statusCode: response.status,
+        });
+      }
+      if (
+        response.status === 303 ||
+        ((response.status === 301 || response.status === 302) && init.method === "POST")
+      ) {
+        const headers = new Headers(init.headers);
+        headers.delete("Content-Type");
+        init = { ...init, method: "GET", headers };
+        delete init.body;
+      }
+      url = target.toString();
+    }
+    throw new ProviderError(`${provider} exceeded the redirect limit.`, { provider });
+  }
+
+  #sensitiveValues(headers: Headers): string[] {
+    const values = [this.#config.contactEmail, this.#config.credentials.nve.apiKey];
+    for (const name of SENSITIVE_HEADER_NAMES) {
+      const value = headers.get(name);
+      if (value !== null) values.push(value);
+    }
+    return [
+      ...new Set(values.filter((value): value is string => value !== undefined && value !== "")),
+    ];
   }
 }
 

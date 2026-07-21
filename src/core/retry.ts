@@ -7,8 +7,14 @@ export const MAX_RETRY_DELAY_MS = 5_000;
 /** Parses an HTTP Retry-After header into milliseconds. */
 export function parseRetryAfter(value: string | null, now = Date.now()): number | undefined {
   if (value === null) return undefined;
-  const seconds = Number(value);
-  if (Number.isFinite(seconds) && seconds >= 0) return Math.round(seconds * 1_000);
+  if (/^\d+$/.test(value)) {
+    const seconds = Number(value);
+    const milliseconds = seconds * 1_000;
+    return Number.isFinite(milliseconds) ? milliseconds : undefined;
+  }
+  if (!/^[A-Z][a-z]{2}, \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(value)) {
+    return undefined;
+  }
   const date = Date.parse(value);
   if (Number.isNaN(date)) return undefined;
   return Math.max(0, date - now);

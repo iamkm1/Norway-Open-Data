@@ -74,6 +74,10 @@ export class SsbClient {
       url: `${BASE_URL}/tables/${parsed.data}/metadata`,
       query: { lang: "en" },
       schema: jsonStatSchema,
+      transform: (data) => {
+        parseTableMetadata(parsed.data, data as JsonStatDataset);
+        return data;
+      },
       options,
       cacheTtlMs: METADATA_TTL_MS,
     });
@@ -147,6 +151,10 @@ export class SsbClient {
         })),
       },
       schema: jsonStatSchema,
+      transform: (data) => {
+        parseJsonStat(parsed.data.tableId, data as JsonStatDataset);
+        return data;
+      },
       options,
       cacheTtlMs: QUERY_TTL_MS,
     });

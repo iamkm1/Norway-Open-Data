@@ -87,7 +87,7 @@ export const hydrologyStationsSchema = z
       .array(
         z
           .object({
-            stationId: z.string().nullable(),
+            stationId: z.string().regex(/^\d+\.\d+\.\d+$/),
             stationName: nullableString,
             latitude: latitudeSchema.nullable().optional(),
             longitude: longitudeSchema.nullable().optional(),
@@ -102,6 +102,15 @@ export const hydrologyStationsSchema = z
       )
       .nullable()
       .optional(),
+  })
+  .superRefine((response, context) => {
+    const returned = response.data?.length ?? 0;
+    if (
+      (response.itemCount === 0 && returned !== 0) ||
+      (response.itemCount > 0 && returned === 0)
+    ) {
+      context.addIssue({ code: "custom", message: "Inconsistent HydAPI station count." });
+    }
   })
   .loose();
 
@@ -119,6 +128,15 @@ export const hydrologyObservationsSchema = z
       )
       .nullable()
       .optional(),
+  })
+  .superRefine((response, context) => {
+    const returned = response.data?.length ?? 0;
+    if (
+      (response.itemCount === 0 && returned !== 0) ||
+      (response.itemCount > 0 && returned === 0)
+    ) {
+      context.addIssue({ code: "custom", message: "Inconsistent HydAPI observation count." });
+    }
   })
   .loose();
 

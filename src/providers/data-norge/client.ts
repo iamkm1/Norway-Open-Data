@@ -222,7 +222,13 @@ function parsePublisher(turtle: string, requestedId: string): CatalogPublisher {
     )?.[1];
   const legalName = turtleValue(turtle, "rov:legalName");
   const name = turtleValue(turtle, "foaf:name") ?? legalName;
-  if (identifier !== requestedId || uri === undefined || name === undefined) {
+  if (
+    identifier !== requestedId ||
+    uri === undefined ||
+    !uri.endsWith(`/organizations/${requestedId}`) ||
+    name === undefined ||
+    name.trim().length === 0
+  ) {
     throw new ResponseValidationError(
       "Data.norge returned publisher metadata with an unexpected structure.",
       { provider: "data-norge" },
@@ -231,6 +237,15 @@ function parsePublisher(turtle: string, requestedId: string): CatalogPublisher {
   const parentUri = turtleUri(turtle, "org:subOrganizationOf");
   const parentId = parentUri?.match(/\/organizations\/(\d+)$/)?.[1];
   const organizationPath = turtleValue(turtle, "br:orgPath");
+  if (
+    organizationPath !== undefined &&
+    (!organizationPathSchema.safeParse(organizationPath).success ||
+      organizationPath.split("/").at(-1) !== requestedId)
+  ) {
+    throw new ResponseValidationError("Data.norge returned an invalid publisher path.", {
+      provider: "data-norge",
+    });
+  }
   const homepage = turtleUri(turtle, "foaf:homepage");
   const organizationType = turtleTerm(turtle, "rov:orgType", "orgtype");
   const status = turtleTerm(turtle, "rov:orgStatus", "orgstatus");
@@ -388,6 +403,10 @@ export class DataNorgeClient {
       headers: { Accept: "text/turtle" },
       responseType: "text",
       schema: publisherTurtleSchema,
+      transform: (data) => {
+        parsePublisher(data, parsed.data);
+        return data;
+      },
       options,
       cacheTtlMs: RESOURCE_TTL_MS,
     });
@@ -461,6 +480,15 @@ export class DataNorgeClient {
       provider: "data-norge",
       url: `${RESOURCE_URL}/${path}/${parsed.data}`,
       schema: catalogResourceResponseSchema,
+      transform: (data) => {
+        if (data.id !== parsed.data) {
+          throw new ResponseValidationError(
+            "Data.norge returned a different resource than requested.",
+            { provider: "data-norge" },
+          );
+        }
+        return data;
+      },
       options,
       cacheTtlMs: RESOURCE_TTL_MS,
     });
