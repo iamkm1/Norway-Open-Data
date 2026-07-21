@@ -25,6 +25,9 @@ import type {
 } from "./types.js";
 
 const PROJECT_URL = "https://github.com/iamkm1/Norway-Open-Data";
+const FLOOD_WARNING_ATTRIBUTION = "Varsler fra Flomvarslingen i Norge og www.varsom.no";
+const AVALANCHE_WARNING_ATTRIBUTION = "Varsler fra Snøskredvarslingen i Norge og www.varsom.no";
+const LANDSLIDE_WARNING_ATTRIBUTION = "Varsler fra Jordskredvarslingen i Norge og www.varsom.no";
 
 type ProfileSourcePart = { id: string; name: string };
 type ProfileSource = ProfileSourcePart & { homepage: string; documentation: string };
@@ -66,12 +69,13 @@ function availableComponent<T>(
   operation: ProfileComponentOperation,
   section: ProfileComponentSection,
   response: OpenDataResponse<T>,
+  attribution?: string,
 ): ProfileComponent {
   return {
     operation,
     section,
     status: "available",
-    source: response.source,
+    source: attribution === undefined ? response.source : { ...response.source, attribution },
     retrievedAt: response.retrievedAt,
     cached: response.cached,
   };
@@ -246,9 +250,19 @@ export class ProfileClient {
     );
     const components: ProfileComponent[] = [
       availableComponent("addresses.search", "address", addressResponse),
-      availableComponent("hazards.getFloodWarnings", "hazards", flood),
-      availableComponent("hazards.getAvalancheWarnings", "hazards", avalanche),
-      availableComponent("hazards.getLandslideWarnings", "hazards", landslide),
+      availableComponent("hazards.getFloodWarnings", "hazards", flood, FLOOD_WARNING_ATTRIBUTION),
+      availableComponent(
+        "hazards.getAvalancheWarnings",
+        "hazards",
+        avalanche,
+        AVALANCHE_WARNING_ATTRIBUTION,
+      ),
+      availableComponent(
+        "hazards.getLandslideWarnings",
+        "hazards",
+        landslide,
+        LANDSLIDE_WARNING_ATTRIBUTION,
+      ),
       weather === undefined
         ? omittedComponent(
             "weather.current",

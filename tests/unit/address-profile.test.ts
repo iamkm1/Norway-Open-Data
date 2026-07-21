@@ -34,6 +34,24 @@ const finalRoadPageFixture = {
   },
 };
 
+const emptyRoadPageWithNextFixture = {
+  objekter: [],
+  metadata: {
+    returnert: 0,
+    sidestørrelse: 10,
+    neste: {
+      start: "empty-page-next",
+      href: "https://nvdbapiles.atlas.vegvesen.no/vegnett/api/v4/veglenkesekvenser/segmentert?start=empty-page-next",
+    },
+  },
+};
+
+const warningAttributions = {
+  "hazards.getFloodWarnings": "Varsler fra Flomvarslingen i Norge og www.varsom.no",
+  "hazards.getAvalancheWarnings": "Varsler fra Snøskredvarslingen i Norge og www.varsom.no",
+  "hazards.getLandslideWarnings": "Varsler fra Jordskredvarslingen i Norge og www.varsom.no",
+} as const;
+
 function expectedSource(provider: ProviderMetadata): OpenDataSource {
   return {
     id: provider.id,
@@ -237,13 +255,15 @@ describe("profiles.address", () => {
       ] as const;
       expect(response.data.components).toHaveLength(componentExpectations.length);
       for (const [operation, section, provider] of componentExpectations) {
+        const source = expectedSource(provider);
+        const attribution = warningAttributions[operation as keyof typeof warningAttributions];
         expect(
           response.data.components?.find((component) => component.operation === operation),
         ).toEqual({
           operation,
           section,
           status: "available",
-          source: expectedSource(provider),
+          source: attribution === undefined ? source : { ...source, attribution },
           retrievedAt: RETRIEVED_AT,
           cached: false,
         });
@@ -280,6 +300,26 @@ describe("profiles.address", () => {
       requestedPageSize: 10,
       truncated: false,
     });
+  });
+
+  it("reports truncation when an empty NVDB page still advertises a next page", async () => {
+    const { fetch } = routedFetch([
+      ["ws.geonorge.no", addressFixture],
+      ["api.met.no", forecastFixture],
+      ["veglenkesekvenser", emptyRoadPageWithNextFixture],
+      ["flood", []],
+      ["avalanche", []],
+      ["landslide", []],
+    ]);
+    const response = await new NorwayOpenData({
+      applicationName: "example-profile",
+      contactEmail: "profile@example.no",
+      fetch,
+      retries: 0,
+    }).profiles.address("Haraldsgata 100, Haugesund");
+
+    expect(response.data.roads).toEqual([]);
+    expect(response.data.roadSearch).toMatchObject({ truncated: true });
   });
 
   it.each(["weather", "roads"] as const)(
@@ -349,6 +389,37 @@ describe("profiles.address", () => {
       }
     },
   );
+
+  it("reports the composite response as cached when every included operation is cached", async () => {
+    const query = "Haraldsgata 100, Haugesund";
+    const { fetch, mock } = routedFetch([
+      ["ws.geonorge.no", addressFixture],
+      ["api.met.no", forecastFixture],
+      ["veglenkesekvenser", roadNetworkFixture],
+      ["flood", warningFixture],
+      ["avalanche", []],
+      ["landslide", []],
+    ]);
+    const sdk = new NorwayOpenData({
+      applicationName: "example-profile",
+      contactEmail: "profile@example.no",
+      fetch,
+      retries: 0,
+      cache: { enabled: true },
+    });
+
+    expect((await sdk.profiles.address(query)).cached).toBe(false);
+    const cached = await sdk.profiles.address(query);
+
+    expect(cached.cached).toBe(true);
+    expect(
+      cached.data.components?.filter((component) => component.status === "available"),
+    ).toHaveLength(6);
+    for (const component of cached.data.components ?? []) {
+      if (component.status === "available") expect(component.cached).toBe(true);
+    }
+    expect(mock).toHaveBeenCalledTimes(6);
+  });
 
   it("omits weather and roads when identification is not configured", async () => {
     const { fetch, mock } = sequenceFetch(

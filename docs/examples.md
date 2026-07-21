@@ -83,9 +83,10 @@ for (const component of address.data.components ?? []) {
 ```
 
 `components` distinguishes a successful (possibly empty) operation from an omitted one. Available
-entries carry `source`, `retrievedAt` and `cached`; omitted entries carry `not-configured`,
-`missing-coordinate` or `not-applicable`. Each source includes its attribution text when the SDK's
-provider registry declares one.
+entries carry `source`, `retrievedAt` and `cached`; `retrievedAt` is when the SDK operation resolved,
+including cache hits, rather than the original upstream fetch time. Omitted entries carry
+`not-configured`, `missing-coordinate` or `not-applicable`. Sources include provider attribution
+text, with service-specific wording for each Varsom warning feed.
 
 Automatic hazard matching checks an explicit municipality by official code, then exact
 case-insensitive, Unicode-normalized name. It checks a county only when the warning has no

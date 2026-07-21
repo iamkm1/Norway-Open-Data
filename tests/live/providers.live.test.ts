@@ -15,6 +15,7 @@ const contactEmail = optionalEnvironmentValue("NORWAY_OPEN_DATA_CONTACT_EMAIL");
 const nveApiKey = optionalEnvironmentValue("NVE_HYDAPI_KEY");
 
 const noMetIdentity = applicationName === undefined || contactEmail === undefined;
+const noRoadIdentity = applicationName === undefined;
 const noHydApiKey = nveApiKey === undefined;
 
 const sdk = new NorwayOpenData({
@@ -25,6 +26,15 @@ const sdk = new NorwayOpenData({
   cache: { enabled: true },
   ...(nveApiKey === undefined ? {} : { credentials: { nve: { apiKey: nveApiKey } } }),
 });
+
+async function takeOne<T>(source: AsyncIterable<T>): Promise<T[]> {
+  const items: T[] = [];
+  for await (const item of source) {
+    items.push(item);
+    break;
+  }
+  return items;
+}
 
 live("Brønnøysundregistrene — companies", () => {
   it("gets one entity", async () => {
@@ -136,9 +146,43 @@ live("Cross-provider — profiles", () => {
     const response = await sdk.profiles.address("Haraldsgata 100, Haugesund");
     expect(response.data.address.municipalityName).toBeTruthy();
     expect(Array.isArray(response.data.hazards)).toBe(true);
-    if (!noMetIdentity) {
+    const components = response.data.components ?? [];
+    expect(components).toHaveLength(6);
+
+    if (noMetIdentity) {
+      expect(response.data.weather).toBeUndefined();
+      expect(components.find(({ operation }) => operation === "weather.current")).toMatchObject({
+        status: "omitted",
+        reason: "not-configured",
+      });
+    } else {
       expect(response.data.weather?.time).toBeTruthy();
+      expect(components.find(({ operation }) => operation === "weather.current")).toMatchObject({
+        status: "available",
+      });
+    }
+
+    if (noRoadIdentity) {
+      expect(response.data.roads).toBeUndefined();
+      expect(
+        components.find(({ operation }) => operation === "roads.getRoadNetwork"),
+      ).toMatchObject({ status: "omitted", reason: "not-configured" });
+    } else {
       expect(Array.isArray(response.data.roads)).toBe(true);
+      expect(
+        components.find(({ operation }) => operation === "roads.getRoadNetwork"),
+      ).toMatchObject({ status: "available" });
+    }
+
+    for (const [operation, attribution] of [
+      ["hazards.getFloodWarnings", "Varsler fra Flomvarslingen i Norge og www.varsom.no"],
+      ["hazards.getAvalancheWarnings", "Varsler fra Snøskredvarslingen i Norge og www.varsom.no"],
+      ["hazards.getLandslideWarnings", "Varsler fra Jordskredvarslingen i Norge og www.varsom.no"],
+    ] as const) {
+      expect(components.find((component) => component.operation === operation)).toMatchObject({
+        status: "available",
+        source: { attribution },
+      });
     }
   });
 
@@ -332,5 +376,44 @@ live("NVE — hazards", () => {
       resolutionTime: "day",
     });
     expect(Array.isArray(observations.data)).toBe(true);
+  });
+});
+
+live("Auto-pagination — bounded iterators", () => {
+  it("probes all page-number iterators with one item and one page", async () => {
+    const companies = await takeOne(
+      sdk.companies.searchAll({ name: "Equinor", size: 5 }, { maxItems: 1, maxPages: 1 }),
+    );
+    const catalog = await takeOne(
+      sdk.catalog.searchAll(
+        { query: "transport", type: ["dataset"], page: 0, size: 1 },
+        { maxItems: 1, maxPages: 1 },
+      ),
+    );
+    const cases = await takeOne(
+      sdk.parliament.searchCasesAll({ page: 0, size: 1 }, { maxItems: 1, maxPages: 1 }),
+    );
+
+    expect(companies).toHaveLength(1);
+    expect(catalog).toHaveLength(1);
+    expect(cases).toHaveLength(1);
+  });
+
+  it("probes both NVDB cursor iterators with one item and one page", async () => {
+    const objects = await takeOne(
+      sdk.roads.searchRoadObjectsAll(
+        { typeId: 105, municipalityCode: "1103", pageSize: 1 },
+        { maxItems: 1, maxPages: 1 },
+      ),
+    );
+    const network = await takeOne(
+      sdk.roads.getRoadNetworkAll(
+        { municipalityCode: "1103", pageSize: 1 },
+        { maxItems: 1, maxPages: 1 },
+      ),
+    );
+
+    expect(objects.length).toBeLessThanOrEqual(1);
+    expect(network.length).toBeLessThanOrEqual(1);
   });
 });

@@ -222,7 +222,7 @@ function sanitizeRoadObject(raw: RawRoadObject, expectedTypeId: number): RawRoad
 }
 
 function normalizePagination(raw: RawRoadObjectSearchResponse["metadata"]): RoadPagination {
-  const next = raw.returnert === 0 ? undefined : (raw.neste ?? undefined);
+  const next = raw.neste ?? undefined;
   return {
     returned: raw.returnert,
     pageSize: raw.sidestørrelse,

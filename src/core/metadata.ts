@@ -127,6 +127,7 @@ export const providers = {
     documentation: "https://www.hvakosterstrommen.no/strompris-api",
     access: "open",
     authentication: "None.",
+    license: "Provider describes the API as open and free; no standardized licence stated",
     attribution:
       "Credit hvakosterstrommen.no; its API states that it sources euro prices from ENTSO-E and converts them using Norges Bank exchange rates.",
   },

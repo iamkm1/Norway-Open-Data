@@ -153,6 +153,31 @@ describe("ElectricityClient", () => {
     expect(raw[2]?.time_end).toBe("2023-10-29T03:00:00+01:00");
   });
 
+  it.each([
+    {
+      occurrence: "first",
+      now: "2023-10-29T00:30:00Z",
+      startsAt: "2023-10-29T02:00:00+02:00",
+      endsAt: "2023-10-29T02:00:00+01:00",
+    },
+    {
+      occurrence: "second",
+      now: "2023-10-29T01:30:00Z",
+      startsAt: "2023-10-29T02:00:00+01:00",
+      endsAt: "2023-10-29T03:00:00+01:00",
+    },
+  ])("selects the $occurrence repeated autumn 02:00 hour", async ({ now, startsAt, endsAt }) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(now));
+    const { fetch } = sequenceFetch(jsonResponse(historicalAutumnFixture));
+
+    const response = await new NorwayOpenData({ fetch, retries: 0 }).electricity.getCurrentPrice({
+      area: "NO1",
+    });
+
+    expect(response.data).toMatchObject({ startsAt, endsAt });
+  });
+
   it("rejects a fall day that replaces the repeated hour with a next-day slot", async () => {
     const malformed = pricesForHours("2024-10-27", "2024-10-28", autumnHours, "+01:00");
     malformed.splice(3, 1);

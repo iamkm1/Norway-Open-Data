@@ -314,6 +314,7 @@ Access labels in this document have precise meanings:
 - **Supported methods:** `electricity.getPrices()`, `electricity.getCurrentPrice()`
 - **Classification:** Independent third-party public endpoint; it is not a government or official
   data provider.
+- **Operator:** Beneficial Apps AS, as identified on the provider's API page.
 - **Provider homepage:** https://www.hvakosterstrommen.no/
 - **API documentation:** https://www.hvakosterstrommen.no/strompris-api
 - **Endpoint:** `https://www.hvakosterstrommen.no/api/v1/prices/<year>/<month>-<day>_<area>.json`
@@ -332,11 +333,12 @@ Access labels in this document have precise meanings:
   terms before redistribution.
 - **Known limits:** Prices are exclusive of grid rent, taxes and supplier surcharges. Next-day
   prices are normally published in the early afternoon; requesting a date before publication
-  returns HTTP 404, surfaced as `NotFoundError`. Nordic day-ahead prices can legitimately be zero
-  or negative, so the SDK does not constrain them to positive values. The SDK validates the ordered
-  starts and provider-native ends for one Europe/Oslo calendar day: normally 24 entries, 23 at the
-  spring transition, and 25 at the autumn transition. Normalized interval ends follow the next start
-  (or following local midnight); `{ includeRaw: true }` preserves provider-native end timestamps,
+  returns HTTP 404, surfaced as `NotFoundError`. The provider documents historical availability
+  back to 1 December 2021. Nordic day-ahead prices can legitimately be zero or negative, so the SDK
+  does not constrain them to positive values. The SDK validates the ordered starts and
+  provider-native ends for one Europe/Oslo calendar day: normally 24 entries, 23 at the spring
+  transition, and 25 at the autumn transition. Normalized interval ends follow the next start (or
+  following local midnight); `{ includeRaw: true }` preserves provider-native end timestamps,
   including a narrowly accepted historical autumn repeated-hour anomaly.
 
 ## Verification policy

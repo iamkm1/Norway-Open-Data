@@ -130,6 +130,21 @@ describe("cache hardening", () => {
     expect(secondFetch.mock).toHaveBeenCalledTimes(1);
   });
 
+  it("clears cached responses across an SDK instance", async () => {
+    const { fetch, mock } = sequenceFetch(jsonResponse(brregCompany), jsonResponse(brregCompany));
+    const sdk = new NorwayOpenData({
+      fetch,
+      retries: 0,
+      cache: { enabled: true },
+    });
+
+    expect((await sdk.companies.get("923609016")).cached).toBe(false);
+    expect((await sdk.companies.get("923609016")).cached).toBe(true);
+    sdk.clearCache();
+    expect((await sdk.companies.get("923609016")).cached).toBe(false);
+    expect(mock).toHaveBeenCalledTimes(2);
+  });
+
   it("never serializes credentials into keys and redacts echoed secrets", async () => {
     const apiKey = "unit-test-api-key-value";
     const contactEmail = "developer@example.no";

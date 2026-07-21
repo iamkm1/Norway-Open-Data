@@ -4,7 +4,7 @@ import reservoirFixture from "../fixtures/nve-reservoir.json" with { type: "json
 import stationsFixture from "../fixtures/nve-stations.json" with { type: "json" };
 import warningFixture from "../fixtures/nve-warning.json" with { type: "json" };
 import windFixture from "../fixtures/nve-wind-power.json" with { type: "json" };
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   ConfigurationError,
@@ -13,6 +13,10 @@ import {
   ResponseValidationError,
 } from "../../src/index.js";
 import { jsonResponse, sequenceFetch } from "./helpers.js";
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe("NVE clients", () => {
   it("normalizes and caches the latest reservoir statistics", async () => {
@@ -66,17 +70,17 @@ describe("NVE clients", () => {
     expect(combined.raw).toMatchObject({ hydropower: hydropowerFixture, wind: windFixture });
   });
 
-  it("retains NVE's published negative pumped-storage figures", async () => {
-    const negativePlant = [
+  it("preserves signed hydropower provider values", async () => {
+    const signedPlant = [
       {
         ...hydropowerFixture[0],
         VannKraftverkID: 999,
-        Navn: "Pumped storage test plant",
+        Navn: "Signed-value test plant",
         MaksYtelse: -12.5,
         MidProd_91_20: -4.25,
       },
     ];
-    const { fetch } = sequenceFetch(jsonResponse(negativePlant));
+    const { fetch } = sequenceFetch(jsonResponse(signedPlant));
     const response = await new NorwayOpenData({ fetch, retries: 0 }).energy.getHydropowerPlants();
 
     expect(response.data[0]).toMatchObject({
@@ -153,6 +157,100 @@ describe("NVE clients", () => {
       municipalities: [{ code: "1106", name: "Haugesund" }],
     });
     expect(response.raw).toEqual(payload);
+  });
+
+  it("omits zero-sentinel and null administrative IDs", async () => {
+    const warning = warningFixture[0];
+    if (warning === undefined) throw new Error("NVE warning fixture must contain one record.");
+    const { fetch } = sequenceFetch(
+      jsonResponse([
+        {
+          ...warning,
+          CountyList: [
+            { Id: 0, Name: "Zero county" },
+            { Id: null, Name: "Uncoded county" },
+          ],
+          MunicipalityList: [
+            { Id: " 0 ", Name: "Zero municipality" },
+            { Id: null, Name: "Uncoded municipality" },
+          ],
+        },
+      ]),
+    );
+
+    const response = await new NorwayOpenData({ fetch, retries: 0 }).hazards.getFloodWarnings();
+
+    expect(response.data[0]).toMatchObject({
+      counties: [{ name: "Zero county" }, { name: "Uncoded county" }],
+      municipalities: [{ name: "Zero municipality" }, { name: "Uncoded municipality" }],
+    });
+    expect(response.data[0]?.counties?.[0]).not.toHaveProperty("code");
+    expect(response.data[0]?.counties?.[1]).not.toHaveProperty("code");
+    expect(response.data[0]?.municipalities?.[0]).not.toHaveProperty("code");
+    expect(response.data[0]?.municipalities?.[1]).not.toHaveProperty("code");
+  });
+
+  it.each([-1, 1.5, "-1", "municipality-1106", ""])(
+    "rejects invalid administrative ID %s",
+    async (invalidId) => {
+      const warning = warningFixture[0];
+      if (warning === undefined) throw new Error("NVE warning fixture must contain one record.");
+      const { fetch } = sequenceFetch(
+        jsonResponse([
+          {
+            ...warning,
+            MunicipalityList: [{ Id: invalidId, Name: "Haugesund" }],
+          },
+        ]),
+      );
+
+      await expect(
+        new NorwayOpenData({ fetch, retries: 0 }).hazards.getFloodWarnings(),
+      ).rejects.toBeInstanceOf(ResponseValidationError);
+    },
+  );
+
+  it.each([
+    ["CountyList", 123],
+    ["CountyList", "123"],
+    ["MunicipalityList", 12_345],
+    ["MunicipalityList", "12345"],
+    ["MunicipalityList", Number.MAX_SAFE_INTEGER],
+  ] as const)("rejects over-width %s administrative ID %s", async (list, invalidId) => {
+    const warning = warningFixture[0];
+    if (warning === undefined) throw new Error("NVE warning fixture must contain one record.");
+    const { fetch } = sequenceFetch(
+      jsonResponse([
+        {
+          ...warning,
+          [list]: [{ Id: invalidId, Name: "Invalid area" }],
+        },
+      ]),
+    );
+
+    await expect(
+      new NorwayOpenData({ fetch, retries: 0 }).hazards.getFloodWarnings(),
+    ).rejects.toBeInstanceOf(ResponseValidationError);
+  });
+
+  it("defaults warning dates to the current Europe/Oslo calendar day", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-21T22:30:00Z"));
+    const { fetch, mock } = sequenceFetch(jsonResponse([]));
+
+    await new NorwayOpenData({ fetch, retries: 0 }).hazards.getFloodWarnings();
+
+    expect(String(mock.mock.calls[0]?.[0])).toContain("/2026-07-22/2026-07-22");
+  });
+
+  it.each([0, "0"])("uses RegionId when avalanche RegId is the %s sentinel", async (sentinel) => {
+    const warning = warningFixture[0];
+    if (warning === undefined) throw new Error("NVE warning fixture must contain one record.");
+    const { fetch } = sequenceFetch(jsonResponse([{ ...warning, RegId: sentinel }]));
+
+    const response = await new NorwayOpenData({ fetch, retries: 0 }).hazards.getAvalancheWarnings();
+
+    expect(response.data[0]?.id).toBe("3001");
   });
 
   it("rejects invalid warning date ranges before fetch", async () => {

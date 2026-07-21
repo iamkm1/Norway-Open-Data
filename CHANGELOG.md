@@ -15,9 +15,9 @@ Current release of the expanded Norway Open Data SDK.
   municipalities; forecast-region names are not matched automatically. `roadSearch` records the
   exact bounds, requested page size, and whether NVDB reported another page.
 - Per-operation `components` metadata for company and address profiles. Available components carry
-  their provider source, retrieval time, and cache status; skipped components report an explicit
-  `not-configured`, `missing-coordinate`, or `not-applicable` reason. Provider source metadata now
-  includes attribution text where the provider registry declares it.
+  their provider source, SDK operation-resolution time, and cache status; skipped components report
+  an explicit `not-configured`, `missing-coordinate`, or `not-applicable` reason. Provider source
+  metadata now includes attribution text, with service-specific wording for each Varsom feed.
 - Electricity spot prices from the third-party Hva koster strømmen? public API via the new
   `electricity` namespace (`getPrices`, `getCurrentPrice`) for all five Norwegian bidding zones.
   The provider documents its data as ENTSO-E EUR prices converted to NOK using a Norges Bank
@@ -25,9 +25,11 @@ Current release of the expanded Norway Open Data SDK.
 - Auto-paginating async iterators for list endpoints: `companies.searchAll`,
   `catalog.searchAll`, `parliament.searchCasesAll`, `roads.searchRoadObjectsAll` and
   `roads.getRoadNetworkAll`. Each accepts `maxItems` and `maxPages` bounds.
+- `NorwayOpenData.clearCache()` for invalidating every response cached by one SDK instance.
 - Representative opt-in live contract checks across the supported source adapters and `profiles`,
-  including anonymous `hazards` warnings and chained detail lookups. These probes do not claim to
-  exercise every method, iterator, parameter combination or upstream response variant.
+  including anonymous `hazards` warnings, chained detail lookups and one-item, one-page probes for
+  every public iterator. These probes do not claim to exercise every method, parameter combination
+  or upstream response variant.
 - A weekly scheduled workflow that runs the live suite so upstream contract changes surface
   early, and a workflow prepared to publish the TypeDoc reference after GitHub Pages is enabled.
 
@@ -35,11 +37,13 @@ Current release of the expanded Norway Open Data SDK.
 
 - The minimum supported runtime is Node.js 22. Distribution builds target Node.js 22, and CI
   verifies the package on Node.js 22 and 24.
+- `pnpm verify` is the single CI and pre-publish gate for formatting, linting, type checking,
+  coverage, builds, generated documentation and packed-package consumer checks.
 
 ### Fixed
 
 - Auto-paginators now reject unsafe bounds, treat `maxItems: 0` as a zero-request result and keep
-  the 100-request safety cap finite. Opaque-cursor iterators also reject repeated markers and
+  the 100-logical-page safety cap finite. Opaque-cursor iterators also reject repeated markers and
   cycles before requesting an already-seen page again.
 - `profiles.address()` now reports `cached: true` only when every included provider response came
   from cache.

@@ -85,11 +85,19 @@ const expectedRuntimeExports = [
 ].sort();
 
 function run(command: string, args: string[], options: RunOptions = {}): string {
+  const environment: NodeJS.ProcessEnv = { ...process.env, NO_UPDATE_NOTIFIER: "1" };
+  for (const key of Object.keys(environment)) {
+    if (
+      ["npm_config__jsr_registry", "npm_config_verify_deps_before_run"].includes(key.toLowerCase())
+    ) {
+      delete environment[key];
+    }
+  }
   return execFileSync(command, args, {
     cwd: options.cwd ?? repositoryRoot,
     encoding: "utf8",
     stdio: options.capture === true ? "pipe" : "inherit",
-    env: { ...process.env, NO_UPDATE_NOTIFIER: "1" },
+    env: environment,
   });
 }
 
@@ -192,6 +200,8 @@ try {
       "assertSdk(sdk);\n" +
       "function assertSdk(value) {\n" +
       '  if (typeof value.NorwayOpenData !== "function") throw new Error("Missing ESM root export.");\n' +
+      '  if (typeof new value.NorwayOpenData().clearCache !== "function") throw new Error("Missing ESM clearCache method.");\n' +
+      '  if (value.providers?.hvakosterstrommen?.license !== "Provider describes the API as open and free; no standardized licence stated") throw new Error("Missing electricity licence-status metadata.");\n' +
       "  process.stdout.write(JSON.stringify(Object.keys(value).sort()));\n" +
       "}\n",
     "utf8",
@@ -200,6 +210,8 @@ try {
     join(temporaryRoot, "cjs-check.cjs"),
     'const sdk = require("norway-open-data-sdk");\n' +
       'if (typeof sdk.NorwayOpenData !== "function") throw new Error("Missing CommonJS root export.");\n' +
+      'if (typeof new sdk.NorwayOpenData().clearCache !== "function") throw new Error("Missing CommonJS clearCache method.");\n' +
+      'if (sdk.providers?.hvakosterstrommen?.license !== "Provider describes the API as open and free; no standardized licence stated") throw new Error("Missing electricity licence-status metadata.");\n' +
       "process.stdout.write(JSON.stringify(Object.keys(sdk).sort()));\n",
     "utf8",
   );
@@ -245,6 +257,7 @@ try {
     "import {\n" +
       "  InputValidationError,\n" +
       "  NorwayOpenData,\n" +
+      "  providers,\n" +
       "  type Company,\n" +
       "  type NorwayOpenDataConfig,\n" +
       "  type OpenDataResponse,\n" +
@@ -252,9 +265,11 @@ try {
       '} from "norway-open-data-sdk";\n' +
       "const config: NorwayOpenDataConfig = { retries: 0 };\n" +
       "const client = new NorwayOpenData(config);\n" +
+      "client.clearCache();\n" +
       "const options: RequestOptions = { includeRaw: false, bypassCache: true };\n" +
       "const response: OpenDataResponse<Company> | undefined = undefined;\n" +
-      "void client; void options; void response; void InputValidationError;\n",
+      'const electricityLicence: "Provider describes the API as open and free; no standardized licence stated" = providers.hvakosterstrommen.license;\n' +
+      "void client; void options; void response; void electricityLicence; void InputValidationError;\n",
     "utf8",
   );
   writeFileSync(

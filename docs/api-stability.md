@@ -23,7 +23,8 @@ The same root contract is built as ESM, CommonJS and TypeScript declarations.
 The 0.2.0 profile additions (`components`, `hazardMatches`, and `roadSearch`) are optional in the
 exported profile types for source compatibility, while profiles produced by this SDK populate the
 metadata that applies to their operations. `OpenDataSource.attribution` is likewise optional and is
-present only when the provider registry declares attribution text.
+present only when the provider registry or a service-specific profile component declares
+attribution text.
 
 ## Versioning
 

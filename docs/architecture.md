@@ -50,9 +50,11 @@ conditions, NVE warning summaries and NVDB road candidates. Enrichments that req
 identification are omitted instead of failing the base address result.
 
 Every profile carries a `components` entry for each operation it used or deliberately skipped. An
-`available` entry records the operation, logical section, provider source, retrieval time and cache
-state. An `omitted` entry records its provider source and a `not-configured`, `missing-coordinate`
-or `not-applicable` reason. The composite response is marked cached only when every provider call
+`available` entry records the operation, logical section, provider source, SDK operation-resolution
+time and cache state. That timestamp includes cache hits and is not the original upstream fetch
+time. Warning components carry the service-specific Varsom attribution for their feed. An
+`omitted` entry records its provider source and a `not-configured`, `missing-coordinate` or
+`not-applicable` reason. The composite response is marked cached only when every provider call
 included in it was served from cache.
 
 Address-profile warning discovery uses only structured NVE municipality/county data. An explicit
@@ -100,6 +102,8 @@ Caching is disabled by default. When enabled, provider methods supply TTLs appro
 update cadence. `cache.ttlMs` can override those recommendations globally. Cache bypass skips both
 reads and writes, and unsuccessful responses are never cached. Cache keys include the expected
 response representation and `Accept` value so JSON and text variants of one URL cannot collide.
+`NorwayOpenData.clearCache()` removes every entry shared by that SDK instance without exposing
+internal keys or values.
 
 ## Identification and credentials
 

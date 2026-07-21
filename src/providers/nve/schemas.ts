@@ -32,8 +32,7 @@ export const hydropowerPlantsSchema = z.array(
       Navn: z.string(),
       Kommune: nullableString,
       KommuneNr: z.union([z.string(), z.number()]).nullable().optional(),
-      // NVE publishes negative capacity and mean-production figures for some
-      // plants (pumped storage reports net values), so these stay unbounded.
+      // Preserve signed provider values without assigning a physical interpretation.
       MaksYtelse: z.number().nullable().optional(),
       MidProd_91_20: z.number().nullable().optional(),
       Kraftverkstatus: nullableString,
@@ -49,8 +48,7 @@ export const windPowerPlantsSchema = z.array(
       Navn: z.string(),
       Kommune: nullableString,
       Kommunenummer: z.union([z.string(), z.number()]).nullable().optional(),
-      // Same NVE convention as the hydropower dataset, which publishes negative
-      // capacity and production figures for some plants.
+      // Preserve signed provider values without assigning a physical interpretation.
       InstallertEffekt_MW: z.number().nullable().optional(),
       NormalAArsproduksjon_GWh: z.number().nullable().optional(),
       IdriftsettelseForsteByggetrinn: nullableIsoDateTime,
@@ -58,15 +56,36 @@ export const windPowerPlantsSchema = z.array(
     .loose(),
 );
 
-const namedRegionSchema = z
-  .object({
-    Id: z.union([z.string(), z.number()]).optional(),
-    Name: z
-      .string()
-      .min(1)
-      .refine((value) => value.trim().length > 0),
-  })
-  .loose();
+function administrativeIdSchema(width: 2 | 4): z.ZodType<string | number | null | undefined> {
+  const maximum = 10 ** width - 1;
+  return z
+    .union([
+      z.string().refine((value) => {
+        const code = value.trim();
+        return /^\d+$/u.test(code) && code.length <= width;
+      }),
+      z.number().int().nonnegative().max(maximum),
+    ])
+    .nullable()
+    .optional();
+}
+
+function namedRegionSchema(
+  width: 2 | 4,
+): z.ZodType<{ Id?: string | number | null | undefined; Name: string }> {
+  return z
+    .object({
+      Id: administrativeIdSchema(width),
+      Name: z
+        .string()
+        .min(1)
+        .refine((value) => value.trim().length > 0),
+    })
+    .loose();
+}
+
+const countyRegionSchema = namedRegionSchema(2);
+const municipalityRegionSchema = namedRegionSchema(4);
 
 export const warningsSchema = z.array(
   z
@@ -79,8 +98,8 @@ export const warningsSchema = z.array(
       MainText: nullableString,
       ValidFrom: isoDateTimeSchema,
       ValidTo: isoDateTimeSchema,
-      CountyList: z.array(namedRegionSchema).nullable().optional(),
-      MunicipalityList: z.array(namedRegionSchema).nullable().optional(),
+      CountyList: z.array(countyRegionSchema).nullable().optional(),
+      MunicipalityList: z.array(municipalityRegionSchema).nullable().optional(),
       Latitude: latitudeSchema.nullable().optional(),
       Longitude: longitudeSchema.nullable().optional(),
     })

@@ -221,6 +221,39 @@ describe("VegvesenClient", () => {
     expect(mock).toHaveBeenCalledTimes(2);
   });
 
+  it("reports the provider on a public NVDB cursor cycle", async () => {
+    const pageWithNext = (start: string): typeof nvdbRoadNetwork => ({
+      ...nvdbRoadNetwork,
+      metadata: {
+        returnert: nvdbRoadNetwork.metadata.returnert,
+        sidestørrelse: nvdbRoadNetwork.metadata.sidestørrelse,
+        neste: {
+          start,
+          href: `https://nvdbapiles.atlas.vegvesen.no/vegnett/api/v4/veglenkesekvenser/segmentert?start=${start}`,
+        },
+      },
+    });
+    const { fetch, mock } = sequenceFetch(
+      jsonResponse(pageWithNext("cursor-a")),
+      jsonResponse(pageWithNext("cursor-b")),
+      jsonResponse(pageWithNext("cursor-a")),
+    );
+
+    let caught: unknown;
+    try {
+      await collect(createClient(fetch).getRoadNetworkAll());
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(ResponseValidationError);
+    if (!(caught instanceof ResponseValidationError)) {
+      throw new Error("Expected a ResponseValidationError for the NVDB cursor cycle.");
+    }
+    expect(caught.provider).toBe("vegvesen");
+    expect(mock).toHaveBeenCalledTimes(3);
+  });
+
   it("requires applicationName before making any NVDB request", async () => {
     const fetch = vi.fn(async () => jsonResponse(nvdbRoadObjectTypes));
     await expect(createClient(fetch, null).getRoadObjectTypes()).rejects.toBeInstanceOf(
@@ -251,7 +284,9 @@ describe("VegvesenClient", () => {
     );
   });
 
-  it("does not expose a repeated continuation marker from an empty terminal page", async () => {
+  it("preserves provider continuation metadata on an empty page", async () => {
+    const nextUrl =
+      "https://nvdbapiles.atlas.vegvesen.no/vegobjekter/api/v4/vegobjekter/105?start=same-token";
     const { fetch } = sequenceFetch(
       jsonResponse({
         objekter: [],
@@ -260,7 +295,7 @@ describe("VegvesenClient", () => {
           sidestørrelse: 100,
           neste: {
             start: "same-token",
-            href: "https://nvdbapiles.atlas.vegvesen.no/vegobjekter/api/v4/vegobjekter/105?start=same-token",
+            href: nextUrl,
           },
         },
       }),
@@ -269,7 +304,33 @@ describe("VegvesenClient", () => {
       typeId: 105,
       start: "same-token",
     });
-    expect(response.data.pagination).toEqual({ returned: 0, pageSize: 100 });
+    expect(response.data.pagination).toEqual({
+      returned: 0,
+      pageSize: 100,
+      nextStart: "same-token",
+      nextUrl,
+    });
+  });
+
+  it("stops a public iterator on an empty page even when NVDB provides a cursor", async () => {
+    const { fetch, mock } = sequenceFetch(
+      jsonResponse({
+        objekter: [],
+        metadata: {
+          returnert: 0,
+          sidestørrelse: 100,
+          neste: {
+            start: "unused-next-token",
+            href: "https://nvdbapiles.atlas.vegvesen.no/vegobjekter/api/v4/vegobjekter/105?start=unused-next-token",
+          },
+        },
+      }),
+    );
+
+    await expect(
+      collect(createClient(fetch).searchRoadObjectsAll({ typeId: 105 })),
+    ).resolves.toEqual([]);
+    expect(mock).toHaveBeenCalledTimes(1);
   });
 
   it.each(["objects", "network"] as const)(

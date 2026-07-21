@@ -18,14 +18,10 @@ must require separate explicit authorization.
 ```powershell
 corepack pnpm install --frozen-lockfile
 corepack pnpm format
-corepack pnpm format:check
-corepack pnpm lint
-corepack pnpm typecheck
-corepack pnpm test
-corepack pnpm test:coverage
-corepack pnpm build
-corepack pnpm run docs
+corepack pnpm verify
 ```
+
+`prepublishOnly` runs the same gate for both direct npm publishing and the `pnpm release` script.
 
 ## Live checks
 

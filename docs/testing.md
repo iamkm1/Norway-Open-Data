@@ -5,6 +5,14 @@ saved fixtures so routine development and CI do not depend on network availabili
 
 ## Local checks
 
+Run the complete release-equivalent gate with:
+
+```bash
+pnpm verify
+```
+
+For focused development, the underlying commands remain available individually:
+
 ```bash
 pnpm test
 pnpm test:watch
@@ -46,15 +54,15 @@ email. The NVE HydAPI cases are skipped unless `NVE_HYDAPI_KEY` is set; every ot
 anonymously or with caller identification only.
 
 Live checks are representative contract probes across the supported public-sector source adapters,
-the third-party electricity endpoint and both `profiles` compositions. Individual cases may call
-several related methods, but the suite does not claim exhaustive coverage of every method,
-auto-paginating iterator, parameter combination or upstream response variant. Detail lookups are
-chained from list calls rather than hard-coded IDs where practical. Keep requests bounded and do
-not add load or rate-limit bypasses.
+the third-party electricity endpoint and both `profiles` compositions. Every public
+auto-paginating iterator has a one-item, one-page probe. Individual cases may call several related
+methods, but the suite does not claim exhaustive coverage of every method, parameter combination or
+upstream response variant. Detail lookups are chained from list calls rather than hard-coded IDs
+where practical. Keep requests bounded and do not add load or rate-limit bypasses.
 
 ## Scheduled live monitoring
 
-For authorized maintainers of the currently private repository, `.github/workflows/live.yml` runs
+For authorized repository maintainers, `.github/workflows/live.yml` runs
 the live suite every Monday and on demand (**Actions → Live provider checks → Run workflow**). It
 never runs on pull requests, so forks cannot trigger outbound calls or read repository secrets.
 

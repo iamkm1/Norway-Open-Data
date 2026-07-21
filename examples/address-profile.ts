@@ -15,4 +15,4 @@ const place = await norway.profiles.address("Haraldsgata 100, Haugesund");
 console.log("municipality:", place.data.address.municipalityName);
 console.log("temperature:", place.data.weather?.temperature);
 console.log("warnings:", place.data.hazards.length);
-console.log("road segments within 250 m:", place.data.roads?.length ?? 0);
+console.log("first-page road bounding-box candidates:", place.data.roads?.length ?? 0);

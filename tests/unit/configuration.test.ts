@@ -19,6 +19,8 @@ describe("configuration", () => {
     expect(sdk.roads).toBeDefined();
     expect(sdk.energy).toBeDefined();
     expect(sdk.hazards).toBeDefined();
+    expect(sdk.electricity).toBeDefined();
+    expect(typeof sdk.clearCache).toBe("function");
     expect(version).toBe(packageMetadata.version);
   });
 

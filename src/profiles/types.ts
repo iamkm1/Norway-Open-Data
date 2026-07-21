@@ -28,6 +28,10 @@ export type ProfileComponent =
       section: ProfileComponentSection;
       status: "available";
       source: OpenDataSource;
+      /**
+       * When this SDK operation resolved, including cache hits. This is not
+       * the time the provider payload was originally fetched upstream.
+       */
       retrievedAt: string;
       cached: boolean;
     }

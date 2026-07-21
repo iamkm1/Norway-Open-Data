@@ -13,8 +13,9 @@ Access labels mean:
   and is not an official government data source.
 
 The opt-in live suite uses low-volume representative contract probes across the source adapters and
-composed profiles. It does not exercise every iterator, method, parameter combination or upstream
-response variant. HydAPI probes also require a separately supplied free key. The suite is scheduled
+composed profiles, including one-item, one-page probes for every public iterator. It does not
+exercise every method, parameter combination or upstream response variant. HydAPI probes also
+require a separately supplied free key. The suite is scheduled
 weekly for authorized repository maintainers — see [Testing](testing.md).
 
 | Source                             | Namespace     | Public methods                                                                                                                                 | Access type                                               | Required configuration                                       | Licence or terms                                                | Runtime validation                                                                     | Live-probe status                       | Known limitations                                                                               |

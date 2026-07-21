@@ -14,7 +14,7 @@ API from Hva koster strømmen?.
 
 - 10 public-sector data sources plus 1 third-party derived API
 - 14 service namespaces
-- 53 public methods
+- 50+ public methods
 - Runtime-validated responses
 - Cross-provider profiles that answer one question from several agencies
 - Auto-paginating async iterators for list endpoints
@@ -152,8 +152,10 @@ console.log(place.data.components); // Status and source for every operation
 Enrichment degrades gracefully: `weather` and `roads` are omitted when the client has no
 `applicationName`/`contactEmail`, rather than failing the whole call. `components` reports each
 operation as `available`, with its source, `retrievedAt` and `cached` values, or `omitted`, with a
-`not-configured`, `missing-coordinate` or `not-applicable` reason. Sources include provider
-attribution text when it is declared in the SDK registry.
+`not-configured`, `missing-coordinate` or `not-applicable` reason. A component's `retrievedAt` is
+when that SDK operation resolved, including cache hits, not when its payload was originally fetched
+upstream. Sources include provider attribution text, with service-specific wording for each Varsom
+warning feed.
 
 `roads` contains only the first provider page intersecting the WGS84 box in `roadSearch`; it is not
 a geometry-distance result. The default box extends approximately 250 metres from the address to
@@ -338,11 +340,16 @@ console.log(first.cached); // false
 
 const second = await norway.companies.get("923609016");
 console.log(second.cached); // true
+
+norway.clearCache();
+const afterClear = await norway.companies.get("923609016");
+console.log(afterClear.cached); // false
 ```
 
 Caching is disabled by default. When enabled, each client uses a bounded in-memory TTL/LRU cache
 with provider-specific TTLs. Failures are never cached, and `{ bypassCache: true }` skips both
-reads and writes. See [Architecture](docs/architecture.md) for implementation details.
+reads and writes. `clearCache()` removes all entries shared by that `NorwayOpenData` instance. See
+[Architecture](docs/architecture.md) for implementation details.
 
 ## Documentation
 
@@ -415,11 +422,7 @@ Development requires Node.js 22+ and pnpm 10:
 
 ```bash
 pnpm install
-pnpm format:check
-pnpm lint
-pnpm typecheck
-pnpm test:coverage
-pnpm build
+pnpm verify
 ```
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. User-visible changes require

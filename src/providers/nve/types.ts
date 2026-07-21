@@ -29,7 +29,7 @@ export type PowerPlant = {
 
 /** Date and language filters shared by NVE warning feeds. */
 export type HazardWarningParameters = {
-  /** First warning date, as YYYY-MM-DD. Defaults to today in UTC. */
+  /** First warning date, as YYYY-MM-DD. Defaults to today in Europe/Oslo. */
   startDate?: string;
   /** Last warning date, as YYYY-MM-DD. Defaults to startDate. */
   endDate?: string;

@@ -27,6 +27,12 @@ const WARNING_TTL_MS = 5 * 60 * 1_000;
 const STATION_TTL_MS = 24 * 60 * 60 * 1_000;
 const OBSERVATION_TTL_MS = 10 * 60 * 1_000;
 const isoDateSchema = z.iso.date();
+const osloDateFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Europe/Oslo",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
 
 const warningParametersSchema = z.object({
   startDate: isoDateSchema.optional(),
@@ -57,8 +63,8 @@ const observationParametersSchema = z.object({
   endDate: z.iso.datetime({ local: true }).or(z.iso.date()).optional(),
 });
 
-function todayUtc(): string {
-  return new Date().toISOString().slice(0, 10);
+function todayOslo(): string {
+  return osloDateFormatter.format(new Date());
 }
 
 function parseWarningParameters(parameters: HazardWarningParameters): {
@@ -73,7 +79,7 @@ function parseWarningParameters(parameters: HazardWarningParameters): {
       cause: parsed.error,
     });
   }
-  const startDate = parsed.data.startDate ?? todayUtc();
+  const startDate = parsed.data.startDate ?? todayOslo();
   const endDate = parsed.data.endDate ?? startDate;
   if (endDate < startDate) {
     throw new InputValidationError("NVE warning endDate cannot precede startDate.", {
@@ -92,21 +98,33 @@ function normalizeWarnings(raw: RawWarnings, type: HazardWarning["type"]): Hazar
             ...(warning.RegionId == null ? {} : { id: String(warning.RegionId) }),
             ...(warning.RegionName == null ? {} : { name: warning.RegionName }),
           };
-    const counties = (warning.CountyList ?? []).map((county) => ({
-      ...(county.Id == null ? {} : { code: normalizeAdministrativeCode(county.Id, 2) }),
-      name: county.Name.trim(),
-    }));
-    const municipalities = (warning.MunicipalityList ?? []).map((municipality) => ({
-      ...(municipality.Id == null ? {} : { code: normalizeAdministrativeCode(municipality.Id, 4) }),
-      name: municipality.Name.trim(),
-    }));
+    const counties = (warning.CountyList ?? []).map((county) => {
+      const code = county.Id == null ? undefined : normalizeAdministrativeCode(county.Id, 2);
+      return {
+        ...(code === undefined ? {} : { code }),
+        name: county.Name.trim(),
+      };
+    });
+    const municipalities = (warning.MunicipalityList ?? []).map((municipality) => {
+      const code =
+        municipality.Id == null ? undefined : normalizeAdministrativeCode(municipality.Id, 4);
+      return {
+        ...(code === undefined ? {} : { code }),
+        name: municipality.Name.trim(),
+      };
+    });
     const regions = [
       warning.RegionName,
       ...counties.map((county) => county.name),
       ...municipalities.map((municipality) => municipality.name),
     ].filter((value): value is string => value != null && value.length > 0);
     const uniqueRegions = [...new Set(regions)];
-    const idValue = warning.RegId ?? warning.RegionId;
+    const avalancheRegIdIsSentinel =
+      type === "avalanche" &&
+      (warning.RegId === 0 || (typeof warning.RegId === "string" && warning.RegId.trim() === "0"));
+    const idValue = avalancheRegIdIsSentinel
+      ? warning.RegionId
+      : (warning.RegId ?? warning.RegionId);
     const hasCoordinates = warning.Latitude != null || warning.Longitude != null;
     return {
       ...(idValue == null ? {} : { id: String(idValue) }),
@@ -132,9 +150,9 @@ function normalizeWarnings(raw: RawWarnings, type: HazardWarning["type"]): Hazar
   });
 }
 
-function normalizeAdministrativeCode(value: string | number, width: 2 | 4): string {
+function normalizeAdministrativeCode(value: string | number, width: 2 | 4): string | undefined {
   const code = String(value).trim();
-  return /^\d+$/.test(code) ? code.padStart(width, "0") : code;
+  return /^0+$/u.test(code) ? undefined : code.padStart(width, "0");
 }
 
 function normalizeStation(

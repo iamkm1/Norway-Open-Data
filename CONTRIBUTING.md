@@ -13,13 +13,7 @@ Requirements are Node.js 22+ and pnpm 10.
 
 ```bash
 pnpm install
-pnpm format:check
-pnpm lint
-pnpm typecheck
-pnpm test:coverage
-pnpm build
-pnpm run docs
-npm pack --dry-run
+pnpm verify
 ```
 
 Use [Testing](docs/testing.md) for offline fixture rules, opt-in live tests and the built-package

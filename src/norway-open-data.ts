@@ -98,6 +98,7 @@ function resolveConfig(config: NorwayOpenDataConfig): ResolvedConfig {
  * fetch injection, and optional in-memory caching infrastructure.
  */
 export class NorwayOpenData {
+  readonly #cache: MemoryCache;
   readonly companies: BrregClient;
   readonly statistics: SsbClient;
   readonly addresses: KartverketAddressClient;
@@ -117,6 +118,7 @@ export class NorwayOpenData {
   constructor(config: NorwayOpenDataConfig = {}) {
     const resolved = resolveConfig(config);
     const cache = new MemoryCache(resolved.cache.maxEntries);
+    this.#cache = cache;
     const http = new HttpClient(resolved, cache);
     this.companies = new BrregClient(http);
     this.statistics = new SsbClient(http);
@@ -139,5 +141,10 @@ export class NorwayOpenData {
       hasMetIdentity: resolved.applicationName !== undefined && resolved.contactEmail !== undefined,
       hasApplicationName: resolved.applicationName !== undefined,
     });
+  }
+
+  /** Removes every response currently held in this SDK instance's in-memory cache. */
+  clearCache(): void {
+    this.#cache.clear();
   }
 }
