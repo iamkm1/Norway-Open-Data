@@ -1,20 +1,25 @@
 # Adding a provider
 
-New providers must fit the SDK's narrow scope: an official, documented Norwegian public-data API
-with clear access and reuse terms. Scraping, personal data, restricted data, delegated government
-authentication and private agreements are outside scope.
+New sources must fit the SDK's narrow scope. Prefer official, documented Norwegian public-sector
+APIs with clear access and reuse terms. A third-party endpoint is an exception: it must expose a
+distinct public-data capability, document its upstream lineage and reuse expectations, and be
+clearly labelled as independently operated throughout the SDK. Scraping, personal data,
+restricted data, delegated government authentication and private agreements are outside scope.
 
 ## Before implementation
 
 Confirm all of the following:
 
-- The endpoint is official and intended for public or self-service use.
+- The endpoint is documented and intended for public or self-service use.
+- An independently operated endpoint has transparent upstream lineage and no suitable supported
+  official endpoint provides the same capability.
 - Authentication, caller identification, rate limits and traffic rules are documented.
 - The data licence, attribution wording and redistribution constraints are clear.
 - Supported fields do not expose personal, restricted or role-protected data.
 - The provider adds a distinct capability rather than duplicating an existing namespace.
 
-Record official links and legal notes in `PROVIDERS.md` before opening the public API.
+Record authoritative links, source classification, lineage and legal notes in `PROVIDERS.md`
+before opening the public API.
 
 ## Adapter structure
 
@@ -32,7 +37,7 @@ them.
 
 ## Integration checklist
 
-- Add provider metadata, official links, access type, licence and attribution.
+- Add source metadata, authoritative links, classification, access type, licence and attribution.
 - Define meaningful caller identification or credentials only when the provider requires them.
 - Send credentials only to the intended provider host and never include them in cache keys or
   errors.
@@ -57,7 +62,7 @@ Follow [Testing](testing.md) for command and fixture policy.
 
 ## Pull-request checklist
 
-- Link current official API, access, licence and attribution documentation.
+- Link current authoritative API, access, lineage, licence and attribution documentation.
 - Run formatting, linting, type checking, unit coverage, build, TypeDoc and package dry-run checks.
 - Update the README only when the top-level provider or namespace overview changes.
 - Add a Changeset for every user-visible behavior or public API change.

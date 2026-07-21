@@ -28,7 +28,8 @@ export type AddressProfile = {
    * Current NVE warnings whose regions mention the address county or
    * municipality. NVE regions are hydrological and avalanche regions that do
    * not map one-to-one onto municipalities, so this is a best-effort filter;
-   * use the `hazards` namespace directly for the complete national list.
+   * an empty array is not an all-clear. Use the `hazards` namespace and the
+   * complete official Varsom/NVE warning for any safety-related decision.
    */
   hazards: HazardWarning[];
   /** Road segments within 250 m of the coordinate. Omitted without `applicationName`. */

@@ -57,6 +57,10 @@ describe("company profiles", () => {
       matchConfidence: "exact",
       address: { latitude: 59.4111516, longitude: 5.2711408 },
     });
+    expect(response.source.documentation).toBe(
+      "https://github.com/iamkm1/Norway-Open-Data#cross-provider-company-profile",
+    );
+    expect(response.source.id).toBe("brreg+kartverket");
     expect(mock).toHaveBeenCalledTimes(2);
   });
 
@@ -66,6 +70,7 @@ describe("company profiles", () => {
     const { fetch, mock } = sequenceFetch(jsonResponse(payload));
     const response = await new NorwayOpenData({ fetch, retries: 0 }).profiles.company("923609016");
     expect(response.data.location).toBeUndefined();
+    expect(response.source.id).toBe("brreg");
     expect(mock).toHaveBeenCalledTimes(1);
   });
 

@@ -80,7 +80,59 @@ describe("profiles.address", () => {
     expect(response.data.weather?.temperature).toBe(17.2);
     expect(response.data.roads).toHaveLength(1);
     expect(Array.isArray(response.data.hazards)).toBe(true);
+    expect(response.source.documentation).toBe(
+      "https://github.com/iamkm1/Norway-Open-Data#cross-provider-address-profile",
+    );
+    expect(response.source.id).toBe("kartverket+met+nve+vegvesen");
   });
+
+  it.each(["weather", "roads"] as const)(
+    "reports the composite response as fresh when optional %s data is fresh",
+    async (freshProvider) => {
+      const query = "Haraldsgata 100, Haugesund";
+      const { fetch } = routedFetch([
+        ["ws.geonorge.no", addressFixture],
+        ["api.met.no", forecastFixture],
+        ["veglenkesekvenser", roadNetworkFixture],
+        ["flood", warningFixture],
+        ["avalanche", []],
+        ["landslide", []],
+      ]);
+      const sdk = new NorwayOpenData({
+        applicationName: "example-profile",
+        contactEmail: "profile@example.no",
+        fetch,
+        retries: 0,
+        cache: { enabled: true },
+      });
+      const addressResponse = await sdk.addresses.search({ query, limit: 1 });
+      const latitude = addressResponse.data.items[0]?.latitude;
+      const longitude = addressResponse.data.items[0]?.longitude;
+      if (latitude === undefined || longitude === undefined) {
+        throw new Error("Address fixture must include coordinates.");
+      }
+
+      const optionalPrime =
+        freshProvider === "weather"
+          ? sdk.roads.getRoadNetwork({
+              boundingBox: boundingBoxAround(latitude, longitude),
+              pageSize: 10,
+            })
+          : sdk.weather.current({ latitude, longitude });
+      await Promise.all([
+        sdk.hazards.getFloodWarnings(),
+        sdk.hazards.getAvalancheWarnings(),
+        sdk.hazards.getLandslideWarnings(),
+        optionalPrime,
+      ]);
+
+      const response = await sdk.profiles.address(query);
+
+      expect(response.data.weather).toBeDefined();
+      expect(response.data.roads).toBeDefined();
+      expect(response.cached).toBe(false);
+    },
+  );
 
   it("omits weather and roads when identification is not configured", async () => {
     const { fetch, mock } = sequenceFetch(
@@ -97,6 +149,7 @@ describe("profiles.address", () => {
     expect(response.data.weather).toBeUndefined();
     expect(response.data.roads).toBeUndefined();
     expect(response.data.hazards).toEqual([]);
+    expect(response.source.id).toBe("kartverket+nve");
     // Kartverket plus the three anonymous warning endpoints only.
     expect(mock).toHaveBeenCalledTimes(4);
   });

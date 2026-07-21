@@ -270,6 +270,38 @@ describe("StortingetClient", () => {
     expect(mock).toHaveBeenCalledTimes(5);
   });
 
+  it("fetches one full-session export per searchCasesAll iterator when caching is disabled", async () => {
+    const mock = vi.fn(async () => jsonResponse(stortingetCases));
+    const client = makeClient(mock as typeof globalThis.fetch);
+    const cases = [];
+
+    for await (const item of client.searchCasesAll(
+      { sessionId: "2025-2026", size: 1 },
+      { bypassCache: true },
+    )) {
+      cases.push(item);
+    }
+
+    expect(cases.map((item) => item.id)).toEqual(["200386", "63033", "200400"]);
+    expect(mock).toHaveBeenCalledTimes(1);
+  });
+
+  it("applies maxPages to locally computed searchCasesAll pages", async () => {
+    const mock = vi.fn(async () => jsonResponse(stortingetCases));
+    const client = makeClient(mock as typeof globalThis.fetch);
+    const cases = [];
+
+    for await (const item of client.searchCasesAll(
+      { sessionId: "2025-2026", size: 1 },
+      { bypassCache: true, maxPages: 1 },
+    )) {
+      cases.push(item);
+    }
+
+    expect(cases.map((item) => item.id)).toEqual(["200386"]);
+    expect(mock).toHaveBeenCalledTimes(1);
+  });
+
   it("gets and normalizes one detailed case", async () => {
     const { fetch, mock } = sequenceFetch(jsonResponse(stortingetCase));
     const response = await makeClient(fetch).getCase("63033");

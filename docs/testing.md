@@ -42,16 +42,18 @@ The application name is required for Entur and NVDB. MET's live cases are skippe
 email. The NVE HydAPI cases are skipped unless `NVE_HYDAPI_KEY` is set; every other check runs
 anonymously or with caller identification only.
 
-Live checks cover **every public method** across all ten providers, including `profiles` and the
-anonymous `hazards` warnings. Detail lookups are chained from list calls rather than hard-coded
-IDs, so the suite does not rot when upstream records change. Keep requests bounded and do not add
-load or rate-limit bypasses.
+Live checks are representative contract probes across the supported public-sector source adapters,
+the third-party electricity endpoint and both `profiles` compositions. Individual cases may call
+several related methods, but the suite does not claim exhaustive coverage of every method,
+auto-paginating iterator, parameter combination or upstream response variant. Detail lookups are
+chained from list calls rather than hard-coded IDs where practical. Keep requests bounded and do
+not add load or rate-limit bypasses.
 
 ## Scheduled live monitoring
 
-`.github/workflows/live.yml` runs the live suite every Monday and on demand
-(**Actions → Live provider checks → Run workflow**). It never runs on pull requests, so forks
-cannot trigger outbound calls or read repository secrets.
+For authorized maintainers of the currently private repository, `.github/workflows/live.yml` runs
+the live suite every Monday and on demand (**Actions → Live provider checks → Run workflow**). It
+never runs on pull requests, so forks cannot trigger outbound calls or read repository secrets.
 
 Configure once in repository settings:
 
@@ -61,8 +63,8 @@ Configure once in repository settings:
 | `NORWAY_OPEN_DATA_CONTACT_EMAIL`    | Secret   | Monitored contact address required by MET |
 | `NVE_HYDAPI_KEY`                    | Secret   | Optional; enables the two HydAPI checks   |
 
-A failure means an upstream contract changed, not necessarily that the SDK is broken. Inspect the
-provider's response before adjusting a schema.
+A failure can indicate an upstream contract change, temporary provider/network trouble or an SDK
+regression. Inspect the provider response and failing path before adjusting a schema.
 
 ## Built-package smoke test
 
@@ -73,8 +75,9 @@ pnpm build
 pnpm smoke
 ```
 
-The smoke script exercises the built package through 12 mandatory public operations. It uses
-anonymous NVE energy data, reports each pass or failure and exits with status 1 if any check fails.
+The smoke script exercises a bounded set of mandatory public operations through the built package,
+including anonymous NVE energy and third-party electricity data. It reports each pass or failure
+and exits with status 1 if any check fails.
 
 ## Adding tests
 

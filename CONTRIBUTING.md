@@ -1,8 +1,9 @@
 # Contributing
 
 Thank you for improving Norway Open Data SDK. Contributions should preserve its narrow purpose: a
-reusable Node.js interface to official Norwegian public-data APIs. Restricted data, personal data,
-scraping, hosted services, databases and user-account features are outside scope.
+reusable Node.js interface to Norwegian public-sector APIs and explicitly classified, documented
+third-party public-data sources. Restricted data, personal data, scraping, hosted services,
+databases and user-account features are outside scope.
 
 By participating, you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
@@ -27,7 +28,7 @@ smoke test. Routine tests and CI must stay deterministic and must not depend on 
 ## Provider changes
 
 Read [Adding a provider](docs/adding-a-provider.md) before changing an adapter or proposing a new
-provider. Link current official documentation in the pull request, preserve provider-native
+provider. Link current authoritative documentation in the pull request, preserve source-native
 semantics and validate every external response at runtime.
 
 Update [PROVIDERS.md](PROVIDERS.md) whenever access requirements, credentials, licences,
@@ -50,7 +51,7 @@ Use a patch for compatible fixes, a minor for new compatible APIs and a major fo
 
 ## Pull-request checklist
 
-- Link the official API and provider terms relevant to the change.
+- Link the authoritative API documentation, source lineage and terms relevant to the change.
 - Add or update minimal offline fixtures and runtime schemas.
 - Cover input boundaries, malformed responses, errors and normalized output.
 - Review optional raw output for personal, restricted or unsupported fields.

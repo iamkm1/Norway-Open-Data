@@ -47,6 +47,36 @@ console.log(places.data.items.length);
 console.log(nearby.data.items.length);
 ```
 
+## Cross-provider profiles
+
+Profiles compose already validated source responses. Company profiles combine Brønnøysundregistrene
+with a deterministic Kartverket address match. Address profiles begin with Kartverket and can add
+MET conditions, NVE warning discovery and nearby NVDB road segments:
+
+```ts
+import { NorwayOpenData } from "norway-open-data-sdk";
+
+const norway = new NorwayOpenData({
+  applicationName: "acme-location-dashboard",
+  contactEmail: "open-data@acme.example",
+});
+
+const company = await norway.profiles.company("923609016");
+const address = await norway.profiles.address("Haraldsgata 100, Haugesund");
+
+console.log(company.data.location);
+console.log(address.data.address);
+console.log(address.data.weather);
+console.log(address.data.hazards);
+console.log(address.data.roads);
+```
+
+Weather and roads are omitted when their required caller identification is unavailable. Hazard
+matching is also intentionally best-effort: NVE warning regions do not map one-to-one to address
+municipalities or counties. An empty `address.data.hazards` array is never an all-clear. For any
+safety decision, query the complete official Varsom/NVE warnings directly and follow their current
+guidance.
+
 ## Statistics
 
 SSB value codes are table-specific. Fetch metadata before constructing a dynamic query:
@@ -137,6 +167,38 @@ A multi-type search makes one provider request per requested type and combines t
 locally. Combined paging is bounded to the first 100 positions of the type-ordered combined result;
 request one type when deeper provider paging is needed.
 
+## Auto-paginating iterators
+
+Five list APIs provide async iterators. They fetch the next numbered page or opaque continuation
+marker only when iteration advances:
+
+```ts
+import { NorwayOpenData } from "norway-open-data-sdk";
+
+const norway = new NorwayOpenData({ applicationName: "acme-bounded-export" });
+const bounds = { maxItems: 50, maxPages: 5 };
+
+const companies = norway.companies.searchAll({ municipalityCode: "1106" }, bounds);
+const datasets = norway.catalog.searchAll({ query: "transport", type: ["dataset"] }, bounds);
+const cases = norway.parliament.searchCasesAll({ sessionId: "2025-2026" }, bounds);
+const roadObjects = norway.roads.searchRoadObjectsAll({ typeId: 105 }, bounds);
+const roadSegments = norway.roads.getRoadNetworkAll({}, bounds);
+
+for await (const company of companies) {
+  console.log(company.organizationNumber, company.name);
+}
+
+void datasets;
+void cases;
+void roadObjects;
+void roadSegments;
+```
+
+All five iterators accept the normal request options together with `maxItems` and `maxPages`.
+`maxItems` must be a non-negative integer. `maxPages` must be an integer from 1 to 100 and defaults
+to 100; set explicit bounds for batch jobs. Data.norge multi-type searches keep their 100-position
+combined-window limit, and NVDB continuation markers remain opaque.
+
 ## Currency and interest rates
 
 Norges Bank access is anonymous. With no date or range, `getExchangeRate()` returns the latest
@@ -175,6 +237,28 @@ weekends, holidays, and other missing dates; the SDK never moves or interpolates
 non-NOK currency pair, it cross-calculates only dates shared by both official NOK series and retains
 their identifiers in `sourceSeriesIds`. An unbounded latest cross request examines the last 10
 observations per series; provide a range when an older common date may be required.
+
+## Third-party electricity spot prices
+
+The `electricity` namespace uses Hva koster strømmen?, an independent third-party public API rather
+than a government endpoint. Its API page says it fetches electricity prices from ENTSO-E in EUR and
+converts them to NOK with the latest Norges Bank exchange rate:
+
+```ts
+import { NorwayOpenData } from "norway-open-data-sdk";
+
+const norway = new NorwayOpenData();
+const day = await norway.electricity.getPrices({ area: "NO1", date: "2026-07-21" });
+const current = await norway.electricity.getCurrentPrice({ area: "NO5" });
+
+console.table(day.data);
+console.log(current.data?.nokPerKwh);
+```
+
+Values exclude grid rent, taxes and supplier surcharges. The provider warns that its converted NOK
+values can differ from official NOK market publications and asks public users to cite
+hvakosterstrommen.no. Next-day data normally appears in the early afternoon; requesting an
+unpublished date raises `NotFoundError`.
 
 ## Parliament
 

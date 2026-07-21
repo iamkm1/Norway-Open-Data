@@ -146,6 +146,14 @@ await check("NVE energy.getReservoirStatistics", async () => {
   )}`;
 });
 
+await check("Hva koster strømmen electricity.getPrices", async () => {
+  const response = await norway.electricity.getPrices({ area: "NO1" });
+  const first = response.data[0];
+  requireResult(first !== undefined, "Hva koster strømmen returned no hourly prices.");
+  requireResult(first.area === "NO1", "Electricity prices used an unexpected bidding zone.");
+  return `${response.data.length} interval(s); first NOK/kWh=${String(first.nokPerKwh)}`;
+});
+
 if (failures > 0) {
   console.error(`${String(failures)} smoke test(s) failed.`);
   process.exitCode = 1;

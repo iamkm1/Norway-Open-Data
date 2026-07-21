@@ -66,6 +66,26 @@ describe("NVE clients", () => {
     expect(combined.raw).toMatchObject({ hydropower: hydropowerFixture, wind: windFixture });
   });
 
+  it("retains NVE's published negative pumped-storage figures", async () => {
+    const negativePlant = [
+      {
+        ...hydropowerFixture[0],
+        VannKraftverkID: 999,
+        Navn: "Pumped storage test plant",
+        MaksYtelse: -12.5,
+        MidProd_91_20: -4.25,
+      },
+    ];
+    const { fetch } = sequenceFetch(jsonResponse(negativePlant));
+    const response = await new NorwayOpenData({ fetch, retries: 0 }).energy.getHydropowerPlants();
+
+    expect(response.data[0]).toMatchObject({
+      id: "999",
+      capacityMw: -12.5,
+      annualProductionGwh: -4.25,
+    });
+  });
+
   it.each([
     ["getFloodWarnings", "flood/v1.0.10/api/Warning/2", "flood"],
     ["getAvalancheWarnings", "avalanche/v6.3.2/api/Warning/All/2", "avalanche"],

@@ -15,6 +15,12 @@ import type { ResolvedConfig } from "../../src/core/types.js";
 import { VegvesenClient } from "../../src/providers/vegvesen/client.js";
 import { jsonResponse, sequenceFetch } from "./helpers.js";
 
+async function collect<T>(source: AsyncGenerator<T, void, undefined>): Promise<T[]> {
+  const items: T[] = [];
+  for await (const item of source) items.push(item);
+  return items;
+}
+
 function createClient(
   fetch: typeof globalThis.fetch,
   applicationName: string | null = "norway-open-data-sdk-tests",
@@ -173,6 +179,32 @@ describe("VegvesenClient", () => {
       },
     });
     expect(response.data.pagination.nextStart).toBe("281042:5");
+  });
+
+  it("iterates road objects through opaque continuation markers", async () => {
+    const terminal = {
+      objekter: nvdbRoadObjects.objekter,
+      metadata: { antall: 12, returnert: 1, sidestørrelse: 1 },
+    };
+    const { fetch, mock } = sequenceFetch(jsonResponse(nvdbRoadObjects), jsonResponse(terminal));
+
+    const items = await collect(createClient(fetch).searchRoadObjectsAll({ typeId: 105 }));
+
+    expect(items).toHaveLength(2);
+    expect(new URL(String(mock.mock.calls[1]?.[0])).searchParams.get("start")).toBe("79558610:2");
+  });
+
+  it("iterates road-network segments through opaque continuation markers", async () => {
+    const terminal = {
+      objekter: nvdbRoadNetwork.objekter,
+      metadata: { returnert: 1, sidestørrelse: 1 },
+    };
+    const { fetch, mock } = sequenceFetch(jsonResponse(nvdbRoadNetwork), jsonResponse(terminal));
+
+    const items = await collect(createClient(fetch).getRoadNetworkAll());
+
+    expect(items).toHaveLength(2);
+    expect(new URL(String(mock.mock.calls[1]?.[0])).searchParams.get("start")).toBe("281042:5");
   });
 
   it("requires applicationName before making any NVDB request", async () => {

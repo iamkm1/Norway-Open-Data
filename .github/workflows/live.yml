@@ -1,6 +1,6 @@
 name: Live provider checks
 
-# Detects upstream contract changes in the official APIs before consumers do.
+# Detects upstream contract changes in supported source APIs before consumers do.
 # Runs weekly and on demand; never on pull requests, so forks and untrusted
 # code can never trigger outbound calls or read repository secrets.
 on:
@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   live:
-    name: Official provider APIs
+    name: Supported source APIs
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

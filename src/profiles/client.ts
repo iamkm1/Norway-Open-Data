@@ -10,19 +10,43 @@ import { boundingBoxAround, warningMatchesArea } from "./address-profile.js";
 import { selectAddressMatch } from "./company-profile.js";
 import type { AddressProfile, CompanyProfile } from "./types.js";
 
-const profileSource = {
-  id: "brreg+kartverket",
-  name: "Brønnøysundregistrene and Kartverket",
-  homepage: "https://www.npmjs.com/package/norway-open-data-sdk",
-  documentation: "https://www.npmjs.com/package/norway-open-data-sdk#company-profiles",
-};
+const PROJECT_URL = "https://github.com/iamkm1/Norway-Open-Data";
 
-const addressProfileSource = {
-  id: "kartverket+met+nve+vegvesen",
-  name: "Kartverket, MET Norway, NVE and Statens vegvesen",
-  homepage: "https://www.npmjs.com/package/norway-open-data-sdk",
-  documentation: "https://www.npmjs.com/package/norway-open-data-sdk#address-profiles",
-};
+type ProfileSourcePart = { id: string; name: string };
+type ProfileSource = ProfileSourcePart & { homepage: string; documentation: string };
+
+function profileSource(parts: ProfileSourcePart[], documentationAnchor: string): ProfileSource {
+  const names = parts.map((part) => part.name);
+  const finalName = names.at(-1) ?? "Norwegian public data";
+  return {
+    id: parts.map((part) => part.id).join("+"),
+    name: names.length < 2 ? finalName : `${names.slice(0, -1).join(", ")} and ${finalName}`,
+    homepage: PROJECT_URL,
+    documentation: `${PROJECT_URL}#${documentationAnchor}`,
+  };
+}
+
+function companyProfileSource(includeKartverket: boolean): ProfileSource {
+  return profileSource(
+    [
+      { id: "brreg", name: "Brønnøysundregistrene" },
+      ...(includeKartverket ? [{ id: "kartverket", name: "Kartverket" }] : []),
+    ],
+    "cross-provider-company-profile",
+  );
+}
+
+function addressProfileSource(includeWeather: boolean, includeRoads: boolean): ProfileSource {
+  return profileSource(
+    [
+      { id: "kartverket", name: "Kartverket" },
+      ...(includeWeather ? [{ id: "met", name: "MET Norway" }] : []),
+      { id: "nve", name: "NVE" },
+      ...(includeRoads ? [{ id: "vegvesen", name: "Statens vegvesen" }] : []),
+    ],
+    "cross-provider-address-profile",
+  );
+}
 
 /**
  * Providers used by cross-provider address enrichment, plus the identification
@@ -77,9 +101,10 @@ export class ProfileClient {
    * Answers one location from several providers at once.
    *
    * Resolves the address through Kartverket, then adds conditions from MET
-   * Norway, matching NVE warnings, and the road segments around the
-   * coordinate. Sections whose provider needs identification the client does
-   * not have are omitted rather than failing the call.
+   * Norway, best-effort NVE region matches, and the road segments around the
+   * coordinate. A missing warning match is not an all-clear. Sections whose
+   * provider needs identification the client does not have are omitted rather
+   * than failing the call.
    */
   async address(
     query: string,
@@ -140,7 +165,7 @@ export class ProfileClient {
 
     return createResponse(
       profile,
-      addressProfileSource,
+      addressProfileSource(weather !== undefined, roads !== undefined),
       {
         addressSearch: addressResponse.raw,
         floodWarnings: flood.raw,
@@ -149,7 +174,12 @@ export class ProfileClient {
         ...(weather === undefined ? {} : { weather: weather.raw }),
         ...(roads === undefined ? {} : { roadNetwork: roads.raw }),
       },
-      addressResponse.cached && flood.cached && avalanche.cached && landslide.cached,
+      addressResponse.cached &&
+        flood.cached &&
+        avalanche.cached &&
+        landslide.cached &&
+        (weather?.cached ?? true) &&
+        (roads?.cached ?? true),
       options,
     );
   }
@@ -169,7 +199,7 @@ export class ProfileClient {
     if (!hasUsableAddress(businessAddress) || businessAddress === undefined) {
       return createResponse(
         { company },
-        profileSource,
+        companyProfileSource(false),
         { company: companyResponse.raw },
         companyResponse.cached,
         options,
@@ -198,7 +228,7 @@ export class ProfileClient {
         company,
         ...(match === undefined ? {} : { location: match }),
       },
-      profileSource,
+      companyProfileSource(true),
       { company: companyResponse.raw, addressSearch: addressResponse.raw },
       companyResponse.cached && addressResponse.cached,
       options,

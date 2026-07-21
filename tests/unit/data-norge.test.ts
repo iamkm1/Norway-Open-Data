@@ -14,6 +14,12 @@ import { DataNorgeClient } from "../../src/providers/data-norge/client.js";
 import { dataNorgePublisherTurtle } from "../fixtures/data-norge-publisher.js";
 import { jsonResponse, sequenceFetch } from "./helpers.js";
 
+async function collect<T>(source: AsyncGenerator<T, void, undefined>): Promise<T[]> {
+  const items: T[] = [];
+  for await (const item of source) items.push(item);
+  return items;
+}
+
 function createClient(fetch: typeof globalThis.fetch, cacheEnabled = false): DataNorgeClient {
   return new DataNorgeClient(
     new HttpClient({
@@ -94,6 +100,45 @@ describe("Data.norge catalogue", () => {
       "https://search.api.fellesdatakatalog.digdir.no/search/datasets",
       "https://search.api.fellesdatakatalog.digdir.no/search/data-services",
     ]);
+  });
+
+  it("stops multi-type searchAll cleanly at the 100-position combined window", async () => {
+    const datasetHit = searchFixture.hits[0];
+    const serviceHit = dataServiceSearchFixture.hits[0];
+    if (datasetHit === undefined || serviceHit === undefined) {
+      throw new Error("Data.norge fixtures must contain one search hit each.");
+    }
+    const mock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const requestedSize = (JSON.parse(String(init?.body)) as { pagination: { size: number } })
+        .pagination.size;
+      const isService = String(input).endsWith("/data-services");
+      const template = isService ? serviceHit : datasetHit;
+      const hits = Array.from({ length: requestedSize }, (_, index) => ({
+        ...template,
+        id: `${isService ? "service" : "dataset"}-${String(index)}`,
+      }));
+      return jsonResponse({
+        hits,
+        aggregations: {},
+        page: {
+          currentPage: 0,
+          size: requestedSize,
+          totalElements: 200,
+          totalPages: Math.ceil(200 / requestedSize),
+        },
+      });
+    });
+
+    const items = await collect(
+      createClient(mock as typeof globalThis.fetch).searchAll({
+        query: "weather",
+        type: ["dataset", "data-service"],
+        size: 60,
+      }),
+    );
+
+    expect(items).toHaveLength(100);
+    expect(mock).toHaveBeenCalledTimes(4);
   });
 
   it("normalizes stable dataset and data-service resource responses", async () => {

@@ -9,30 +9,34 @@ One typed TypeScript interface for Norwegian public data.
 
 Norway Open Data SDK provides a consistent, runtime-validated client for official Norwegian APIs
 from Brønnøysundregistrene, SSB, Kartverket, Entur, MET Norway, Data.norge, Norges Bank,
-Stortinget, Statens vegvesen, NVE and Hva koster strømmen?
+Stortinget, Statens vegvesen and NVE. It also wraps the documented third-party public electricity
+API from Hva koster strømmen?.
 
-- 11 public-data providers
+- 10 public-sector data sources plus 1 third-party derived API
 - 14 service namespaces
 - 53 public methods
 - Runtime-validated responses
 - Cross-provider profiles that answer one question from several agencies
 - Auto-paginating async iterators for list endpoints
 - ESM, CommonJS and TypeScript support
-- 230 automated tests, plus 31 live contract checks run weekly
-- 94% statement and line coverage
+- Deterministic offline tests plus representative opt-in live contract probes
+- Enforced statement, branch, function and line coverage gates
 
-Requests go directly from your Node.js application to the official APIs. The SDK has no hosted
+Requests go directly from your Node.js application to the source API. The SDK has no hosted
 backend, database, account system or scraping layer.
 
 ## Installation
 
 Requires Node.js 20 or newer. TypeScript declarations are included.
 
+Version `0.2.0` is unreleased, and there is currently no installable npm version. After an
+authorized npm release, installation will be:
+
 ```bash
 npm install norway-open-data-sdk
 ```
 
-For local installation:
+For collaborators with repository access, build a local tarball:
 
 ```bash
 git clone https://github.com/iamkm1/Norway-Open-Data.git
@@ -72,12 +76,12 @@ const profile = await norway.profiles.company("923609016");
 console.log(profile.data.location);
 ```
 
-Anonymous providers work without configuration. Entur and NVDB require `applicationName`; MET
+Anonymous methods work without configuration. Entur and NVDB require `applicationName`; MET
 requires `applicationName` and `contactEmail`; NVE HydAPI requires the caller's own API key.
 
 ## Supported providers
 
-| Provider                | Namespace             | Capabilities                                                   | Access                         |
+| Source                  | Namespace             | Capabilities                                                   | Access                         |
 | ----------------------- | --------------------- | -------------------------------------------------------------- | ------------------------------ |
 | Brønnøysundregistrene   | `companies`           | Organizations, search and sub-entities                         | Anonymous                      |
 | Statistics Norway / SSB | `statistics`          | PxWeb metadata and JSON-stat2 data                             | Anonymous                      |
@@ -89,10 +93,14 @@ requires `applicationName` and `contactEmail`; NVE HydAPI requires the caller's 
 | Stortinget              | `parliament`          | Representatives, parties, cases, votes, questions and meetings | Anonymous                      |
 | Statens vegvesen / NVDB | `roads`               | Road metadata, objects and network segments                    | Identification required        |
 | NVE                     | `energy`, `hazards`   | Energy data, warnings and hydrology                            | Anonymous; API key for HydAPI  |
-| Hva koster strømmen?    | `electricity`         | Hourly spot prices for all five bidding zones                  | Anonymous                      |
+| Hva koster strømmen?    | `electricity`         | Hourly spot prices for all five bidding zones                  | Anonymous third-party API      |
 
 `profiles` composes several providers into one answer: `company` combines Brønnøysundregistrene
 with a Kartverket address match, and `address` combines Kartverket, MET Norway, NVE and NVDB.
+
+Hva koster strømmen? is an independent third-party service, not a government or official data
+provider. Its documentation says the API derives EUR electricity prices from ENTSO-E and converts
+them to NOK using the latest Norges Bank exchange rate.
 
 See the [complete capability matrix](docs/capabilities.md) for every namespace, method, access
 requirement and known limitation.
@@ -142,7 +150,14 @@ console.log(place.data.roads); // NVDB segments within 250 m
 Enrichment degrades gracefully: `weather` and `roads` are omitted when the client has no
 `applicationName`/`contactEmail`, rather than failing the whole call.
 
+> **Safety:** `place.data.hazards` is best-effort warning discovery based on area-name matching.
+> An empty or omitted match is never an all-clear. For any safety decision, consult the current,
+> complete official warnings directly from Varsom/NVE and follow their guidance.
+
 ### Electricity spot prices
+
+This namespace uses the third-party Hva koster strømmen? API. The provider documents the values as
+ENTSO-E electricity prices in EUR converted to NOK with a Norges Bank exchange rate.
 
 ```ts
 const prices = await norway.electricity.getPrices({ area: "NO1" });
@@ -167,6 +182,9 @@ Bound the walk with `maxItems` or `maxPages`:
 ```ts
 const iterator = norway.catalog.searchAll({ query: "transport" }, { maxItems: 50 });
 ```
+
+`maxItems` must be a non-negative integer. `maxPages` must be an integer from 1 to 100 and defaults
+to 100.
 
 Available on `companies.searchAll`, `catalog.searchAll`, `parliament.searchCasesAll`,
 `roads.searchRoadObjectsAll` and `roads.getRoadNetworkAll`.
@@ -315,7 +333,7 @@ flowchart LR
   Facade[NorwayOpenData facade]
   Adapters[Provider adapters]
   Core[HTTP, validation, retry and cache]
-  APIs[Official Norwegian public APIs]
+  APIs[Public-sector APIs and documented third-party API]
 
   App --> Facade
   Facade --> Adapters
@@ -343,8 +361,9 @@ Generate the TypeDoc API reference locally with:
 pnpm run docs
 ```
 
-TypeDoc writes to `docs/api`; open `docs/api/index.html`. The generated reference is not currently
-hosted.
+TypeDoc writes to `docs/api`; open `docs/api/index.html`. Because the repository is currently
+private and `0.2.0` is unreleased, no public TypeDoc site is available. The Pages workflow is
+prepared for an authorized future deployment.
 
 ## Testing
 
@@ -353,7 +372,8 @@ pnpm test
 pnpm test:coverage
 ```
 
-Live tests are opt-in and call the official providers:
+Live tests are opt-in representative contract probes against the supported public-sector APIs and
+the third-party electricity endpoint:
 
 ```bash
 NORWAY_OPEN_DATA_APPLICATION_NAME=my-application \
@@ -397,6 +417,10 @@ The SDK source code is available under the [MIT Licence](LICENSE). MIT does not 
 to returned data: every provider or dataset retains its own terms, licence, traffic limits and
 attribution requirements. Users must follow those terms when using or redistributing data.
 
+Hva koster strømmen? is an independent third-party service. Its API page describes ENTSO-E as the
+electricity-data source and Norges Bank as the exchange-rate source; see [PROVIDERS.md](PROVIDERS.md)
+for the documented lineage and attribution notes.
+
 **Norway Open Data SDK is an independent open-source project. It is not affiliated with, sponsored
 by or endorsed by Norwegian public authorities.**
 
@@ -407,6 +431,10 @@ Personal and restricted data are outside the project scope.
 - The SDK targets Node.js 20+; browser support is not guaranteed.
 - Upstream API contracts and response shapes can change independently of the SDK.
 - Some providers require caller identification, a contact email or a free API key.
+- Address-profile warning matches are best-effort discovery only and never constitute an
+  all-clear; use the complete official Varsom/NVE services for safety decisions.
+- The electricity namespace depends on a third-party derived API rather than an official
+  government endpoint.
 - The optional cache is in-process only and is not shared or persistent.
 - Protected endpoints, personal data, write operations and delegated authentication are not
   supported.

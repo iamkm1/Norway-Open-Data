@@ -121,9 +121,9 @@ export const providers = {
     documentation: "https://www.hvakosterstrommen.no/strompris-api",
     access: "open",
     authentication: "None.",
-    license: "Free public API; prices are derived from Nord Pool day-ahead market data",
+    license: "Provider describes the API as open and free; no standardized licence stated",
     attribution:
-      "Credit hvakosterstrommen.no, and observe Nord Pool's terms as the underlying price source.",
+      "Credit hvakosterstrommen.no; its API states that it sources euro prices from ENTSO-E and converts them using Norges Bank exchange rates.",
   },
 } as const satisfies Record<string, ProviderMetadata>;
 

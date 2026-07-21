@@ -1,11 +1,9 @@
 name: API reference
 
-# Publishes the generated TypeDoc reference to GitHub Pages.
-# Enable once under Settings → Pages → Source: GitHub Actions.
-on:
-  push:
-    branches: ["main"]
-  workflow_dispatch:
+# Publishes the generated TypeDoc reference to GitHub Pages only after an
+# explicit manual action. Enable first under Settings → Pages → Source:
+# GitHub Actions, then run this workflow when the documentation should go live.
+on: workflow_dispatch
 
 permissions:
   contents: read

@@ -3,8 +3,8 @@ import { z } from "zod";
 import { createResponse, HttpClient } from "../../core/client.js";
 import { InputValidationError, NotFoundError, ResponseValidationError } from "../../core/errors.js";
 import { providers, responseSource } from "../../core/metadata.js";
-import { paginatePages, type PaginateOptions } from "../../core/paginate.js";
-import type { OpenDataResponse, RequestOptions } from "../../core/types.js";
+import { resolvePaginateOptions, type PaginateOptions } from "../../core/paginate.js";
+import type { HttpResult, OpenDataResponse, RequestOptions } from "../../core/types.js";
 import {
   casesResponseSchema,
   meetingsResponseSchema,
@@ -104,6 +104,7 @@ const caseSearchParametersSchema = z.object({
   page: z.number().int().nonnegative().optional(),
   size: z.number().int().positive().max(MAX_LOCAL_PAGE_SIZE).optional(),
 });
+type ParsedCaseSearchParameters = z.infer<typeof caseSearchParametersSchema>;
 
 const questionStatusSchema = z.enum([
   "ikke_spesifisert",
@@ -250,6 +251,23 @@ function normalizeCase(raw: RawParliamentaryCase, fallbackSession?: string): Par
   };
 }
 
+function filterCases(
+  items: RawParliamentaryCase[],
+  parameters: ParsedCaseSearchParameters,
+): RawParliamentaryCase[] {
+  const query = parameters.query?.toLocaleLowerCase("nb-NO");
+  return items.filter((item) => {
+    const normalizedStatus = mappedValue(CASE_STATUS_BY_CODE, item.status);
+    const normalizedType = mappedValue(CASE_TYPE_BY_CODE, item.type);
+    if (parameters.status !== undefined && normalizedStatus !== parameters.status) return false;
+    if (parameters.type !== undefined && normalizedType !== parameters.type) return false;
+    if (query === undefined) return true;
+    return [item.tittel, item.korttittel, item.henvisning]
+      .filter((value): value is string => value != null)
+      .some((value) => value.toLocaleLowerCase("nb-NO").includes(query));
+  });
+}
+
 function normalizeNonnegativeCount(value: number | null | undefined): number | undefined {
   return value != null && value >= 0 ? value : undefined;
 }
@@ -338,6 +356,29 @@ export class StortingetClient {
   /** @internal */
   constructor(http: HttpClient) {
     this.#http = http;
+  }
+
+  async #getCasesExport(
+    sessionId: string | undefined,
+    options?: RequestOptions,
+  ): Promise<HttpResult<z.infer<typeof casesResponseSchema>>> {
+    return this.#http.request({
+      provider: "stortinget",
+      url: `${BASE_URL}/saker`,
+      query: { format: "json", sesjonid: sessionId },
+      schema: casesResponseSchema,
+      transform: (data) => {
+        if (sessionId !== undefined && data.sesjon_id !== sessionId) {
+          throw new ResponseValidationError(
+            "Stortinget returned a different parliamentary session than requested.",
+            { provider: "stortinget" },
+          );
+        }
+        return data;
+      },
+      options,
+      cacheTtlMs: PARLIAMENTARY_DATA_TTL_MS,
+    });
   }
 
   /** Gets elected representatives for the current or a specified parliamentary period. */
@@ -478,34 +519,8 @@ export class StortingetClient {
   ): Promise<OpenDataResponse<ParliamentaryCaseSearchResult>> {
     const parsed = caseSearchParametersSchema.safeParse(parameters);
     if (!parsed.success) throw invalidInput("Invalid parliamentary case search.", parsed.error);
-    const result = await this.#http.request({
-      provider: "stortinget",
-      url: `${BASE_URL}/saker`,
-      query: { format: "json", sesjonid: parsed.data.sessionId },
-      schema: casesResponseSchema,
-      transform: (data) => {
-        if (parsed.data.sessionId !== undefined && data.sesjon_id !== parsed.data.sessionId) {
-          throw new ResponseValidationError(
-            "Stortinget returned a different parliamentary session than requested.",
-            { provider: "stortinget" },
-          );
-        }
-        return data;
-      },
-      options,
-      cacheTtlMs: PARLIAMENTARY_DATA_TTL_MS,
-    });
-    const query = parsed.data.query?.toLocaleLowerCase("nb-NO");
-    const filtered = result.data.saker_liste.filter((item) => {
-      const normalizedStatus = mappedValue(CASE_STATUS_BY_CODE, item.status);
-      const normalizedType = mappedValue(CASE_TYPE_BY_CODE, item.type);
-      if (parsed.data.status !== undefined && normalizedStatus !== parsed.data.status) return false;
-      if (parsed.data.type !== undefined && normalizedType !== parsed.data.type) return false;
-      if (query === undefined) return true;
-      return [item.tittel, item.korttittel, item.henvisning]
-        .filter((value): value is string => value != null)
-        .some((value) => value.toLocaleLowerCase("nb-NO").includes(query));
-    });
+    const result = await this.#getCasesExport(parsed.data.sessionId, options);
+    const filtered = filterCases(result.data.saker_liste, parsed.data);
     const page = parsed.data.page ?? 0;
     const size = parsed.data.size ?? DEFAULT_LOCAL_PAGE_SIZE;
     const start = page * size;
@@ -526,21 +541,29 @@ export class StortingetClient {
   /**
    * Iterates every matching parliamentary case.
    *
-   * Paging is local to one cached session export, so this walks the filtered
-   * result set without issuing a request per page.
+   * Stortinget publishes one full-session export. The iterator downloads it
+   * once, then walks the filtered result locally even when caching is disabled.
+   * `maxPages` limits the number of locally computed pages yielded.
    */
   async *searchCasesAll(
     parameters: ParliamentaryCaseSearchParameters = {},
     options?: RequestOptions & PaginateOptions,
   ): AsyncGenerator<ParliamentaryCase, void, undefined> {
-    yield* paginatePages(
-      async (page) => {
-        const result = await this.searchCases({ ...parameters, page }, options);
-        return { items: result.data.items, totalPages: result.data.pagination.totalPages };
-      },
-      parameters.page ?? 0,
-      options ?? {},
-    );
+    const parsed = caseSearchParametersSchema.safeParse(parameters);
+    if (!parsed.success) throw invalidInput("Invalid parliamentary case search.", parsed.error);
+    const { maxItems, maxPages } = resolvePaginateOptions(options);
+    if (maxItems === 0) return;
+
+    const result = await this.#getCasesExport(parsed.data.sessionId, options);
+    const filtered = filterCases(result.data.saker_liste, parsed.data);
+    const page = parsed.data.page ?? 0;
+    const size = parsed.data.size ?? DEFAULT_LOCAL_PAGE_SIZE;
+    const start = page * size;
+    const itemLimit = Math.min(maxItems ?? maxPages * size, maxPages * size);
+    const available = filtered.slice(start, start + itemLimit);
+    for (const item of available) {
+      yield normalizeCase(item, result.data.sesjon_id);
+    }
   }
 
   /** Gets detailed information about one parliamentary case. */

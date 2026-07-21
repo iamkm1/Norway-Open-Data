@@ -296,8 +296,9 @@ export class DataNorgeClient {
     const page = parsed.data.page ?? 0;
     const size = parsed.data.size ?? 10;
     const types = parsed.data.type;
-    const multiTypeWindow = (page + 1) * size;
-    if (types !== undefined && types.length > 1 && multiTypeWindow > MAX_MULTI_TYPE_WINDOW) {
+    const multiTypeStart = page * size;
+    const multiTypeWindow = Math.min((page + 1) * size, MAX_MULTI_TYPE_WINDOW);
+    if (types !== undefined && types.length > 1 && multiTypeStart >= MAX_MULTI_TYPE_WINDOW) {
       throw new InputValidationError(
         `Data.norge combined multi-type searches are limited to a ${String(MAX_MULTI_TYPE_WINDOW)}-position result window. Narrow the query or request one type for deeper provider paging.`,
         { provider: "data-norge" },
@@ -352,10 +353,16 @@ export class DataNorgeClient {
       ),
     );
     const allHits = results.flatMap((result) => result.data.hits);
-    const totalItems = results.reduce((sum, result) => sum + result.data.page.totalElements, 0);
+    const providerTotalItems = results.reduce(
+      (sum, result) => sum + result.data.page.totalElements,
+      0,
+    );
+    const totalItems = Math.min(providerTotalItems, MAX_MULTI_TYPE_WINDOW);
     return createResponse(
       {
-        items: allHits.slice(page * size, page * size + size).map(normalizeSearchHit),
+        items: allHits
+          .slice(page * size, Math.min(page * size + size, MAX_MULTI_TYPE_WINDOW))
+          .map(normalizeSearchHit),
         pagination: {
           page,
           size,

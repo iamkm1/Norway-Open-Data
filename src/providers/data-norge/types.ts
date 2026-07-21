@@ -51,6 +51,7 @@ export type CatalogResource = {
 export type CatalogSearchPagination = {
   page: number;
   size: number;
+  /** Accessible result count; multi-type searches are capped at their 100-position window. */
   totalItems: number;
   totalPages: number;
 };

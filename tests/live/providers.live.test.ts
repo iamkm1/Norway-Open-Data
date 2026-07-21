@@ -4,9 +4,15 @@ import { NorwayOpenData } from "../../src/index.js";
 
 const enabled = process.env["RUN_LIVE_TESTS"] === "true";
 const live = enabled ? describe : describe.skip;
-const applicationName = process.env["NORWAY_OPEN_DATA_APPLICATION_NAME"];
-const contactEmail = process.env["NORWAY_OPEN_DATA_CONTACT_EMAIL"];
-const nveApiKey = process.env["NVE_HYDAPI_KEY"];
+
+function optionalEnvironmentValue(name: string): string | undefined {
+  const value = process.env[name]?.trim();
+  return value === undefined || value.length === 0 ? undefined : value;
+}
+
+const applicationName = optionalEnvironmentValue("NORWAY_OPEN_DATA_APPLICATION_NAME");
+const contactEmail = optionalEnvironmentValue("NORWAY_OPEN_DATA_CONTACT_EMAIL");
+const nveApiKey = optionalEnvironmentValue("NVE_HYDAPI_KEY");
 
 const noMetIdentity = applicationName === undefined || contactEmail === undefined;
 const noHydApiKey = nveApiKey === undefined;

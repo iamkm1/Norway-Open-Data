@@ -1,11 +1,13 @@
-/** Default cap on provider requests made by one auto-paginating iterator. */
+import { InputValidationError } from "./errors.js";
+
+/** Default cap on logical page or continuation batches walked by one iterator. */
 const DEFAULT_MAX_PAGES = 100;
 
 /** Bounds applied to an auto-paginating iterator. */
 export type PaginateOptions = {
-  /** Stops after yielding this many items. Defaults to unlimited. */
+  /** Stops after yielding this many items. Zero avoids any request. Defaults to unlimited. */
   maxItems?: number;
-  /** Stops after this many provider requests. Defaults to 100. */
+  /** Stops after this many logical pages or continuation batches. Must be 1-100. */
   maxPages?: number;
 };
 
@@ -21,9 +23,28 @@ export type CursorResult<T> = {
   nextCursor?: string;
 };
 
-function pageLimit(options: PaginateOptions): number {
-  const configured = options.maxPages ?? DEFAULT_MAX_PAGES;
-  return configured > 0 ? configured : DEFAULT_MAX_PAGES;
+/** Validated bounds shared by every auto-paginating iterator. @internal */
+export type ResolvedPaginateOptions = {
+  maxItems?: number;
+  maxPages: number;
+};
+
+/** @internal */
+export function resolvePaginateOptions(options: PaginateOptions = {}): ResolvedPaginateOptions {
+  const { maxItems } = options;
+  if (maxItems !== undefined && (!Number.isSafeInteger(maxItems) || maxItems < 0)) {
+    throw new InputValidationError("maxItems must be a non-negative safe integer.");
+  }
+
+  const maxPages = options.maxPages ?? DEFAULT_MAX_PAGES;
+  if (!Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > DEFAULT_MAX_PAGES) {
+    throw new InputValidationError("maxPages must be a safe integer between 1 and 100.");
+  }
+
+  return {
+    ...(maxItems === undefined ? {} : { maxItems }),
+    maxPages,
+  };
 }
 
 /**
@@ -39,7 +60,8 @@ export async function* paginatePages<T>(
   startPage: number,
   options: PaginateOptions = {},
 ): AsyncGenerator<T, void, undefined> {
-  const maxPages = pageLimit(options);
+  const { maxItems, maxPages } = resolvePaginateOptions(options);
+  if (maxItems === 0) return;
   let page = startPage;
   let emitted = 0;
   for (let request = 0; request < maxPages; request += 1) {
@@ -47,7 +69,7 @@ export async function* paginatePages<T>(
     for (const item of items) {
       yield item;
       emitted += 1;
-      if (options.maxItems !== undefined && emitted >= options.maxItems) return;
+      if (maxItems !== undefined && emitted >= maxItems) return;
     }
     if (items.length === 0) return;
     page += 1;
@@ -65,7 +87,8 @@ export async function* paginateCursor<T>(
   startCursor: string | undefined,
   options: PaginateOptions = {},
 ): AsyncGenerator<T, void, undefined> {
-  const maxPages = pageLimit(options);
+  const { maxItems, maxPages } = resolvePaginateOptions(options);
+  if (maxItems === 0) return;
   let cursor = startCursor;
   let emitted = 0;
   for (let request = 0; request < maxPages; request += 1) {
@@ -73,7 +96,7 @@ export async function* paginateCursor<T>(
     for (const item of items) {
       yield item;
       emitted += 1;
-      if (options.maxItems !== undefined && emitted >= options.maxItems) return;
+      if (maxItems !== undefined && emitted >= maxItems) return;
     }
     if (items.length === 0 || nextCursor === undefined) return;
     cursor = nextCursor;

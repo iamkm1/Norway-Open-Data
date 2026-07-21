@@ -5,7 +5,9 @@ must require separate explicit authorization.
 
 ## Source and contracts
 
-- [ ] Verify every changed provider against current official documentation.
+- [ ] Verify every changed source against current authoritative documentation.
+- [ ] Confirm official and independently operated sources are classified accurately and derived
+      data has documented lineage.
 - [ ] Confirm endpoints are public or documented self-service endpoints, with no scraping.
 - [ ] Update runtime schemas, fixtures, normalized types, metadata, terms, attribution, and limits.
 - [ ] Confirm restricted and personal data remain outside supported methods.

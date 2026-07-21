@@ -1,6 +1,7 @@
 import companyFixture from "../fixtures/brreg-company.json" with { type: "json" };
 import { describe, expect, it, vi } from "vitest";
 
+import { InputValidationError } from "../../src/core/errors.js";
 import { paginateCursor, paginatePages } from "../../src/core/paginate.js";
 import { NorwayOpenData } from "../../src/index.js";
 import { jsonResponse } from "./helpers.js";
@@ -35,6 +36,25 @@ describe("paginatePages", () => {
     expect(fetchPage).toHaveBeenCalledTimes(2);
   });
 
+  it("does not request or yield anything when maxItems is zero", async () => {
+    const fetchPage = vi.fn(async () => ({ items: [1], totalPages: 1 }));
+
+    expect(await collect(paginatePages(fetchPage, 0, { maxItems: 0 }))).toEqual([]);
+    expect(fetchPage).not.toHaveBeenCalled();
+  });
+
+  it.each([-1, Number.NaN, Number.POSITIVE_INFINITY, 1.5])(
+    "rejects invalid maxItems %s before requesting",
+    async (maxItems) => {
+      const fetchPage = vi.fn(async () => ({ items: [1], totalPages: 1 }));
+      const result = collect(paginatePages(fetchPage, 0, { maxItems }));
+
+      await expect(result).rejects.toBeInstanceOf(InputValidationError);
+      await expect(result).rejects.toThrow(/maxItems/u);
+      expect(fetchPage).not.toHaveBeenCalled();
+    },
+  );
+
   it("caps runaway listings with maxPages", async () => {
     const fetchPage = vi.fn(async () => ({ items: [1], totalPages: Number.MAX_SAFE_INTEGER }));
     const items = await collect(paginatePages(fetchPage, 0, { maxPages: 3 }));
@@ -42,12 +62,17 @@ describe("paginatePages", () => {
     expect(fetchPage).toHaveBeenCalledTimes(3);
   });
 
-  it("falls back to the default page cap for non-positive values", async () => {
-    const fetchPage = vi.fn(async (page: number) =>
-      page === 0 ? { items: [1], totalPages: 2 } : { items: [], totalPages: 2 },
-    );
-    expect(await collect(paginatePages(fetchPage, 0, { maxPages: 0 }))).toEqual([1]);
-  });
+  it.each([-1, 0, Number.NaN, Number.POSITIVE_INFINITY, 1.5, 101])(
+    "rejects invalid or unsafe maxPages %s before requesting",
+    async (maxPages) => {
+      const fetchPage = vi.fn(async () => ({ items: [1], totalPages: 1 }));
+      const result = collect(paginatePages(fetchPage, 0, { maxPages }));
+
+      await expect(result).rejects.toBeInstanceOf(InputValidationError);
+      await expect(result).rejects.toThrow(/maxPages/u);
+      expect(fetchPage).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe("paginateCursor", () => {
@@ -75,6 +100,37 @@ describe("paginateCursor", () => {
       "x",
     ]);
   });
+
+  it("does not request or yield anything when maxItems is zero", async () => {
+    const fetchPage = vi.fn(async () => ({ items: ["unexpected"], nextCursor: "next" }));
+
+    expect(await collect(paginateCursor(fetchPage, undefined, { maxItems: 0 }))).toEqual([]);
+    expect(fetchPage).not.toHaveBeenCalled();
+  });
+
+  it.each([-1, Number.NaN, Number.POSITIVE_INFINITY, 1.5])(
+    "rejects invalid maxItems %s before requesting",
+    async (maxItems) => {
+      const fetchPage = vi.fn(async () => ({ items: ["x"], nextCursor: "next" }));
+      const result = collect(paginateCursor(fetchPage, undefined, { maxItems }));
+
+      await expect(result).rejects.toBeInstanceOf(InputValidationError);
+      await expect(result).rejects.toThrow(/maxItems/u);
+      expect(fetchPage).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([-1, 0, Number.NaN, Number.POSITIVE_INFINITY, 1.5, 101])(
+    "rejects invalid or unsafe maxPages %s before requesting",
+    async (maxPages) => {
+      const fetchPage = vi.fn(async () => ({ items: ["x"] }));
+      const result = collect(paginateCursor(fetchPage, undefined, { maxPages }));
+
+      await expect(result).rejects.toBeInstanceOf(InputValidationError);
+      await expect(result).rejects.toThrow(/maxPages/u);
+      expect(fetchPage).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe("client auto-pagination", () => {

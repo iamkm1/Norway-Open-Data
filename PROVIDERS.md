@@ -1,10 +1,10 @@
 # Provider terms, attribution, and limits
 
 > **Norway Open Data SDK is an independent open-source project and is not affiliated with,
-> sponsored by, or endorsed by Norwegian public authorities. Data remains subject to each
-> provider’s terms and licence.**
+> sponsored by, or endorsed by Norwegian public authorities or by the third-party service Hva
+> koster strømmen?. Data remains subject to each source's terms and licence.**
 
-Last contract and documentation verification: **2026-07-20**
+Last contract and documentation verification: **2026-07-21**
 
 The MIT licence applies only to this SDK's source code. It does not automatically apply to data
 returned by public providers. Users are responsible for following current provider terms,
@@ -22,7 +22,8 @@ Access labels in this document have precise meanings:
 
 ## Brønnøysundregistrene
 
-- **Supported methods:** `companies.get()`, `companies.search()`, `companies.getSubEntity()`
+- **Supported methods:** `companies.get()`, `companies.search()`, `companies.searchAll()`,
+  `companies.getSubEntity()`
 - **Official homepage:** https://www.brreg.no/
 - **API documentation:** https://data.brreg.no/enhetsregisteret/api/dokumentasjon/en/index.html
 - **Access:** Open for the supported Enhetsregisteret entity and sub-entity endpoints; no
@@ -31,7 +32,8 @@ Access labels in this document have precise meanings:
   documentation.
 - **Attribution:** Follow NLOD attribution requirements when redistributing source data.
 - **Known limits:** Search is paginated. The SDK conservatively requests at most 100 entities per
-  page. HTTP 404 is returned for an unknown organization number.
+  page. `searchAll()` follows numbered pages on demand and accepts `maxItems`/`maxPages`; the
+  default page-request cap is 100. HTTP 404 is returned for an unknown organization number.
 - **Scope note:** Authorized role endpoints, Maskinporten endpoints, national identity numbers,
   and other restricted/person-level integrations are deliberately unsupported.
 
@@ -48,7 +50,7 @@ Access labels in this document have precise meanings:
 - **Known limits:** PxWeb API v2 currently allows 800,000 cells per extraction and 30 queries per
   60 seconds per IP address. The provider warns of update windows and high load around publication
   time. The SDK does not split or bypass extraction limits.
-- **Contract note:** Version 0.1 uses the current v2 paths
+- **Contract note:** The current adapter uses the v2 paths
   `/api/pxwebapi/v2/tables/{id}/metadata` and `/data`. POST selection objects use
   `variableCode`/`valueCodes`. Table value codes can change and must be discovered from metadata.
 
@@ -109,7 +111,7 @@ Access labels in this document have precise meanings:
 
 ## Data.norge
 
-- **Supported methods:** `catalog.search()`, `catalog.getDataset()`,
+- **Supported methods:** `catalog.search()`, `catalog.searchAll()`, `catalog.getDataset()`,
   `catalog.getDataService()`, `catalog.getPublisher()`
 - **Official homepage:** https://data.norge.no/
 - **API overview:** https://data.norge.no/en/technical/api
@@ -139,7 +141,8 @@ Access labels in this document have precise meanings:
   separately versioned Resource Service.
 - **Known behavior:** Search pagination is zero-based. Multi-type results are combined and paginated
   locally in the caller's requested type order and expose a maximum 100-position combined window;
-  use a single type for deeper provider paging. `getPublisher()` accepts a nine-digit organization
+  use a single type for deeper provider paging. `searchAll()` follows numbered pages lazily but
+  does not bypass that combined-window limit. `getPublisher()` accepts a nine-digit organization
   number and parses the official publisher URI's RDF/Turtle representation.
 - **Restricted access not supported:** The Maskinporten-protected Catalog View API is deliberately
   excluded. Catalogue search can describe restricted resources, but the SDK does not grant access
@@ -178,8 +181,8 @@ Access labels in this document have precise meanings:
 
 - **Supported methods:** `parliament.getRepresentatives()`,
   `parliament.getRepresentative()`, `parliament.getParties()`,
-  `parliament.searchCases()`, `parliament.getCase()`, `parliament.getVotes()`,
-  `parliament.getQuestions()`, `parliament.getMeetings()`
+  `parliament.searchCases()`, `parliament.searchCasesAll()`, `parliament.getCase()`,
+  `parliament.getVotes()`, `parliament.getQuestions()`, `parliament.getMeetings()`
 - **Official homepage and API catalogue:** https://data.stortinget.no/
 - **Documentation:** https://data.stortinget.no/dokumentasjon-og-hjelp/
 - **Terms:** https://data.stortinget.no/om-datatjenesten/bruksvilkar/
@@ -197,7 +200,9 @@ Access labels in this document have precise meanings:
   fetches one complete official session export, applies `query`, `status`, and `type` filters
   locally, then returns zero-based local pages of at most 100 cases. Pagination metadata therefore
   describes the locally filtered export, not a provider page. Other supported list exports are also
-  returned as published rather than implying server pagination.
+  returned as published rather than implying server pagination. `searchCasesAll()` walks those
+  local pages lazily and remains bounded by `maxItems`/`maxPages`; it does not turn the source export
+  into server-side pagination.
 - **Known behavior:** Provider dates are normalized without political interpretation. Omitting a
   period or session uses the provider's current export. Question categories map to the three
   official question-list exports.
@@ -209,7 +214,8 @@ Access labels in this document have precise meanings:
 ## Statens vegvesen / NVDB
 
 - **Supported methods:** `roads.getRoadObjectTypes()`, `roads.getRoadObjectType()`,
-  `roads.searchRoadObjects()`, `roads.getRoadObject()`, `roads.getRoadNetwork()`
+  `roads.searchRoadObjects()`, `roads.searchRoadObjectsAll()`, `roads.getRoadObject()`,
+  `roads.getRoadNetwork()`, `roads.getRoadNetworkAll()`
 - **Official homepage:** https://www.vegvesen.no/
 - **NVDB API Les V4 documentation:**
   https://nvdb.atlas.vegvesen.no/docs/produkter/nvdbapil/v4/introduksjon/Oversikt/
@@ -229,7 +235,9 @@ Access labels in this document have precise meanings:
   under norsk lisens for offentlige data (NLOD) tilgjengeliggjort av Statens vegvesen."
 - **Pagination:** Road-object and segmented-network methods return one provider page. Pass the
   opaque `pagination.nextStart` back as `start` for the next page; do not parse, synthesize, or reuse
-  it for a different query. Optional WGS84 geometry is requested with SRID 4326.
+  it for a different query. `searchRoadObjectsAll()` and `getRoadNetworkAll()` follow those opaque
+  markers on demand and accept `maxItems`/`maxPages`. Optional WGS84 geometry is requested with
+  SRID 4326.
 - **Dynamic schema boundary:** Road-object properties remain `unknown` because their value types are
   defined by the selected NVDB catalogue type. Type metadata is the authoritative description; the
   SDK does not pretend that every road-object type shares one property schema.
@@ -283,24 +291,34 @@ Access labels in this document have precise meanings:
   methods expose records currently marked operational. Hydrology observations are continuously
   updated and can be missing or corrected. Varsom warnings are regional planning aids, not a
   guarantee of local conditions; use the complete official warning and make an independent safety
-  assessment.
+  assessment. `profiles.address()` applies only a best-effort area-name filter to warning summaries;
+  an empty profile match is never an all-clear. Query the complete official Varsom/NVE services
+  directly for safety decisions.
 - **Restricted access not supported:** The SDK has no Regobs write/login flow and exposes no
   protected observations, user submissions, or personal data. The free HydAPI key is the only NVE
   credential accepted.
 
-## Hva koster strømmen?
+## Hva koster strømmen? (third-party derived API)
 
 - **Supported methods:** `electricity.getPrices()`, `electricity.getCurrentPrice()`
-- **Official homepage:** https://www.hvakosterstrommen.no/
+- **Classification:** Independent third-party public endpoint; it is not a government or official
+  data provider.
+- **Provider homepage:** https://www.hvakosterstrommen.no/
 - **API documentation:** https://www.hvakosterstrommen.no/strompris-api
 - **Endpoint:** `https://www.hvakosterstrommen.no/api/v1/prices/<year>/<month>-<day>_<area>.json`
 - **Access:** Anonymous, with no API key.
 - **Price areas:** `NO1` Oslo / Øst-Norge, `NO2` Kristiansand / Sør-Norge, `NO3` Trondheim /
   Midt-Norge, `NO4` Tromsø / Nord-Norge, `NO5` Bergen / Vest-Norge.
-- **Licence:** The API is published as a free public service. The underlying day-ahead prices
-  originate from Nord Pool, whose terms govern redistribution of the price data itself.
-- **Attribution:** Credit hvakosterstrommen.no, and observe Nord Pool's terms as the underlying
-  source.
+- **Data lineage:** The API page states that the service fetches electricity prices from the
+  [ENTSO-E Transparency Platform](https://transparency.entsoe.eu/) in EUR and converts them to NOK
+  using the latest exchange rate from Norges Bank. It explicitly warns that the converted NOK
+  values can differ from official NOK prices displayed by Nord Pool; this is not documented as a
+  Nord Pool data feed.
+- **Reuse and attribution:** The provider describes the API as open and free, says its output can be
+  displayed freely, and asks public users to cite hvakosterstrommen.no. It does not state a
+  standardized government open-data licence on the reviewed API page. Preserve the documented
+  ENTSO-E and Norges Bank lineage when explaining derived values and review the current source
+  terms before redistribution.
 - **Known limits:** Prices are exclusive of grid rent, taxes and supplier surcharges. Next-day
   prices are normally published in the early afternoon; requesting a date before publication
   returns HTTP 404, surfaced as `NotFoundError`. Nordic day-ahead prices can legitimately be zero
@@ -308,6 +326,6 @@ Access labels in this document have precise meanings:
 
 ## Verification policy
 
-Provider contracts change independently of this package. Every provider-affecting pull request
-must link to current official documentation, update fixtures and runtime schemas, and update this
-file when terms, identification, attribution, or limits change.
+Source contracts change independently of this package. Every source-affecting pull request must
+link to current official or provider documentation, update fixtures and runtime schemas, and update
+this file when terms, identification, attribution, or limits change.
