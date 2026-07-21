@@ -288,6 +288,24 @@ Access labels in this document have precise meanings:
   protected observations, user submissions, or personal data. The free HydAPI key is the only NVE
   credential accepted.
 
+## Hva koster strømmen?
+
+- **Supported methods:** `electricity.getPrices()`, `electricity.getCurrentPrice()`
+- **Official homepage:** https://www.hvakosterstrommen.no/
+- **API documentation:** https://www.hvakosterstrommen.no/strompris-api
+- **Endpoint:** `https://www.hvakosterstrommen.no/api/v1/prices/<year>/<month>-<day>_<area>.json`
+- **Access:** Anonymous, with no API key.
+- **Price areas:** `NO1` Oslo / Øst-Norge, `NO2` Kristiansand / Sør-Norge, `NO3` Trondheim /
+  Midt-Norge, `NO4` Tromsø / Nord-Norge, `NO5` Bergen / Vest-Norge.
+- **Licence:** The API is published as a free public service. The underlying day-ahead prices
+  originate from Nord Pool, whose terms govern redistribution of the price data itself.
+- **Attribution:** Credit hvakosterstrommen.no, and observe Nord Pool's terms as the underlying
+  source.
+- **Known limits:** Prices are exclusive of grid rent, taxes and supplier surcharges. Next-day
+  prices are normally published in the early afternoon; requesting a date before publication
+  returns HTTP 404, surfaced as `NotFoundError`. Nordic day-ahead prices can legitimately be zero
+  or negative, so the SDK does not constrain them to positive values.
+
 ## Verification policy
 
 Provider contracts change independently of this package. Every provider-affecting pull request

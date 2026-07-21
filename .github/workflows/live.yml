@@ -1,0 +1,39 @@
+name: Live provider checks
+
+# Detects upstream contract changes in the official APIs before consumers do.
+# Runs weekly and on demand; never on pull requests, so forks and untrusted
+# code can never trigger outbound calls or read repository secrets.
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-provider-checks
+  cancel-in-progress: false
+
+jobs:
+  live:
+    name: Official provider APIs
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.13.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run live provider checks
+        env:
+          RUN_LIVE_TESTS: "true"
+          NORWAY_OPEN_DATA_APPLICATION_NAME: ${{ vars.NORWAY_OPEN_DATA_APPLICATION_NAME }}
+          NORWAY_OPEN_DATA_CONTACT_EMAIL: ${{ secrets.NORWAY_OPEN_DATA_CONTACT_EMAIL }}
+          NVE_HYDAPI_KEY: ${{ secrets.NVE_HYDAPI_KEY }}
+        run: pnpm test:live

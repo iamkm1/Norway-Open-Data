@@ -64,7 +64,8 @@ export const companySearchSchema = z
       .optional(),
     page: z
       .object({
-        size: z.number().int().positive(),
+        // An empty result page may legitimately report a size of zero.
+        size: z.number().int().nonnegative(),
         totalElements: z.number().int().nonnegative(),
         totalPages: z.number().int().nonnegative(),
         number: z.number().int().nonnegative(),

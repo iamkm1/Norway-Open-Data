@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createResponse, HttpClient } from "../../core/client.js";
 import { InputValidationError, ResponseValidationError } from "../../core/errors.js";
 import { providers, responseSource } from "../../core/metadata.js";
+import { paginatePages, type PaginateOptions } from "../../core/paginate.js";
 import type { OpenDataResponse, RequestOptions } from "../../core/types.js";
 import type { NorwegianAddress } from "../kartverket/types.js";
 import {
@@ -224,6 +225,26 @@ export class BrregClient {
       result.data,
       result.cached,
       options,
+    );
+  }
+
+  /**
+   * Iterates every matching organization, requesting each page on demand.
+   *
+   * Bounded by `maxItems` and `maxPages` so an upstream change cannot produce
+   * an unbounded request loop.
+   */
+  async *searchAll(
+    parameters: CompanySearchParameters = {},
+    options?: RequestOptions & PaginateOptions,
+  ): AsyncGenerator<Company, void, undefined> {
+    yield* paginatePages(
+      async (page) => {
+        const result = await this.search({ ...parameters, page }, options);
+        return { items: result.data.items, totalPages: result.data.pagination.totalPages };
+      },
+      parameters.page ?? 0,
+      options ?? {},
     );
   }
 

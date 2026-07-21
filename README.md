@@ -9,15 +9,17 @@ One typed TypeScript interface for Norwegian public data.
 
 Norway Open Data SDK provides a consistent, runtime-validated client for official Norwegian APIs
 from Brønnøysundregistrene, SSB, Kartverket, Entur, MET Norway, Data.norge, Norges Bank,
-Stortinget, Statens vegvesen and NVE.
+Stortinget, Statens vegvesen, NVE and Hva koster strømmen?
 
-- 10 public-data providers
-- 13 service namespaces
-- 45 public methods
+- 11 public-data providers
+- 14 service namespaces
+- 53 public methods
 - Runtime-validated responses
+- Cross-provider profiles that answer one question from several agencies
+- Auto-paginating async iterators for list endpoints
 - ESM, CommonJS and TypeScript support
-- 206 automated tests
-- 95% statement and line coverage
+- 230 automated tests, plus 31 live contract checks run weekly
+- 94% statement and line coverage
 
 Requests go directly from your Node.js application to the official APIs. The SDK has no hosted
 backend, database, account system or scraping layer.
@@ -44,7 +46,7 @@ corepack pnpm pack
 Install the generated tarball from another project:
 
 ```bash
-npm install /path/to/Norway-Open-Data/norway-open-data-sdk-0.1.1.tgz
+npm install /path/to/Norway-Open-Data/norway-open-data-sdk-0.2.0.tgz
 ```
 
 ## Quick start
@@ -87,8 +89,10 @@ requires `applicationName` and `contactEmail`; NVE HydAPI requires the caller's 
 | Stortinget              | `parliament`          | Representatives, parties, cases, votes, questions and meetings | Anonymous                      |
 | Statens vegvesen / NVDB | `roads`               | Road metadata, objects and network segments                    | Identification required        |
 | NVE                     | `energy`, `hazards`   | Energy data, warnings and hydrology                            | Anonymous; API key for HydAPI  |
+| Hva koster strømmen?    | `electricity`         | Hourly spot prices for all five bidding zones                  | Anonymous                      |
 
-`profiles` combines Brønnøysundregistrene company data with a Kartverket address match.
+`profiles` composes several providers into one answer: `company` combines Brønnøysundregistrene
+with a Kartverket address match, and `address` combines Kartverket, MET Norway, NVE and NVDB.
 
 See the [complete capability matrix](docs/capabilities.md) for every namespace, method, access
 requirement and known limitation.
@@ -121,6 +125,51 @@ console.log(results.data.items);
 const profile = await norway.profiles.company("923609016");
 console.log(profile.data.location);
 ```
+
+### Cross-provider address profile
+
+One call answers a location from four providers at once:
+
+```ts
+const place = await norway.profiles.address("Haraldsgata 100, Haugesund");
+
+console.log(place.data.address.municipalityName); // Kartverket
+console.log(place.data.weather?.temperature); // MET Norway
+console.log(place.data.hazards); // NVE warnings for the area
+console.log(place.data.roads); // NVDB segments within 250 m
+```
+
+Enrichment degrades gracefully: `weather` and `roads` are omitted when the client has no
+`applicationName`/`contactEmail`, rather than failing the whole call.
+
+### Electricity spot prices
+
+```ts
+const prices = await norway.electricity.getPrices({ area: "NO1" });
+console.log(prices.data[0]);
+
+const now = await norway.electricity.getCurrentPrice({ area: "NO5" });
+console.log(now.data?.nokPerKwh);
+```
+
+### Paging through large result sets
+
+List endpoints expose auto-paginating async iterators that request each page on demand:
+
+```ts
+for await (const company of norway.companies.searchAll({ municipalityCode: "1106" })) {
+  console.log(company.name);
+}
+```
+
+Bound the walk with `maxItems` or `maxPages`:
+
+```ts
+const iterator = norway.catalog.searchAll({ query: "transport" }, { maxItems: 50 });
+```
+
+Available on `companies.searchAll`, `catalog.searchAll`, `parliament.searchCasesAll`,
+`roads.searchRoadObjectsAll` and `roads.getRoadNetworkAll`.
 
 ### Request cancellation
 

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createResponse, HttpClient } from "../../core/client.js";
 import { InputValidationError, ResponseValidationError } from "../../core/errors.js";
 import { providers, responseSource } from "../../core/metadata.js";
+import { paginatePages, type PaginateOptions } from "../../core/paginate.js";
 import type { OpenDataResponse, RequestOptions } from "../../core/types.js";
 import {
   catalogResourceResponseSchema,
@@ -366,6 +367,26 @@ export class DataNorgeClient {
       results.map((result) => result.data),
       results.every((result) => result.cached),
       options,
+    );
+  }
+
+  /**
+   * Iterates every matching catalogue resource, requesting each page on demand.
+   *
+   * Bounded by `maxItems` and `maxPages`, and still subject to the provider's
+   * own combined result window.
+   */
+  async *searchAll(
+    parameters: CatalogSearchParameters,
+    options?: RequestOptions & PaginateOptions,
+  ): AsyncGenerator<CatalogResource, void, undefined> {
+    yield* paginatePages(
+      async (page) => {
+        const result = await this.search({ ...parameters, page }, options);
+        return { items: result.data.items, totalPages: result.data.pagination.totalPages };
+      },
+      parameters.page ?? 0,
+      options ?? {},
     );
   }
 

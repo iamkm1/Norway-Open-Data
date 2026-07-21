@@ -56,6 +56,7 @@ const expectedRuntimeExports = [
   "BrregClient",
   "ConfigurationError",
   "DataNorgeClient",
+  "ElectricityClient",
   "EnturClient",
   "InputValidationError",
   "KartverketAddressClient",

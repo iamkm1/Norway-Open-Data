@@ -32,8 +32,10 @@ export const hydropowerPlantsSchema = z.array(
       Navn: z.string(),
       Kommune: nullableString,
       KommuneNr: z.union([z.string(), z.number()]).nullable().optional(),
-      MaksYtelse: z.number().nonnegative().nullable().optional(),
-      MidProd_91_20: z.number().nonnegative().nullable().optional(),
+      // NVE publishes negative capacity and mean-production figures for some
+      // plants (pumped storage reports net values), so these stay unbounded.
+      MaksYtelse: z.number().nullable().optional(),
+      MidProd_91_20: z.number().nullable().optional(),
       Kraftverkstatus: nullableString,
       ErIDrift: z.boolean().nullable().optional(),
     })
@@ -47,8 +49,10 @@ export const windPowerPlantsSchema = z.array(
       Navn: z.string(),
       Kommune: nullableString,
       Kommunenummer: z.union([z.string(), z.number()]).nullable().optional(),
-      InstallertEffekt_MW: z.number().nonnegative().nullable().optional(),
-      NormalAArsproduksjon_GWh: z.number().nonnegative().nullable().optional(),
+      // Same NVE convention as the hydropower dataset, which publishes negative
+      // capacity and production figures for some plants.
+      InstallertEffekt_MW: z.number().nullable().optional(),
+      NormalAArsproduksjon_GWh: z.number().nullable().optional(),
       IdriftsettelseForsteByggetrinn: nullableIsoDateTime,
     })
     .loose(),

@@ -72,7 +72,8 @@ export const catalogSearchHitSchema = z
 const pageSchema = z
   .object({
     currentPage: z.number().int().nonnegative(),
-    size: z.number().int().positive(),
+    // An empty result page may legitimately report a size of zero.
+    size: z.number().int().nonnegative(),
     totalElements: z.number().int().nonnegative(),
     totalPages: z.number().int().nonnegative(),
   })

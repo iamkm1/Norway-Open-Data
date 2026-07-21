@@ -114,6 +114,17 @@ export const providers = {
     license: "Norwegian Licence for Open Government Data (NLOD) 2.0",
     attribution: "Credit NVE; Varsom warning data also requires its specified attribution.",
   },
+  hvakosterstrommen: {
+    id: "hvakosterstrommen",
+    name: "Hva koster strømmen?",
+    homepage: "https://www.hvakosterstrommen.no/",
+    documentation: "https://www.hvakosterstrommen.no/strompris-api",
+    access: "open",
+    authentication: "None.",
+    license: "Free public API; prices are derived from Nord Pool day-ahead market data",
+    attribution:
+      "Credit hvakosterstrommen.no, and observe Nord Pool's terms as the underlying price source.",
+  },
 } as const satisfies Record<string, ProviderMetadata>;
 
 /** Provider registry key. */

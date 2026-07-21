@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createResponse, HttpClient } from "../../core/client.js";
 import { InputValidationError, NotFoundError, ResponseValidationError } from "../../core/errors.js";
 import { providers, responseSource } from "../../core/metadata.js";
+import { paginatePages, type PaginateOptions } from "../../core/paginate.js";
 import type { OpenDataResponse, RequestOptions } from "../../core/types.js";
 import {
   casesResponseSchema,
@@ -520,6 +521,26 @@ export class StortingetClient {
       },
     };
     return createResponse(data, STORTINGET_SOURCE, result.data, result.cached, options);
+  }
+
+  /**
+   * Iterates every matching parliamentary case.
+   *
+   * Paging is local to one cached session export, so this walks the filtered
+   * result set without issuing a request per page.
+   */
+  async *searchCasesAll(
+    parameters: ParliamentaryCaseSearchParameters = {},
+    options?: RequestOptions & PaginateOptions,
+  ): AsyncGenerator<ParliamentaryCase, void, undefined> {
+    yield* paginatePages(
+      async (page) => {
+        const result = await this.searchCases({ ...parameters, page }, options);
+        return { items: result.data.items, totalPages: result.data.pagination.totalPages };
+      },
+      parameters.page ?? 0,
+      options ?? {},
+    );
   }
 
   /** Gets detailed information about one parliamentary case. */

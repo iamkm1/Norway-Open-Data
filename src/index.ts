@@ -14,6 +14,7 @@ export {
 } from "./core/errors.js";
 export type { OpenDataErrorDetails } from "./core/errors.js";
 export type { ProviderId, ProviderMetadata } from "./core/metadata.js";
+export type { PaginateOptions } from "./core/paginate.js";
 export type {
   CacheConfig,
   NorwayOpenDataConfig,
@@ -23,7 +24,7 @@ export type {
 } from "./core/types.js";
 
 export { ProfileClient } from "./profiles/client.js";
-export type { CompanyProfile } from "./profiles/types.js";
+export type { AddressProfile, CompanyProfile } from "./profiles/types.js";
 
 export { BrregClient } from "./providers/brreg/client.js";
 export type {
@@ -86,6 +87,14 @@ export type {
   CatalogSearchParameters,
   CatalogSearchResult,
 } from "./providers/data-norge/types.js";
+
+export { ElectricityClient } from "./providers/hvakosterstrommen/client.js";
+export type {
+  CurrentElectricityPriceParameters,
+  ElectricityPrice,
+  ElectricityPriceParameters,
+  PriceArea,
+} from "./providers/hvakosterstrommen/types.js";
 
 export { NorgesBankClient } from "./providers/norges-bank/client.js";
 export type {

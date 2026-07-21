@@ -8,6 +8,7 @@ import { ProfileClient } from "./profiles/client.js";
 import { BrregClient } from "./providers/brreg/client.js";
 import { DataNorgeClient } from "./providers/data-norge/client.js";
 import { EnturClient } from "./providers/entur/client.js";
+import { ElectricityClient } from "./providers/hvakosterstrommen/client.js";
 import { KartverketAddressClient } from "./providers/kartverket/address-client.js";
 import { KartverketPlaceClient } from "./providers/kartverket/place-client.js";
 import { MetClient } from "./providers/met/client.js";
@@ -110,6 +111,7 @@ export class NorwayOpenData {
   readonly hazards: NveHazardsClient;
   readonly parliament: StortingetClient;
   readonly roads: VegvesenClient;
+  readonly electricity: ElectricityClient;
 
   /** Creates an SDK client with safe request defaults. */
   constructor(config: NorwayOpenDataConfig = {}) {
@@ -122,12 +124,20 @@ export class NorwayOpenData {
     this.places = new KartverketPlaceClient(http);
     this.transport = new EnturClient(http, resolved.applicationName);
     this.weather = new MetClient(http, resolved.applicationName, resolved.contactEmail);
-    this.profiles = new ProfileClient(this.companies, this.addresses);
     this.catalog = new DataNorgeClient(http);
     this.currency = new NorgesBankClient(http);
     this.energy = new NveEnergyClient(http);
     this.hazards = new NveHazardsClient(http, resolved.credentials.nve.apiKey);
     this.parliament = new StortingetClient(http);
     this.roads = new VegvesenClient(http, resolved.applicationName);
+    this.electricity = new ElectricityClient(http);
+    // Constructed last: cross-provider profiles depend on the clients above.
+    this.profiles = new ProfileClient(this.companies, this.addresses, {
+      weather: this.weather,
+      hazards: this.hazards,
+      roads: this.roads,
+      hasMetIdentity: resolved.applicationName !== undefined && resolved.contactEmail !== undefined,
+      hasApplicationName: resolved.applicationName !== undefined,
+    });
   }
 }

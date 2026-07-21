@@ -7,6 +7,7 @@ import {
   ResponseValidationError,
 } from "../../core/errors.js";
 import { providers, responseSource } from "../../core/metadata.js";
+import { paginateCursor, type PaginateOptions } from "../../core/paginate.js";
 import type { OpenDataResponse, RequestOptions } from "../../core/types.js";
 import {
   roadNetworkResponseSchema,
@@ -431,6 +432,56 @@ export class VegvesenClient {
       result.data,
       result.cached,
       options,
+    );
+  }
+
+  /**
+   * Iterates every matching public road object, following NVDB's continuation
+   * marker. Bounded by `maxItems` and `maxPages`.
+   */
+  async *searchRoadObjectsAll(
+    parameters: RoadObjectSearchParameters,
+    options?: RequestOptions & PaginateOptions,
+  ): AsyncGenerator<RoadObject, void, undefined> {
+    yield* paginateCursor(
+      async (cursor) => {
+        const result = await this.searchRoadObjects(
+          { ...parameters, ...(cursor === undefined ? {} : { start: cursor }) },
+          options,
+        );
+        const next = result.data.pagination.nextStart;
+        return {
+          items: result.data.items,
+          ...(next === undefined ? {} : { nextCursor: next }),
+        };
+      },
+      parameters.start,
+      options ?? {},
+    );
+  }
+
+  /**
+   * Iterates every matching segment of the public road network, following
+   * NVDB's continuation marker. Bounded by `maxItems` and `maxPages`.
+   */
+  async *getRoadNetworkAll(
+    parameters: RoadNetworkParameters = {},
+    options?: RequestOptions & PaginateOptions,
+  ): AsyncGenerator<RoadNetworkSegment, void, undefined> {
+    yield* paginateCursor(
+      async (cursor) => {
+        const result = await this.getRoadNetwork(
+          { ...parameters, ...(cursor === undefined ? {} : { start: cursor }) },
+          options,
+        );
+        const next = result.data.pagination.nextStart;
+        return {
+          items: result.data.items,
+          ...(next === undefined ? {} : { nextCursor: next }),
+        };
+      },
+      parameters.start,
+      options ?? {},
     );
   }
 

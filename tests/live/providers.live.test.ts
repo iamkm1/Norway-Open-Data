@@ -6,42 +6,101 @@ const enabled = process.env["RUN_LIVE_TESTS"] === "true";
 const live = enabled ? describe : describe.skip;
 const applicationName = process.env["NORWAY_OPEN_DATA_APPLICATION_NAME"];
 const contactEmail = process.env["NORWAY_OPEN_DATA_CONTACT_EMAIL"];
+const nveApiKey = process.env["NVE_HYDAPI_KEY"];
 
-live("official provider smoke tests", () => {
-  const sdk = new NorwayOpenData({
-    applicationName,
-    contactEmail,
-    retries: 1,
-    cache: { enabled: true },
-  });
+const noMetIdentity = applicationName === undefined || contactEmail === undefined;
+const noHydApiKey = nveApiKey === undefined;
 
-  it("reads one Brreg entity", async () => {
+const sdk = new NorwayOpenData({
+  applicationName,
+  contactEmail,
+  retries: 1,
+  timeoutMs: 20_000,
+  cache: { enabled: true },
+  ...(nveApiKey === undefined ? {} : { credentials: { nve: { apiKey: nveApiKey } } }),
+});
+
+live("Brønnøysundregistrene — companies", () => {
+  it("gets one entity", async () => {
     const response = await sdk.companies.get("923609016");
     expect(response.data.organizationNumber).toBe("923609016");
+    expect(response.data.name).toBeTruthy();
   });
 
-  it("reads one address and place-name page", async () => {
-    const address = await sdk.addresses.search({
+  it("searches entities with bounded paging", async () => {
+    const response = await sdk.companies.search({ name: "Equinor", size: 5 });
+    expect(response.data.items.length).toBeGreaterThan(0);
+    expect(response.data.items.length).toBeLessThanOrEqual(5);
+    expect(response.data.pagination.size).toBeLessThanOrEqual(5);
+  });
+
+  it("gets one sub-entity discovered from the public register", async () => {
+    const listing = await fetch("https://data.brreg.no/enhetsregisteret/api/underenheter?size=1", {
+      headers: { Accept: "application/json" },
+    });
+    const body = (await listing.json()) as {
+      _embedded?: { underenheter?: Array<{ organisasjonsnummer?: string }> };
+    };
+    const number = body._embedded?.underenheter?.[0]?.organisasjonsnummer;
+    expect(number).toBeTruthy();
+    const response = await sdk.companies.getSubEntity(String(number));
+    expect(response.data.organizationNumber).toBe(number);
+  });
+});
+
+live("Kartverket — addresses and places", () => {
+  it("searches addresses", async () => {
+    const response = await sdk.addresses.search({
       query: "Haraldsgata 100",
       municipalityCode: "1106",
       limit: 1,
     });
-    const place = await sdk.places.search({ query: "Oslo", limit: 1 });
-    expect(address.data.items.length).toBeGreaterThan(0);
-    expect(place.data.items.length).toBeGreaterThan(0);
+    expect(response.data.items.length).toBeGreaterThan(0);
   });
 
-  it("reads SSB metadata without extracting a large table", async () => {
+  it("searches place names", async () => {
+    const response = await sdk.places.search({ query: "Oslo", limit: 1 });
+    expect(response.data.items.length).toBeGreaterThan(0);
+  });
+
+  it("finds place names near a coordinate", async () => {
+    const response = await sdk.places.nearby({
+      latitude: 59.91,
+      longitude: 10.75,
+      radiusMeters: 1_000,
+    });
+    expect(Array.isArray(response.data.items)).toBe(true);
+  });
+});
+
+live("SSB — statistics", () => {
+  it("reads table metadata", async () => {
     const response = await sdk.statistics.getTableMetadata("07459");
     expect(response.data.dimensions.length).toBeGreaterThan(0);
   });
 
-  it("uses the identified Entur geocoder", async () => {
+  it("runs a bounded single-cell query and its raw variant", async () => {
+    const metadata = await sdk.statistics.getTableMetadata("07459");
+    const selections: Record<string, string[]> = {};
+    for (const dimension of metadata.data.dimensions) {
+      const first = dimension.values[0]?.code;
+      if (first !== undefined) selections[dimension.code] = [first];
+    }
+    const result = await sdk.statistics.query({ tableId: "07459", selections });
+    expect(result.data.rows).toHaveLength(1);
+
+    const raw = await sdk.statistics.queryRaw({ tableId: "07459", selections });
+    expect(raw.data.version).toBe("2.0");
+  });
+});
+
+live("Entur — transport", () => {
+  it("uses the identified geocoder", async () => {
     const response = await sdk.transport.autocomplete({ text: "Oslo S", limit: 1 });
     expect(response.data.length).toBeGreaterThan(0);
   });
 
-  it("uses current Entur departure and journey GraphQL contracts", async () => {
+  it("uses current departure and journey GraphQL contracts", async () => {
     const departures = await sdk.transport.departures({
       stopPlaceId: "NSR:StopPlace:548",
       limit: 1,
@@ -54,13 +113,40 @@ live("official provider smoke tests", () => {
     expect(Array.isArray(departures.data)).toBe(true);
     expect(Array.isArray(journeys.data)).toBe(true);
   });
+});
 
-  it.skipIf(contactEmail === undefined)("uses identified MET Locationforecast", async () => {
-    const response = await sdk.weather.current({ latitude: 59.4138, longitude: 5.268 });
-    expect(response.data?.time).toBeTruthy();
+live("MET Norway — weather", () => {
+  it.skipIf(noMetIdentity)("reads a full forecast and its current entry", async () => {
+    const forecast = await sdk.weather.forecast({ latitude: 59.4138, longitude: 5.268 });
+    expect(forecast.data.timeseries.length).toBeGreaterThan(0);
+
+    const current = await sdk.weather.current({ latitude: 59.4138, longitude: 5.268 });
+    expect(current.data?.time).toBeTruthy();
+  });
+});
+
+live("Cross-provider — profiles", () => {
+  it("composes an address profile from Kartverket, MET, NVE and NVDB", async () => {
+    const response = await sdk.profiles.address("Haraldsgata 100, Haugesund");
+    expect(response.data.address.municipalityName).toBeTruthy();
+    expect(Array.isArray(response.data.hazards)).toBe(true);
+    if (!noMetIdentity) {
+      expect(response.data.weather?.time).toBeTruthy();
+      expect(Array.isArray(response.data.roads)).toBe(true);
+    }
   });
 
-  it("searches the Data.norge catalogue with a bounded result page", async () => {
+  it("composes a company profile from Brreg and Kartverket", async () => {
+    const response = await sdk.profiles.company("923609016");
+    expect(response.data.company.organizationNumber).toBe("923609016");
+    if (response.data.location !== undefined) {
+      expect(response.data.location.address).toBeDefined();
+    }
+  });
+});
+
+live("Data.norge — catalog", () => {
+  it("searches the catalogue with a bounded page", async () => {
     const response = await sdk.catalog.search({
       query: "transport",
       type: ["dataset"],
@@ -71,28 +157,174 @@ live("official provider smoke tests", () => {
     expect(response.data.items.length).toBeLessThanOrEqual(1);
   });
 
-  it("reads the latest official EUR/NOK exchange-rate observation", async () => {
+  it("resolves a dataset discovered from search", async () => {
+    const search = await sdk.catalog.search({ query: "data", type: ["dataset"], page: 0, size: 1 });
+    const id = search.data.items[0]?.id;
+    expect(id).toBeTruthy();
+    const dataset = await sdk.catalog.getDataset(String(id));
+    expect(dataset.data.id).toBe(id);
+  });
+
+  it("resolves a data service discovered from search", async () => {
+    const search = await sdk.catalog.search({
+      query: "api",
+      type: ["data-service"],
+      page: 0,
+      size: 1,
+    });
+    const id = search.data.items[0]?.id;
+    expect(id).toBeTruthy();
+    const service = await sdk.catalog.getDataService(String(id));
+    expect(service.data.id).toBe(id);
+  });
+
+  it("resolves a publisher by organization number", async () => {
+    const response = await sdk.catalog.getPublisher("991825827");
+    expect(response.data.id).toBe("991825827");
+  });
+});
+
+live("Norges Bank — currency", () => {
+  it("reads the latest EUR/NOK observation", async () => {
     const response = await sdk.currency.getExchangeRate({ from: "EUR", to: "NOK" });
     expect(response.data.baseCurrency).toBe("EUR");
     expect(response.data.quoteCurrency).toBe("NOK");
     expect(response.data.value).toBeGreaterThan(0);
   });
 
-  it("reads the parties currently represented at Stortinget", async () => {
+  it("reads a bounded exchange-rate series", async () => {
+    const response = await sdk.currency.getExchangeRates({ from: "USD", to: "NOK" });
+    expect(Array.isArray(response.data)).toBe(true);
+  });
+
+  it("reads the policy rate and Nowa series", async () => {
+    const policy = await sdk.currency.getPolicyRate();
+    const nowa = await sdk.currency.getNowa();
+    expect(Array.isArray(policy.data)).toBe(true);
+    expect(Array.isArray(nowa.data)).toBe(true);
+  });
+});
+
+live("Stortinget — parliament", () => {
+  it("reads the currently represented parties", async () => {
     const response = await sdk.parliament.getParties();
     expect(response.data.length).toBeGreaterThan(0);
     expect(response.data[0]?.id).toBeTruthy();
   });
 
-  it("reads one small public NVDB road-object type", async () => {
-    const response = await sdk.roads.getRoadObjectType(105);
-    expect(response.data.id).toBe(105);
-    expect(response.data.name).toBeTruthy();
+  it("reads representatives and resolves one by id", async () => {
+    const list = await sdk.parliament.getRepresentatives();
+    expect(list.data.length).toBeGreaterThan(0);
+    const id = list.data[0]?.id;
+    expect(id).toBeTruthy();
+    const single = await sdk.parliament.getRepresentative(String(id));
+    expect(single.data.id).toBe(id);
   });
 
-  it("reads NVE's latest open reservoir statistics", async () => {
+  it("searches cases and resolves one case with its votes", async () => {
+    const search = await sdk.parliament.searchCases({ page: 0, size: 1 });
+    expect(search.data.items.length).toBeGreaterThan(0);
+    const id = search.data.items[0]?.id;
+    expect(id).toBeTruthy();
+
+    const single = await sdk.parliament.getCase(String(id));
+    expect(single.data.id).toBe(id);
+
+    const votes = await sdk.parliament.getVotes(String(id));
+    expect(Array.isArray(votes.data)).toBe(true);
+  });
+
+  it("reads questions and meetings for the current session", async () => {
+    const questions = await sdk.parliament.getQuestions();
+    const meetings = await sdk.parliament.getMeetings();
+    expect(Array.isArray(questions.data)).toBe(true);
+    expect(Array.isArray(meetings.data)).toBe(true);
+  });
+});
+
+live("Statens vegvesen — roads", () => {
+  it("lists public road-object types and reads one", async () => {
+    const types = await sdk.roads.getRoadObjectTypes();
+    expect(types.data.length).toBeGreaterThan(0);
+
+    const single = await sdk.roads.getRoadObjectType(105);
+    expect(single.data.id).toBe(105);
+    expect(single.data.name).toBeTruthy();
+  });
+
+  it("searches road objects and resolves one by id", async () => {
+    const search = await sdk.roads.searchRoadObjects({
+      typeId: 105,
+      municipalityCode: "1103",
+      pageSize: 1,
+    });
+    expect(Array.isArray(search.data.items)).toBe(true);
+    const first = search.data.items[0];
+    if (first !== undefined) {
+      const single = await sdk.roads.getRoadObject(105, first.id);
+      expect(single.data.id).toBe(first.id);
+    }
+  });
+
+  it("reads a bounded road-network page", async () => {
+    const response = await sdk.roads.getRoadNetwork({
+      municipalityCode: "1103",
+      pageSize: 1,
+    });
+    expect(Array.isArray(response.data.items)).toBe(true);
+  });
+});
+
+live("Hva koster strømmen? — electricity", () => {
+  it("reads today's hourly spot prices and the current hour", async () => {
+    const prices = await sdk.electricity.getPrices({ area: "NO1" });
+    expect(prices.data.length).toBeGreaterThanOrEqual(23);
+    expect(prices.data[0]?.area).toBe("NO1");
+    expect(prices.data[0]?.exchangeRate).toBeGreaterThan(0);
+
+    const current = await sdk.electricity.getCurrentPrice({ area: "NO5" });
+    expect(current.data?.nokPerKwh).toBeTypeOf("number");
+  });
+});
+
+live("NVE — energy", () => {
+  it("reads the latest open reservoir statistics", async () => {
     const response = await sdk.energy.getReservoirStatistics();
     expect(response.data.length).toBeGreaterThan(0);
     expect(response.data[0]?.fillLevel).toBeTypeOf("number");
+  });
+
+  it("reads hydropower, wind-power, and combined plant listings", async () => {
+    const hydro = await sdk.energy.getHydropowerPlants();
+    const wind = await sdk.energy.getWindPowerPlants();
+    const all = await sdk.energy.getPowerPlants();
+    expect(hydro.data.length).toBeGreaterThan(0);
+    expect(wind.data.length).toBeGreaterThan(0);
+    expect(all.data.length).toBeGreaterThanOrEqual(hydro.data.length);
+  });
+});
+
+live("NVE — hazards", () => {
+  it("reads flood, avalanche, and landslide warnings", async () => {
+    const flood = await sdk.hazards.getFloodWarnings();
+    const avalanche = await sdk.hazards.getAvalancheWarnings();
+    const landslide = await sdk.hazards.getLandslideWarnings();
+    expect(Array.isArray(flood.data)).toBe(true);
+    expect(Array.isArray(avalanche.data)).toBe(true);
+    expect(Array.isArray(landslide.data)).toBe(true);
+  });
+
+  it.skipIf(noHydApiKey)("reads HydAPI stations and one observation series", async () => {
+    const stations = await sdk.hazards.getHydrologyStations({ active: true });
+    expect(stations.data.length).toBeGreaterThan(0);
+    const stationId = stations.data[0]?.id;
+    expect(stationId).toBeTruthy();
+
+    const observations = await sdk.hazards.getHydrologyObservations({
+      stationId: String(stationId),
+      parameter: "1000",
+      resolutionTime: "day",
+    });
+    expect(Array.isArray(observations.data)).toBe(true);
   });
 });
