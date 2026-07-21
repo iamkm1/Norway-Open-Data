@@ -1,7 +1,7 @@
 # Norway Open Data SDK
 
 [![CI](https://github.com/iamkm1/Norway-Open-Data/actions/workflows/ci.yml/badge.svg)](https://github.com/iamkm1/Norway-Open-Data/actions/workflows/ci.yml)
-![Node.js](https://img.shields.io/badge/Node.js-%3E%3D20-339933)
+![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22-339933)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6)
 [![Licence: MIT](https://img.shields.io/badge/Licence-MIT-blue.svg)](LICENSE)
 
@@ -27,7 +27,7 @@ backend, database, account system or scraping layer.
 
 ## Installation
 
-Requires Node.js 20 or newer. TypeScript declarations are included.
+Requires Node.js 22 or newer. TypeScript declarations are included.
 
 Version `0.2.0` is the current release. Install it with:
 
@@ -391,7 +391,7 @@ See [Testing](docs/testing.md) for live-test coverage, smoke tests and CI behavi
 
 ## Contributing
 
-Development requires Node.js 20+ and pnpm 10:
+Development requires Node.js 22+ and pnpm 10:
 
 ```bash
 pnpm install
@@ -426,7 +426,7 @@ Personal and restricted data are outside the project scope.
 
 ## Known limitations
 
-- The SDK targets Node.js 20+; browser support is not guaranteed.
+- The SDK targets Node.js 22+; browser support is not guaranteed.
 - Upstream API contracts and response shapes can change independently of the SDK.
 - Some providers require caller identification, a contact email or a free API key.
 - Address-profile warning matches are best-effort discovery only and never constitute an

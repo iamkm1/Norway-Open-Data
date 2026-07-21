@@ -2,7 +2,7 @@
 
 The files in [`examples/`](../examples/) use the package exactly as an installed consumer would.
 After building locally, run one with a TypeScript runner such as `tsx`, or copy one of the
-self-contained snippets below into your own Node.js 20+ project.
+self-contained snippets below into your own Node.js 22+ project.
 
 ## Company and sub-entity
 

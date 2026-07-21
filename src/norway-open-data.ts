@@ -65,7 +65,7 @@ function resolveConfig(config: NorwayOpenDataConfig): ResolvedConfig {
   const fetchImplementation = parsed.data.fetch ?? globalThis.fetch;
   if (typeof fetchImplementation !== "function") {
     throw new ConfigurationError(
-      "A fetch implementation is required. Use Node.js 20+ or pass config.fetch.",
+      "A fetch implementation is required. Use Node.js 22+ or pass config.fetch.",
     );
   }
   return {

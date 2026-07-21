@@ -10,6 +10,7 @@ type PackedFile = { path: string };
 type PackedResult = { filename?: string; files?: PackedFile[] };
 type PackageRootExport = { types: string; import: string; require: string };
 type InstalledPackageJson = {
+  engines: { node: string };
   main: string;
   module: string;
   types: string;
@@ -132,6 +133,7 @@ function assertPackageContents(files: PackedFile[]): string[] {
 }
 
 function assertPackageMap(packageJson: InstalledPackageJson, packageRoot: string): void {
+  assert.equal(packageJson.engines.node, ">=22");
   assert.equal(packageJson.main, "./dist/index.cjs");
   assert.equal(packageJson.module, "./dist/index.js");
   assert.equal(packageJson.types, "./dist/index.d.ts");

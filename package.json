@@ -61,7 +61,7 @@
     "docs/release-checklist.md"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "packageManager": "pnpm@10.13.1",
   "pnpm": {

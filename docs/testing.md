@@ -17,6 +17,9 @@ pnpm build
 Coverage uses V8. The configured minimums are 90% for statements, lines and functions, and 65% for
 branches.
 
+The package requires Node.js 22 or newer. CI verifies the runtime and packed-package contract on
+Node.js 22 and 24.
+
 ## Live provider tests
 
 Live tests are opt-in, low-volume contract checks under `tests/live`. `pnpm test:live` sets

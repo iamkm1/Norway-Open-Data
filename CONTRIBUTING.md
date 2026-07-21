@@ -9,7 +9,7 @@ By participating, you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Development
 
-Requirements are Node.js 20+ and pnpm 10.
+Requirements are Node.js 22+ and pnpm 10.
 
 ```bash
 pnpm install

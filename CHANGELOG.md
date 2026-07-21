@@ -26,6 +26,11 @@ Current release of the expanded Norway Open Data SDK.
 - A weekly scheduled workflow that runs the live suite so upstream contract changes surface
   early, and a workflow prepared to publish the TypeDoc reference after GitHub Pages is enabled.
 
+### Changed
+
+- The minimum supported runtime is Node.js 22. Distribution builds target Node.js 22, and CI
+  verifies the package on Node.js 22 and 24.
+
 ### Fixed
 
 - Auto-paginators now reject unsafe bounds, treat `maxItems: 0` as a zero-request result and keep
