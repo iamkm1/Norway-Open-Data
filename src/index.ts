@@ -13,7 +13,7 @@ export {
   ResponseValidationError,
 } from "./core/errors.js";
 export type { OpenDataErrorDetails } from "./core/errors.js";
-export type { ProviderId, ProviderMetadata } from "./core/metadata.js";
+export type { OpenDataSource, ProviderId, ProviderMetadata } from "./core/metadata.js";
 export type { PaginateOptions } from "./core/paginate.js";
 export type {
   CacheConfig,
@@ -24,7 +24,16 @@ export type {
 } from "./core/types.js";
 
 export { ProfileClient } from "./profiles/client.js";
-export type { AddressProfile, CompanyProfile } from "./profiles/types.js";
+export type {
+  AddressHazardMatch,
+  AddressProfile,
+  AddressRoadSearch,
+  CompanyProfile,
+  ProfileComponent,
+  ProfileComponentOperation,
+  ProfileComponentSection,
+  ProfileOmissionReason,
+} from "./profiles/types.js";
 
 export { BrregClient } from "./providers/brreg/client.js";
 export type {

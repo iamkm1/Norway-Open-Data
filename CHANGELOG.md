@@ -9,10 +9,15 @@ Current release of the expanded Norway Open Data SDK.
 ### Added
 
 - Cross-provider address profiles via `profiles.address()`, composing a Kartverket address match
-  with MET Norway conditions, matching NVE warnings, and the NVDB road segments around the
-  coordinate. Sections whose provider needs identification the client does not have are omitted
-  rather than failing the call. Warning matches are best-effort discovery only, never an
-  all-clear; safety decisions require the complete official Varsom/NVE services.
+  with MET Norway conditions, exact structured NVE administrative-area matches, and first-page
+  NVDB road candidates from a bounding box around the coordinate. `hazardMatches` records whether
+  an explicit municipality code/name matched, or a county code/name when the warning publishes no
+  municipalities; forecast-region names are not matched automatically. `roadSearch` records the
+  exact bounds, requested page size, and whether NVDB reported another page.
+- Per-operation `components` metadata for company and address profiles. Available components carry
+  their provider source, retrieval time, and cache status; skipped components report an explicit
+  `not-configured`, `missing-coordinate`, or `not-applicable` reason. Provider source metadata now
+  includes attribution text where the provider registry declares it.
 - Electricity spot prices from the third-party Hva koster strømmen? public API via the new
   `electricity` namespace (`getPrices`, `getCurrentPrice`) for all five Norwegian bidding zones.
   The provider documents its data as ENTSO-E EUR prices converted to NOK using a Norges Bank
@@ -34,14 +39,16 @@ Current release of the expanded Norway Open Data SDK.
 ### Fixed
 
 - Auto-paginators now reject unsafe bounds, treat `maxItems: 0` as a zero-request result and keep
-  the 100-request safety cap finite.
+  the 100-request safety cap finite. Opaque-cursor iterators also reject repeated markers and
+  cycles before requesting an already-seen page again.
 - `profiles.address()` now reports `cached: true` only when every included provider response came
   from cache.
 - `parliament.searchCasesAll()` now downloads one Stortinget session export per iterator even when
   the SDK cache is disabled.
 - Data.norge multi-type iterators now stop cleanly at their documented 100-position result window.
-- Electricity responses now verify the requested local date and contiguous one-hour intervals,
-  including daylight-saving transitions.
+- Electricity responses now verify the complete ordered Europe/Oslo day, including 23- and
+  25-interval daylight-saving transitions. Normalized interval ends follow the next chronological
+  start (or the following local midnight), while `includeRaw` preserves provider-native timestamps.
 - Scheduled live checks now treat empty optional GitHub secrets as absent, and TypeDoc deployment
   requires an explicit manual workflow run.
 - The development toolchain now forces `esbuild` 0.28.1, which contains the Windows development

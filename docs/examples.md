@@ -51,7 +51,8 @@ console.log(nearby.data.items.length);
 
 Profiles compose already validated source responses. Company profiles combine Brønnøysundregistrene
 with a deterministic Kartverket address match. Address profiles begin with Kartverket and can add
-MET conditions, NVE warning discovery and nearby NVDB road segments:
+MET conditions, exact NVE administrative-area warning matches and first-page NVDB bounding-box
+candidates:
 
 ```ts
 import { NorwayOpenData } from "norway-open-data-sdk";
@@ -68,14 +69,34 @@ console.log(company.data.location);
 console.log(address.data.address);
 console.log(address.data.weather);
 console.log(address.data.hazards);
+console.log(address.data.hazardMatches);
 console.log(address.data.roads);
+console.log(address.data.roadSearch);
+
+for (const component of address.data.components ?? []) {
+  if (component.status === "available") {
+    console.log(component.operation, component.source.name, component.cached);
+  } else {
+    console.log(component.operation, component.reason);
+  }
+}
 ```
 
-Weather and roads are omitted when their required caller identification is unavailable. Hazard
-matching is also intentionally best-effort: NVE warning regions do not map one-to-one to address
-municipalities or counties. An empty `address.data.hazards` array is never an all-clear. For any
-safety decision, query the complete official Varsom/NVE warnings directly and follow their current
-guidance.
+`components` distinguishes a successful (possibly empty) operation from an omitted one. Available
+entries carry `source`, `retrievedAt` and `cached`; omitted entries carry `not-configured`,
+`missing-coordinate` or `not-applicable`. Each source includes its attribution text when the SDK's
+provider registry declares one.
+
+Automatic hazard matching checks an explicit municipality by official code, then exact
+case-insensitive, Unicode-normalized name. It checks a county only when the warning has no
+municipality list, because a county can be parent context. It never substring-matches a
+forecast-region name. `hazardMatches` reports the exact basis and area values. An empty
+`address.data.hazards` array is never an all-clear; query the complete official Varsom/NVE warnings
+directly for safety decisions.
+
+`roads` is not a radius-filtered result. It contains the first NVDB page intersecting the WGS84
+box in `roadSearch`, whose `halfSizeMetres` is approximately 250 by default. Use its exact
+`boundingBox`, `requestedPageSize` and `truncated` flag when interpreting completeness.
 
 ## Statistics
 
@@ -197,7 +218,9 @@ void roadSegments;
 All five iterators accept the normal request options together with `maxItems` and `maxPages`.
 `maxItems` must be a non-negative integer. `maxPages` must be an integer from 1 to 100 and defaults
 to 100; set explicit bounds for batch jobs. Data.norge multi-type searches keep their 100-position
-combined-window limit, and NVDB continuation markers remain opaque.
+combined-window limit, and NVDB continuation markers remain opaque. If a cursor-based provider
+repeats a marker or returns a cycle, the iterator raises `ResponseValidationError` before requesting
+the already-seen page again.
 
 ## Currency and interest rates
 
@@ -248,7 +271,10 @@ converts them to NOK with the latest Norges Bank exchange rate:
 import { NorwayOpenData } from "norway-open-data-sdk";
 
 const norway = new NorwayOpenData();
-const day = await norway.electricity.getPrices({ area: "NO1", date: "2026-07-21" });
+const day = await norway.electricity.getPrices(
+  { area: "NO1", date: "2026-07-21" },
+  { includeRaw: true },
+);
 const current = await norway.electricity.getCurrentPrice({ area: "NO5" });
 
 console.table(day.data);
@@ -259,6 +285,11 @@ Values exclude grid rent, taxes and supplier surcharges. The provider warns that
 values can differ from official NOK market publications and asks public users to cite
 hvakosterstrommen.no. Next-day data normally appears in the early afternoon; requesting an
 unpublished date raises `NotFoundError`.
+
+The SDK validates the ordered elapsed-hour starts for the requested Europe/Oslo calendar day. The
+result therefore contains 24 entries normally, 23 when the spring clock skips an hour, and 25 when
+the autumn hour repeats. Each normalized `endsAt` is the next chronological `startsAt`, or the
+following local midnight for the final entry. `day.raw` retains provider-native timestamps.
 
 ## Parliament
 
@@ -399,6 +430,9 @@ const [flood, avalanche, landslide] = await Promise.all([
   norway.hazards.getLandslideWarnings({ language: "en" }),
 ]);
 console.log(flood.data.length, avalanche.data.length, landslide.data.length);
+console.log(flood.data[0]?.forecastRegion); // Context only
+console.log(flood.data[0]?.counties); // Structured administrative areas
+console.log(flood.data[0]?.municipalities);
 
 if (apiKey !== undefined) {
   const stations = await norway.hazards.getHydrologyStations({
@@ -418,8 +452,10 @@ if (apiKey !== undefined) {
 
 Without `credentials.nve.apiKey`, only the two HydAPI methods throw `ConfigurationError`; open NVE
 methods still work. Warnings are regional planning aids and must be presented with the provider's
-full safety context and attribution. Pass `{ includeRaw: true }` as the second argument and use the
-complete provider payload when building a public warning display.
+full safety context and attribution. `forecastRegion`, `counties`, and `municipalities` stay
+separate; the flattened `regions` list remains for backwards compatibility, not administrative
+matching. Pass `{ includeRaw: true }` as the second argument and use the complete provider payload
+when building a public warning display.
 
 ## Raw provider data
 

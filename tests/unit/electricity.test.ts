@@ -47,6 +47,27 @@ const summerHours = Array.from({ length: 24 }, (_, hour) => ({
 }));
 const pricesFixture = pricesForHours("2026-07-21", "2026-07-22", summerHours, "+02:00");
 
+const autumnHours = [
+  { hour: 0, offset: "+02:00" as const },
+  { hour: 1, offset: "+02:00" as const },
+  { hour: 2, offset: "+02:00" as const },
+  { hour: 2, offset: "+01:00" as const },
+  ...Array.from({ length: 21 }, (_, index) => ({
+    hour: index + 3,
+    offset: "+01:00" as const,
+  })),
+];
+
+// Minimized from the provider's real 2023-10-29 response. Its first 02:00
+// interval ends at 03:00 CET even though the next chronological start is 02:00 CET.
+const historicalAutumnFixture = pricesForHours("2023-10-29", "2023-10-30", autumnHours, "+01:00");
+const firstRepeatedHour = historicalAutumnFixture[2];
+if (firstRepeatedHour === undefined) throw new Error("Missing autumn electricity test sample.");
+historicalAutumnFixture[2] = {
+  ...firstRepeatedHour,
+  time_end: "2023-10-29T03:00:00+01:00",
+};
+
 const daylightSavingDays = [
   {
     date: "2026-03-29",
@@ -65,16 +86,7 @@ const daylightSavingDays = [
     date: "2026-10-25",
     followingDate: "2026-10-26",
     finalOffset: "+01:00" as const,
-    hours: [
-      { hour: 0, offset: "+02:00" as const },
-      { hour: 1, offset: "+02:00" as const },
-      { hour: 2, offset: "+02:00" as const },
-      { hour: 2, offset: "+01:00" as const },
-      ...Array.from({ length: 21 }, (_, index) => ({
-        hour: index + 3,
-        offset: "+01:00" as const,
-      })),
-    ],
+    hours: autumnHours,
   },
 ];
 
@@ -125,6 +137,53 @@ describe("ElectricityClient", () => {
       expect(response.data).toHaveLength(hours.length);
     },
   );
+
+  it("normalizes the provider's real autumn repeated-hour end anomaly", async () => {
+    const { fetch } = sequenceFetch(jsonResponse(historicalAutumnFixture));
+    const response = await new NorwayOpenData({ fetch, retries: 0 }).electricity.getPrices(
+      { area: "NO1", date: "2023-10-29" },
+      { includeRaw: true },
+    );
+    const raw = response.raw as RawPrice[];
+
+    expect(response.data).toHaveLength(25);
+    expect(response.data[2]?.startsAt).toBe("2023-10-29T02:00:00+02:00");
+    expect(response.data[2]?.endsAt).toBe("2023-10-29T02:00:00+01:00");
+    expect(response.data.at(-1)?.endsAt).toBe("2023-10-30T00:00:00+01:00");
+    expect(raw[2]?.time_end).toBe("2023-10-29T03:00:00+01:00");
+  });
+
+  it("rejects a fall day that replaces the repeated hour with a next-day slot", async () => {
+    const malformed = pricesForHours("2024-10-27", "2024-10-28", autumnHours, "+01:00");
+    malformed.splice(3, 1);
+    malformed.push({
+      ...sampleFor(0),
+      time_start: "2024-10-28T00:00:00+01:00",
+      time_end: "2024-10-28T01:00:00+01:00",
+    });
+    const { fetch } = sequenceFetch(jsonResponse(malformed));
+
+    await expect(
+      new NorwayOpenData({ fetch, retries: 0 }).electricity.getPrices({
+        area: "NO1",
+        date: "2024-10-27",
+      }),
+    ).rejects.toBeInstanceOf(ResponseValidationError);
+  });
+
+  it("rejects invalid provider-native ends even when every start is complete", async () => {
+    const malformed = pricesFixture.map((price, index) =>
+      index === 1 ? { ...price, time_end: price.time_start } : price,
+    );
+    const { fetch } = sequenceFetch(jsonResponse(malformed));
+
+    await expect(
+      new NorwayOpenData({ fetch, retries: 0 }).electricity.getPrices({
+        area: "NO1",
+        date: "2026-07-21",
+      }),
+    ).rejects.toBeInstanceOf(ResponseValidationError);
+  });
 
   it("rejects incomplete days, wrong dates, gaps, and non-Oslo offsets", async () => {
     const previousDate = (timestamp: string): string => {

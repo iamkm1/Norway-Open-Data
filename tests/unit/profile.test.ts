@@ -2,9 +2,27 @@ import brregCompany from "../fixtures/brreg-company.json" with { type: "json" };
 import addressFixture from "../fixtures/kartverket-address.json" with { type: "json" };
 import { describe, expect, it, vi } from "vitest";
 
-import { NorwayOpenData } from "../../src/index.js";
+import {
+  NorwayOpenData,
+  providers,
+  type OpenDataSource,
+  type ProviderMetadata,
+} from "../../src/index.js";
 import { selectAddressMatch } from "../../src/profiles/company-profile.js";
 import { jsonResponse, sequenceFetch } from "./helpers.js";
+
+const RETRIEVED_AT = "2026-07-21T10:15:30.000Z";
+
+function expectedSource(provider: ProviderMetadata): OpenDataSource {
+  return {
+    id: provider.id,
+    name: provider.name,
+    homepage: provider.homepage,
+    documentation: provider.documentation,
+    ...(provider.license === undefined ? {} : { license: provider.license }),
+    ...(provider.attribution === undefined ? {} : { attribution: provider.attribution }),
+  };
+}
 
 describe("company profiles", () => {
   it("assigns confidence only when address evidence exists", () => {
@@ -51,27 +69,81 @@ describe("company profiles", () => {
   });
 
   it("enriches a company with official coordinates", async () => {
-    const { fetch, mock } = sequenceFetch(jsonResponse(brregCompany), jsonResponse(addressFixture));
-    const response = await new NorwayOpenData({ fetch, retries: 0 }).profiles.company("923609016");
-    expect(response.data.location).toMatchObject({
-      matchConfidence: "exact",
-      address: { latitude: 59.4111516, longitude: 5.2711408 },
-    });
-    expect(response.source.documentation).toBe(
-      "https://github.com/iamkm1/Norway-Open-Data#cross-provider-company-profile",
-    );
-    expect(response.source.id).toBe("brreg+kartverket");
-    expect(mock).toHaveBeenCalledTimes(2);
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(RETRIEVED_AT));
+    try {
+      const { fetch, mock } = sequenceFetch(
+        jsonResponse(brregCompany),
+        jsonResponse(addressFixture),
+      );
+      const response = await new NorwayOpenData({ fetch, retries: 0 }).profiles.company(
+        "923609016",
+      );
+      expect(response.data.location).toMatchObject({
+        matchConfidence: "exact",
+        address: { latitude: 59.4111516, longitude: 5.2711408 },
+      });
+      expect(response.data.components).toEqual([
+        {
+          operation: "companies.get",
+          section: "company",
+          status: "available",
+          source: expectedSource(providers.brreg),
+          retrievedAt: RETRIEVED_AT,
+          cached: false,
+        },
+        {
+          operation: "addresses.search",
+          section: "address",
+          status: "available",
+          source: expectedSource(providers.kartverket),
+          retrievedAt: RETRIEVED_AT,
+          cached: false,
+        },
+      ]);
+      expect(response.source.documentation).toBe(
+        "https://github.com/iamkm1/Norway-Open-Data#cross-provider-company-profile",
+      );
+      expect(response.source.id).toBe("brreg+kartverket");
+      expect(mock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("does not call Kartverket without a usable business address", async () => {
-    const payload = { ...brregCompany };
-    delete (payload as Partial<typeof brregCompany>).forretningsadresse;
-    const { fetch, mock } = sequenceFetch(jsonResponse(payload));
-    const response = await new NorwayOpenData({ fetch, retries: 0 }).profiles.company("923609016");
-    expect(response.data.location).toBeUndefined();
-    expect(response.source.id).toBe("brreg");
-    expect(mock).toHaveBeenCalledTimes(1);
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(RETRIEVED_AT));
+    try {
+      const payload = { ...brregCompany };
+      delete (payload as Partial<typeof brregCompany>).forretningsadresse;
+      const { fetch, mock } = sequenceFetch(jsonResponse(payload));
+      const response = await new NorwayOpenData({ fetch, retries: 0 }).profiles.company(
+        "923609016",
+      );
+      expect(response.data.location).toBeUndefined();
+      expect(response.data.components).toEqual([
+        {
+          operation: "companies.get",
+          section: "company",
+          status: "available",
+          source: expectedSource(providers.brreg),
+          retrievedAt: RETRIEVED_AT,
+          cached: false,
+        },
+        {
+          operation: "addresses.search",
+          section: "address",
+          status: "omitted",
+          source: expectedSource(providers.kartverket),
+          reason: "not-applicable",
+        },
+      ]);
+      expect(response.source.id).toBe("brreg");
+      expect(mock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it.each([

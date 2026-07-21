@@ -1,8 +1,63 @@
+import type { OpenDataSource } from "../core/metadata.js";
 import type { Company } from "../providers/brreg/types.js";
 import type { NorwegianAddress } from "../providers/kartverket/types.js";
 import type { WeatherTimeseriesEntry } from "../providers/met/types.js";
 import type { HazardWarning } from "../providers/nve/types.js";
 import type { RoadNetworkSegment } from "../providers/vegvesen/types.js";
+
+/** Provider operation that contributed to, or was intentionally omitted from, a profile. */
+export type ProfileComponentOperation =
+  | "companies.get"
+  | "addresses.search"
+  | "weather.current"
+  | "hazards.getFloodWarnings"
+  | "hazards.getAvalancheWarnings"
+  | "hazards.getLandslideWarnings"
+  | "roads.getRoadNetwork";
+
+/** Logical profile section populated by a component operation. */
+export type ProfileComponentSection = "company" | "address" | "weather" | "hazards" | "roads";
+
+/** Why an optional profile component was not requested. */
+export type ProfileOmissionReason = "not-configured" | "missing-coordinate" | "not-applicable";
+
+/** Per-operation provenance and availability for a composed profile. */
+export type ProfileComponent =
+  | {
+      operation: ProfileComponentOperation;
+      section: ProfileComponentSection;
+      status: "available";
+      source: OpenDataSource;
+      retrievedAt: string;
+      cached: boolean;
+    }
+  | {
+      operation: ProfileComponentOperation;
+      section: ProfileComponentSection;
+      status: "omitted";
+      source: OpenDataSource;
+      reason: ProfileOmissionReason;
+    };
+
+/** Administrative evidence used to attach one NVE warning to an address profile. */
+export type AddressHazardMatch = {
+  warning: HazardWarning;
+  matchBasis: "municipality-code" | "municipality-name" | "county-code" | "county-name";
+  addressArea: { code?: string; name?: string };
+  warningArea: { code?: string; name?: string };
+};
+
+/** Exact NVDB search window used by an address profile. */
+export type AddressRoadSearch = {
+  shape: "bounding-box";
+  /** Requested half-size used to derive the box, not a circular distance guarantee. */
+  halfSizeMetres: number;
+  /** WGS84 `[minLongitude, minLatitude, maxLongitude, maxLatitude]`. */
+  boundingBox: [number, number, number, number];
+  requestedPageSize: number;
+  /** True when NVDB reported another page after the returned candidates. */
+  truncated: boolean;
+};
 
 /** Combined company information with an optional official coordinate match. */
 export type CompanyProfile = {
@@ -11,6 +66,8 @@ export type CompanyProfile = {
     address: NorwegianAddress;
     matchConfidence: "exact" | "high" | "possible";
   };
+  /** Provenance and availability for each component operation. */
+  components?: ProfileComponent[];
 };
 
 /**
@@ -25,13 +82,21 @@ export type AddressProfile = {
   /** Conditions at the matched coordinate. Omitted without MET identification. */
   weather?: WeatherTimeseriesEntry;
   /**
-   * Current NVE warnings whose regions mention the address county or
-   * municipality. NVE regions are hydrological and avalanche regions that do
-   * not map one-to-one onto municipalities, so this is a best-effort filter;
-   * an empty array is not an all-clear. Use the `hazards` namespace and the
-   * complete official Varsom/NVE warning for any safety-related decision.
+   * Current NVE warnings whose explicit municipality or county data exactly
+   * matches the address. An empty array is not an all-clear. Use the `hazards`
+   * namespace and the complete official Varsom/NVE warning for any
+   * safety-related decision.
    */
   hazards: HazardWarning[];
-  /** Road segments within 250 m of the coordinate. Omitted without `applicationName`. */
+  /** Exact administrative evidence for each warning in `hazards`. */
+  hazardMatches?: AddressHazardMatch[];
+  /**
+   * First-page NVDB candidates intersecting `roadSearch.boundingBox`.
+   * Omitted without `applicationName` or address coordinates.
+   */
   roads?: RoadNetworkSegment[];
+  /** Search bounds and truncation information for `roads`. */
+  roadSearch?: AddressRoadSearch;
+  /** Provenance and availability for every component operation. */
+  components?: ProfileComponent[];
 };

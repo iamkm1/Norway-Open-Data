@@ -19,7 +19,7 @@ export type ElectricityPrice = {
   area: PriceArea;
   /** ISO-8601 start of the hour, with the provider's local offset. */
   startsAt: string;
-  /** ISO-8601 end of the hour, with the provider's local offset. */
+  /** Chronological next-hour boundary normalized with the Europe/Oslo offset. */
   endsAt: string;
   /** Spot price in NOK per kWh, excluding grid rent, taxes and surcharges. */
   nokPerKwh: number;

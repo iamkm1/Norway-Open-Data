@@ -207,6 +207,20 @@ describe("VegvesenClient", () => {
     expect(new URL(String(mock.mock.calls[1]?.[0])).searchParams.get("start")).toBe("281042:5");
   });
 
+  it("stops a repeated NVDB cursor before requesting the same page twice", async () => {
+    const { fetch, mock } = sequenceFetch(
+      jsonResponse(nvdbRoadNetwork),
+      jsonResponse(nvdbRoadNetwork),
+    );
+
+    await expect(collect(createClient(fetch).getRoadNetworkAll())).rejects.toMatchObject({
+      name: "ResponseValidationError",
+      provider: "vegvesen",
+      message: expect.stringMatching(/repeated pagination cursor/u),
+    });
+    expect(mock).toHaveBeenCalledTimes(2);
+  });
+
   it("requires applicationName before making any NVDB request", async () => {
     const fetch = vi.fn(async () => jsonResponse(nvdbRoadObjectTypes));
     await expect(createClient(fetch, null).getRoadObjectTypes()).rejects.toBeInstanceOf(

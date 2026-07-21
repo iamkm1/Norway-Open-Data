@@ -61,7 +61,10 @@ export const windPowerPlantsSchema = z.array(
 const namedRegionSchema = z
   .object({
     Id: z.union([z.string(), z.number()]).optional(),
-    Name: z.string(),
+    Name: z
+      .string()
+      .min(1)
+      .refine((value) => value.trim().length > 0),
   })
   .loose();
 

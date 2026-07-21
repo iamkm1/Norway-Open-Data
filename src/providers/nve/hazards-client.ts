@@ -85,10 +85,25 @@ function parseWarningParameters(parameters: HazardWarningParameters): {
 
 function normalizeWarnings(raw: RawWarnings, type: HazardWarning["type"]): HazardWarning[] {
   return raw.map((warning) => {
+    const forecastRegion =
+      warning.RegionId == null && warning.RegionName == null
+        ? undefined
+        : {
+            ...(warning.RegionId == null ? {} : { id: String(warning.RegionId) }),
+            ...(warning.RegionName == null ? {} : { name: warning.RegionName }),
+          };
+    const counties = (warning.CountyList ?? []).map((county) => ({
+      ...(county.Id == null ? {} : { code: normalizeAdministrativeCode(county.Id, 2) }),
+      name: county.Name.trim(),
+    }));
+    const municipalities = (warning.MunicipalityList ?? []).map((municipality) => ({
+      ...(municipality.Id == null ? {} : { code: normalizeAdministrativeCode(municipality.Id, 4) }),
+      name: municipality.Name.trim(),
+    }));
     const regions = [
       warning.RegionName,
-      ...(warning.CountyList ?? []).map((region) => region.Name),
-      ...(warning.MunicipalityList ?? []).map((region) => region.Name),
+      ...counties.map((county) => county.name),
+      ...municipalities.map((municipality) => municipality.name),
     ].filter((value): value is string => value != null && value.length > 0);
     const uniqueRegions = [...new Set(regions)];
     const idValue = warning.RegId ?? warning.RegionId;
@@ -101,6 +116,9 @@ function normalizeWarnings(raw: RawWarnings, type: HazardWarning["type"]): Hazar
       ...(warning.MainText == null ? {} : { description: warning.MainText }),
       validFrom: warning.ValidFrom,
       validTo: warning.ValidTo,
+      ...(forecastRegion === undefined ? {} : { forecastRegion }),
+      ...(counties.length === 0 ? {} : { counties }),
+      ...(municipalities.length === 0 ? {} : { municipalities }),
       ...(uniqueRegions.length === 0 ? {} : { regions: uniqueRegions }),
       ...(hasCoordinates
         ? {
@@ -112,6 +130,11 @@ function normalizeWarnings(raw: RawWarnings, type: HazardWarning["type"]): Hazar
         : {}),
     };
   });
+}
+
+function normalizeAdministrativeCode(value: string | number, width: 2 | 4): string {
+  const code = String(value).trim();
+  return /^\d+$/.test(code) ? code.padStart(width, "0") : code;
 }
 
 function normalizeStation(

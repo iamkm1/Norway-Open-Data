@@ -46,6 +46,27 @@ export type HazardWarning = {
   description?: string;
   validFrom?: string;
   validTo?: string;
+  /** The provider's forecast region. Context only; not an administrative-area match. */
+  forecastRegion?: {
+    id?: string;
+    name?: string;
+  };
+  /** Counties attached by NVE; these can be parent context when municipalities are present. */
+  counties?: Array<{
+    code?: string;
+    name: string;
+  }>;
+  /** Official municipalities explicitly attached to the warning by NVE. */
+  municipalities?: Array<{
+    code?: string;
+    name: string;
+  }>;
+  /**
+   * Flattened forecast-region and administrative-area names.
+   *
+   * Retained for backwards compatibility. Use `counties` and `municipalities`
+   * when deciding whether a warning applies to an administrative area.
+   */
   regions?: string[];
   coordinates?: {
     latitude?: number;

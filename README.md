@@ -142,15 +142,27 @@ const place = await norway.profiles.address("Haraldsgata 100, Haugesund");
 
 console.log(place.data.address.municipalityName); // Kartverket
 console.log(place.data.weather?.temperature); // MET Norway
-console.log(place.data.hazards); // NVE warnings for the area
-console.log(place.data.roads); // NVDB segments within 250 m
+console.log(place.data.hazards); // Exact administrative-area matches from NVE
+console.log(place.data.hazardMatches); // Code/name evidence for each match
+console.log(place.data.roads); // First-page NVDB bounding-box candidates
+console.log(place.data.roadSearch); // Bounds, page size and truncation state
+console.log(place.data.components); // Status and source for every operation
 ```
 
 Enrichment degrades gracefully: `weather` and `roads` are omitted when the client has no
-`applicationName`/`contactEmail`, rather than failing the whole call.
+`applicationName`/`contactEmail`, rather than failing the whole call. `components` reports each
+operation as `available`, with its source, `retrievedAt` and `cached` values, or `omitted`, with a
+`not-configured`, `missing-coordinate` or `not-applicable` reason. Sources include provider
+attribution text when it is declared in the SDK registry.
 
-> **Safety:** `place.data.hazards` is best-effort warning discovery based on area-name matching.
-> An empty or omitted match is never an all-clear. For any safety decision, consult the current,
+`roads` contains only the first provider page intersecting the WGS84 box in `roadSearch`; it is not
+a geometry-distance result. The default box extends approximately 250 metres from the address to
+each side. Check `roadSearch.truncated` before assuming that all candidates were returned.
+
+> **Safety:** automatic warning discovery checks an explicit municipality by exact code, then exact
+> case-insensitive, Unicode-normalized name. It considers a county only when the warning publishes
+> no municipalities, because a county can be parent context. Forecast-region names are not matched
+> automatically. An empty match is never an all-clear. For any safety decision, consult the current,
 > complete official warnings directly from Varsom/NVE and follow their guidance.
 
 ### Electricity spot prices
@@ -165,6 +177,11 @@ console.log(prices.data[0]);
 const now = await norway.electricity.getCurrentPrice({ area: "NO5" });
 console.log(now.data?.nokPerKwh);
 ```
+
+`getPrices()` returns one entry per elapsed hour in the requested Europe/Oslo calendar day: normally
+24, but 23 or 25 across daylight-saving transitions. Normalized `endsAt` values follow the next
+chronological `startsAt` (or the following local midnight). Use `{ includeRaw: true }` when you also
+need the provider-native timestamps.
 
 ### Paging through large result sets
 
@@ -183,7 +200,8 @@ const iterator = norway.catalog.searchAll({ query: "transport" }, { maxItems: 50
 ```
 
 `maxItems` must be a non-negative integer. `maxPages` must be an integer from 1 to 100 and defaults
-to 100.
+to 100. NVDB iterators treat continuation markers as opaque and throw `ResponseValidationError`
+before requesting an already-seen marker when a provider repeats a cursor or returns a cycle.
 
 Available on `companies.searchAll`, `catalog.searchAll`, `parliament.searchCasesAll`,
 `roads.searchRoadObjectsAll` and `roads.getRoadNetworkAll`.
@@ -268,6 +286,7 @@ type OpenDataResponse<T> = {
     homepage: string;
     documentation: string;
     license?: string;
+    attribution?: string;
   };
   retrievedAt: string;
   cached: boolean;
@@ -275,9 +294,10 @@ type OpenDataResponse<T> = {
 };
 ```
 
-`data` is the typed result; `source` identifies the provider; `retrievedAt` is an ISO 8601
-timestamp; `cached` reports a memory-cache hit; and `raw` is included only when requested. Raw
-payloads remain runtime-validated and may be allowlisted or sanitized.
+`data` is the typed result; `source` identifies the provider and includes its licence or attribution
+when declared; `retrievedAt` is an ISO 8601 timestamp; `cached` reports a memory-cache hit; and
+`raw` is included only when requested. Raw payloads remain runtime-validated and may be allowlisted
+or sanitized.
 
 ## Error handling
 
@@ -429,8 +449,10 @@ Personal and restricted data are outside the project scope.
 - The SDK targets Node.js 22+; browser support is not guaranteed.
 - Upstream API contracts and response shapes can change independently of the SDK.
 - Some providers require caller identification, a contact email or a free API key.
-- Address-profile warning matches are best-effort discovery only and never constitute an
-  all-clear; use the complete official Varsom/NVE services for safety decisions.
+- Address-profile warning matches use exact structured administrative areas but still never
+  constitute an all-clear; use the complete official Varsom/NVE services for safety decisions.
+- Address-profile roads are first-page bounding-box candidates, not a circular distance query;
+  inspect `roadSearch` for the exact bounds and truncation state.
 - The electricity namespace depends on a third-party derived API rather than an official
   government endpoint.
 - The optional cache is in-process only and is not shared or persistent.

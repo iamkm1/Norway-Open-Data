@@ -14,6 +14,7 @@ import type {
 
 const BASE_URL = "https://www.hvakosterstrommen.no/api/v1/prices";
 const PRICE_TTL_MS = 30 * 60 * 1_000;
+const HOUR_MS = 60 * 60 * 1_000;
 
 const areaSchema = z.enum(["NO1", "NO2", "NO3", "NO4", "NO5"]);
 
@@ -45,11 +46,16 @@ function osloToday(): string {
   }).format(new Date());
 }
 
-function normalizePrices(raw: RawElectricityPrices, area: PriceArea): ElectricityPrice[] {
-  return raw.map((entry) => ({
+function normalizePrices(
+  raw: RawElectricityPrices,
+  area: PriceArea,
+  date: string,
+): ElectricityPrice[] {
+  const followingMidnight = osloIsoTimestamp(osloMidnight(followingDate(date)));
+  return raw.map((entry, index) => ({
     area,
     startsAt: entry.time_start,
-    endsAt: entry.time_end,
+    endsAt: raw[index + 1]?.time_start ?? followingMidnight,
     nokPerKwh: entry.NOK_per_kWh,
     eurPerKwh: entry.EUR_per_kWh,
     exchangeRate: entry.EXR,
@@ -72,6 +78,30 @@ function osloLocalTimestamp(instant: number): string {
   return `${parts["year"]}-${parts["month"]}-${parts["day"]}T${parts["hour"]}:${parts["minute"]}:${parts["second"]}`;
 }
 
+function osloMidnight(date: string): number {
+  const targetAsUtc = Date.parse(`${date}T00:00:00Z`);
+  let instant = targetAsUtc;
+
+  // Convert the requested wall-clock midnight to its exact Europe/Oslo instant.
+  // Iterating also keeps this independent of whether the date uses CET or CEST.
+  for (let iteration = 0; iteration < 2; iteration += 1) {
+    const renderedAsUtc = Date.parse(`${osloLocalTimestamp(instant)}Z`);
+    instant -= renderedAsUtc - targetAsUtc;
+  }
+  return instant;
+}
+
+function osloIsoTimestamp(instant: number): string {
+  const localTimestamp = osloLocalTimestamp(instant);
+  const localAsUtc = Date.parse(`${localTimestamp}Z`);
+  const offsetMinutes = Math.round((localAsUtc - instant) / (60 * 1_000));
+  const sign = offsetMinutes < 0 ? "-" : "+";
+  const absoluteOffset = Math.abs(offsetMinutes);
+  const hours = String(Math.floor(absoluteOffset / 60)).padStart(2, "0");
+  const minutes = String(absoluteOffset % 60).padStart(2, "0");
+  return `${localTimestamp}${sign}${hours}:${minutes}`;
+}
+
 function invalidPriceIntervals(): ResponseValidationError {
   return new ResponseValidationError(
     "Hva koster strømmen returned incomplete, invalid, or non-contiguous hourly price intervals.",
@@ -80,33 +110,46 @@ function invalidPriceIntervals(): ResponseValidationError {
 }
 
 function validatePriceIntervals(raw: RawElectricityPrices, date: string): RawElectricityPrices {
-  const first = raw[0];
-  const last = raw.at(-1);
-  if (
-    raw.length < 23 ||
-    raw.length > 25 ||
-    first === undefined ||
-    last === undefined ||
-    !first.time_start.startsWith(`${date}T00:00:00`) ||
-    !last.time_end.startsWith(`${followingDate(date)}T00:00:00`)
-  ) {
+  const dayStart = osloMidnight(date);
+  const dayEnd = osloMidnight(followingDate(date));
+  const expectedIntervals = (dayEnd - dayStart) / HOUR_MS;
+  if (![23, 24, 25].includes(expectedIntervals) || raw.length !== expectedIntervals) {
     throw invalidPriceIntervals();
   }
 
-  let previousEnd: number | undefined;
-  for (const entry of raw) {
+  for (const [index, entry] of raw.entries()) {
     const start = Date.parse(entry.time_start);
     const end = Date.parse(entry.time_end);
-    const isRequestedLocalDate = entry.time_start.startsWith(`${date}T`);
-    const usesOsloLocalTime =
-      entry.time_start.slice(0, 19) === osloLocalTimestamp(start) &&
-      entry.time_end.slice(0, 19) === osloLocalTimestamp(end);
-    const isOneHour = end - start === 60 * 60 * 1_000;
-    const followsPrevious = previousEnd === undefined || start === previousEnd;
-    if (!isRequestedLocalDate || !usesOsloLocalTime || !isOneHour || !followsPrevious) {
+    const expectedStart = dayStart + index * HOUR_MS;
+    const nextStartValue = raw[index + 1]?.time_start;
+    const followingStartValue = raw[index + 2]?.time_start;
+    const expectedEnd = nextStartValue === undefined ? dayEnd : Date.parse(nextStartValue);
+    const usesOsloStart =
+      Number.isFinite(start) && entry.time_start.slice(0, 19) === osloLocalTimestamp(start);
+    const usesOsloEnd =
+      Number.isFinite(end) && entry.time_end.slice(0, 19) === osloLocalTimestamp(end);
+
+    // Hva koster strømmen has historically ended the first repeated 02:00
+    // interval at 03:00 CET on valid autumn fallback days. Accept only that
+    // narrow provider-native anomaly; normalized output still ends at the next
+    // chronological start (02:00 CET).
+    const isAutumnFallbackEndAnomaly =
+      expectedIntervals === 25 &&
+      nextStartValue !== undefined &&
+      followingStartValue !== undefined &&
+      entry.time_start.slice(0, 19) === nextStartValue.slice(0, 19) &&
+      Date.parse(nextStartValue) === start + HOUR_MS &&
+      Date.parse(followingStartValue) === start + 2 * HOUR_MS &&
+      end === Date.parse(followingStartValue);
+
+    if (
+      start !== expectedStart ||
+      !usesOsloStart ||
+      !usesOsloEnd ||
+      (end !== expectedEnd && !isAutumnFallbackEndAnomaly)
+    ) {
       throw invalidPriceIntervals();
     }
-    previousEnd = end;
   }
   return raw;
 }
@@ -151,7 +194,7 @@ export class ElectricityClient {
       cacheTtlMs: PRICE_TTL_MS,
     });
     return createResponse(
-      normalizePrices(result.data, parsed.data.area),
+      normalizePrices(result.data, parsed.data.area, date),
       responseSource(providers.hvakosterstrommen),
       result.data,
       result.cached,

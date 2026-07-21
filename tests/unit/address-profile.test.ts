@@ -5,8 +5,45 @@ import warningFixture from "../fixtures/nve-warning.json" with { type: "json" };
 import { describe, expect, it, vi } from "vitest";
 
 import { boundingBoxAround, warningMatchesArea } from "../../src/profiles/address-profile.js";
-import { NorwayOpenData, NotFoundError } from "../../src/index.js";
+import {
+  NorwayOpenData,
+  NotFoundError,
+  providers,
+  type OpenDataSource,
+  type ProviderMetadata,
+} from "../../src/index.js";
 import { jsonResponse, sequenceFetch } from "./helpers.js";
+
+const RETRIEVED_AT = "2026-07-21T10:15:30.000Z";
+
+const matchingWarningFixture = [
+  {
+    ...warningFixture[0],
+    RegionId: 3011,
+    RegionName: "Nord-Rogaland",
+    CountyList: [{ Id: "11", Name: "Rogaland" }],
+    MunicipalityList: [{ Id: "1106", Name: "Haugesund" }],
+  },
+];
+
+const finalRoadPageFixture = {
+  ...roadNetworkFixture,
+  metadata: {
+    returnert: roadNetworkFixture.metadata.returnert,
+    sidestørrelse: roadNetworkFixture.metadata.sidestørrelse,
+  },
+};
+
+function expectedSource(provider: ProviderMetadata): OpenDataSource {
+  return {
+    id: provider.id,
+    name: provider.name,
+    homepage: provider.homepage,
+    documentation: provider.documentation,
+    ...(provider.license === undefined ? {} : { license: provider.license }),
+    ...(provider.attribution === undefined ? {} : { attribution: provider.attribution }),
+  };
+}
 
 /** Routes by URL so the profile's concurrent requests stay order-independent. */
 function routedFetch(routes: Array<[string, unknown]>): {
@@ -45,27 +82,187 @@ describe("boundingBoxAround", () => {
 });
 
 describe("warningMatchesArea", () => {
-  const warning = { type: "flood" as const, regions: ["Haugesund", "Nord-Rogaland"] };
+  const warning = {
+    type: "flood" as const,
+    forecastRegion: { id: "42", name: "Nord-Rogaland" },
+    counties: [{ code: "11", name: "Rogaland" }],
+    municipalities: [{ code: "1106", name: "Haugesund" }],
+    regions: ["Haugesund", "Nord-Rogaland", "Rogaland"],
+  };
 
-  it("matches on municipality or county name, case-insensitively", () => {
-    expect(warningMatchesArea(warning, ["haugesund"])).toBe(true);
-    expect(warningMatchesArea(warning, [undefined, "ROGALAND"])).toBe(true);
+  it("matches official codes before names and reports the exact basis", () => {
+    expect(
+      warningMatchesArea(warning, {
+        municipalityCode: "1106",
+        municipalityName: "Not Haugesund",
+        countyCode: "11",
+      }),
+    ).toEqual({ basis: "municipality-code", addressValue: "1106", warningValue: "1106" });
+    expect(
+      warningMatchesArea({ type: "flood", counties: warning.counties }, { countyCode: "11" }),
+    ).toEqual({ basis: "county-code", addressValue: "11", warningValue: "11" });
   });
 
-  it("does not match unrelated areas, blanks, or regionless warnings", () => {
-    expect(warningMatchesArea(warning, ["Tromsø"])).toBe(false);
-    expect(warningMatchesArea(warning, ["  ", undefined])).toBe(false);
-    expect(warningMatchesArea({ type: "flood" }, ["Haugesund"])).toBe(false);
+  it("pads codes and falls back to exact normalized names including Norwegian diacritics", () => {
+    expect(
+      warningMatchesArea(
+        {
+          type: "flood",
+          municipalities: [{ code: "301", name: "Oslo" }],
+        },
+        { municipalityCode: "0301" },
+      ),
+    ).toMatchObject({ basis: "municipality-code" });
+    expect(
+      warningMatchesArea(
+        {
+          type: "flood",
+          municipalities: [{ name: "A\u030Alesund" }],
+        },
+        { municipalityName: "åLESUND" },
+      ),
+    ).toEqual({
+      basis: "municipality-name",
+      addressValue: "åLESUND",
+      warningValue: "A\u030Alesund",
+    });
+    expect(
+      warningMatchesArea({ type: "flood", counties: warning.counties }, { countyName: "ROGALAND" }),
+    ).toEqual({ basis: "county-name", addressValue: "ROGALAND", warningValue: "Rogaland" });
+  });
+
+  it("does not confuse Os with Voss or use forecast regions as automatic matches", () => {
+    expect(
+      warningMatchesArea(
+        { type: "flood", municipalities: [{ name: "Voss" }] },
+        { municipalityName: "Os" },
+      ),
+    ).toBeUndefined();
+    expect(
+      warningMatchesArea(
+        { type: "flood", forecastRegion: { name: "Haugesund" }, regions: ["Haugesund"] },
+        { municipalityName: "Haugesund" },
+      ),
+    ).toBeUndefined();
+  });
+
+  it("does not let an exact name override contradictory official codes", () => {
+    expect(
+      warningMatchesArea(
+        { type: "flood", municipalities: [{ code: "4624", name: "Bjørnafjorden" }] },
+        { municipalityCode: "4630", municipalityName: "Bjørnafjorden" },
+      ),
+    ).toBeUndefined();
+  });
+
+  it("does not broaden a municipality warning through its parent county", () => {
+    expect(
+      warningMatchesArea(warning, {
+        municipalityCode: "4624",
+        municipalityName: "Bjørnafjorden",
+        countyCode: "11",
+        countyName: "Rogaland",
+      }),
+    ).toBeUndefined();
+  });
+
+  it("does not match unrelated areas, blanks, or warnings without administrative areas", () => {
+    expect(warningMatchesArea(warning, { municipalityName: "Tromsø" })).toBeUndefined();
+    expect(warningMatchesArea(warning, { municipalityName: "  " })).toBeUndefined();
+    expect(
+      warningMatchesArea({ type: "flood" }, { municipalityName: "Haugesund" }),
+    ).toBeUndefined();
   });
 });
 
 describe("profiles.address", () => {
-  it("composes address, weather, matching hazards, and nearby roads", async () => {
+  it("composes exact hazard evidence, honest road metadata, and component provenance", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(RETRIEVED_AT));
+    try {
+      const { fetch, mock } = routedFetch([
+        ["ws.geonorge.no", addressFixture],
+        ["api.met.no", forecastFixture],
+        ["veglenkesekvenser", roadNetworkFixture],
+        ["flood", matchingWarningFixture],
+        ["avalanche", []],
+        ["landslide", []],
+      ]);
+      const response = await new NorwayOpenData({
+        applicationName: "example-profile",
+        contactEmail: "profile@example.no",
+        fetch,
+        retries: 0,
+      }).profiles.address("Haraldsgata 100, Haugesund");
+
+      expect(response.data.address.municipalityName).toBe("HAUGESUND");
+      expect(response.data.weather?.temperature).toBe(17.2);
+      expect(response.data.roads).toHaveLength(1);
+      expect(response.data.hazards).toHaveLength(1);
+      expect(response.data.hazards[0]).toMatchObject({
+        type: "flood",
+        municipalities: [{ code: "1106", name: "Haugesund" }],
+      });
+      expect(response.data.hazardMatches).toHaveLength(1);
+      expect(response.data.hazardMatches?.[0]).toMatchObject({
+        matchBasis: "municipality-code",
+        addressArea: { code: "1106", name: "HAUGESUND" },
+        warningArea: { code: "1106", name: "Haugesund" },
+      });
+      expect(response.data.hazardMatches?.[0]?.warning).toBe(response.data.hazards[0]);
+
+      const expectedBoundingBox = boundingBoxAround(59.4111516, 5.2711408);
+      expect(response.data.roadSearch).toEqual({
+        shape: "bounding-box",
+        halfSizeMetres: 250,
+        boundingBox: expectedBoundingBox,
+        requestedPageSize: 10,
+        truncated: true,
+      });
+      const roadRequest = mock.mock.calls
+        .map((call) => String(call[0]))
+        .find((url) => url.includes("veglenkesekvenser"));
+      if (roadRequest === undefined) throw new Error("Expected an NVDB road-network request.");
+      const roadUrl = new URL(roadRequest);
+      expect(roadUrl.searchParams.get("kartutsnitt")).toBe(expectedBoundingBox.join(","));
+      expect(roadUrl.searchParams.get("antall")).toBe("10");
+
+      const componentExpectations = [
+        ["addresses.search", "address", providers.kartverket],
+        ["hazards.getFloodWarnings", "hazards", providers.nve],
+        ["hazards.getAvalancheWarnings", "hazards", providers.nve],
+        ["hazards.getLandslideWarnings", "hazards", providers.nve],
+        ["weather.current", "weather", providers.met],
+        ["roads.getRoadNetwork", "roads", providers.vegvesen],
+      ] as const;
+      expect(response.data.components).toHaveLength(componentExpectations.length);
+      for (const [operation, section, provider] of componentExpectations) {
+        expect(
+          response.data.components?.find((component) => component.operation === operation),
+        ).toEqual({
+          operation,
+          section,
+          status: "available",
+          source: expectedSource(provider),
+          retrievedAt: RETRIEVED_AT,
+          cached: false,
+        });
+      }
+      expect(response.source.documentation).toBe(
+        "https://github.com/iamkm1/Norway-Open-Data#cross-provider-address-profile",
+      );
+      expect(response.source.id).toBe("kartverket+met+nve+vegvesen");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reports an untruncated road result when NVDB has no next page", async () => {
     const { fetch } = routedFetch([
       ["ws.geonorge.no", addressFixture],
       ["api.met.no", forecastFixture],
-      ["veglenkesekvenser", roadNetworkFixture],
-      ["flood", warningFixture],
+      ["veglenkesekvenser", finalRoadPageFixture],
+      ["flood", []],
       ["avalanche", []],
       ["landslide", []],
     ]);
@@ -76,14 +273,13 @@ describe("profiles.address", () => {
       retries: 0,
     }).profiles.address("Haraldsgata 100, Haugesund");
 
-    expect(response.data.address.municipalityName).toBeTruthy();
-    expect(response.data.weather?.temperature).toBe(17.2);
-    expect(response.data.roads).toHaveLength(1);
-    expect(Array.isArray(response.data.hazards)).toBe(true);
-    expect(response.source.documentation).toBe(
-      "https://github.com/iamkm1/Norway-Open-Data#cross-provider-address-profile",
-    );
-    expect(response.source.id).toBe("kartverket+met+nve+vegvesen");
+    expect(response.data.roadSearch).toEqual({
+      shape: "bounding-box",
+      halfSizeMetres: 250,
+      boundingBox: boundingBoxAround(59.4111516, 5.2711408),
+      requestedPageSize: 10,
+      truncated: false,
+    });
   });
 
   it.each(["weather", "roads"] as const)(
@@ -131,6 +327,26 @@ describe("profiles.address", () => {
       expect(response.data.weather).toBeDefined();
       expect(response.data.roads).toBeDefined();
       expect(response.cached).toBe(false);
+      const freshOperation =
+        freshProvider === "weather" ? "weather.current" : "roads.getRoadNetwork";
+      const cachedOperation =
+        freshProvider === "weather" ? "roads.getRoadNetwork" : "weather.current";
+      expect(
+        response.data.components?.find((component) => component.operation === freshOperation),
+      ).toMatchObject({ status: "available", cached: false });
+      expect(
+        response.data.components?.find((component) => component.operation === cachedOperation),
+      ).toMatchObject({ status: "available", cached: true });
+      for (const operation of [
+        "addresses.search",
+        "hazards.getFloodWarnings",
+        "hazards.getAvalancheWarnings",
+        "hazards.getLandslideWarnings",
+      ]) {
+        expect(
+          response.data.components?.find((component) => component.operation === operation),
+        ).toMatchObject({ status: "available", cached: true });
+      }
     },
   );
 
@@ -149,8 +365,64 @@ describe("profiles.address", () => {
     expect(response.data.weather).toBeUndefined();
     expect(response.data.roads).toBeUndefined();
     expect(response.data.hazards).toEqual([]);
+    expect(response.data.components?.slice(-2)).toEqual([
+      {
+        operation: "weather.current",
+        section: "weather",
+        status: "omitted",
+        source: expectedSource(providers.met),
+        reason: "not-configured",
+      },
+      {
+        operation: "roads.getRoadNetwork",
+        section: "roads",
+        status: "omitted",
+        source: expectedSource(providers.vegvesen),
+        reason: "not-configured",
+      },
+    ]);
     expect(response.source.id).toBe("kartverket+nve");
     // Kartverket plus the three anonymous warning endpoints only.
+    expect(mock).toHaveBeenCalledTimes(4);
+  });
+
+  it("reports missing coordinates separately from missing provider identification", async () => {
+    const addressWithoutCoordinates = structuredClone(addressFixture);
+    const address = addressWithoutCoordinates.adresser[0];
+    if (address === undefined) throw new Error("Address fixture must contain one result.");
+    delete (address as Partial<typeof address>).representasjonspunkt;
+    const { fetch, mock } = routedFetch([
+      ["ws.geonorge.no", addressWithoutCoordinates],
+      ["flood", []],
+      ["avalanche", []],
+      ["landslide", []],
+    ]);
+    const response = await new NorwayOpenData({
+      applicationName: "example-profile",
+      contactEmail: "profile@example.no",
+      fetch,
+      retries: 0,
+    }).profiles.address("Haraldsgata 100");
+
+    expect(response.data.address).not.toHaveProperty("latitude");
+    expect(response.data.weather).toBeUndefined();
+    expect(response.data.roads).toBeUndefined();
+    expect(response.data.components?.slice(-2)).toEqual([
+      {
+        operation: "weather.current",
+        section: "weather",
+        status: "omitted",
+        source: expectedSource(providers.met),
+        reason: "missing-coordinate",
+      },
+      {
+        operation: "roads.getRoadNetwork",
+        section: "roads",
+        status: "omitted",
+        source: expectedSource(providers.vegvesen),
+        reason: "missing-coordinate",
+      },
+    ]);
     expect(mock).toHaveBeenCalledTimes(4);
   });
 

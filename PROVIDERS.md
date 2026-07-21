@@ -236,8 +236,13 @@ Access labels in this document have precise meanings:
 - **Pagination:** Road-object and segmented-network methods return one provider page. Pass the
   opaque `pagination.nextStart` back as `start` for the next page; do not parse, synthesize, or reuse
   it for a different query. `searchRoadObjectsAll()` and `getRoadNetworkAll()` follow those opaque
-  markers on demand and accept `maxItems`/`maxPages`. Optional WGS84 geometry is requested with
-  SRID 4326.
+  markers on demand and accept `maxItems`/`maxPages`. They fail with `ResponseValidationError`
+  before requesting an already-seen marker if NVDB repeats a cursor or returns a cycle. Optional
+  WGS84 geometry is requested with SRID 4326.
+- **Address-profile road search:** `profiles.address()` requests only the first segmented-network
+  page, with a requested page size of 10, for a WGS84 box whose sides are approximately 250 metres
+  from the address coordinate. This is not a circular geometry-distance filter. The profile's
+  `roadSearch` records the exact bounds and whether NVDB advertised another page.
 - **Dynamic schema boundary:** Road-object properties remain `unknown` because their value types are
   defined by the selected NVDB catalogue type. Type metadata is the authoritative description; the
   SDK does not pretend that every road-object type shares one property schema.
@@ -280,6 +285,12 @@ Access labels in this document have precise meanings:
   NVE's guidance names the source as appropriate: "Varsler fra Snøskredvarslingen i Norge og
   www.varsom.no", "Varsler fra Jordskredvarslingen i Norge og www.varsom.no", or "Varsler fra
   Flomvarslingen i Norge og www.varsom.no".
+- **Normalized warning areas:** Forecast-region identity is retained separately from structured
+  county and municipality names/codes. The flattened `regions` list remains for backwards
+  compatibility. Address profiles match an explicit municipality by code, then exact
+  case-insensitive, NFC-normalized name. County matching is used only when the warning publishes no
+  municipalities, because a county can be parent context. Forecast-region names are never automatic
+  administrative matches.
 - **HydAPI limits and stability:** HydAPI enforces an observation response-size cap and throttles a
   fixed but not publicly quantified number of requests per API key/time unit. Read
   `x-rate-limit-limit`, `x-rate-limit-remaining`, and `x-rate-limit-reset`; abusive clients can be
@@ -291,9 +302,9 @@ Access labels in this document have precise meanings:
   methods expose records currently marked operational. Hydrology observations are continuously
   updated and can be missing or corrected. Varsom warnings are regional planning aids, not a
   guarantee of local conditions; use the complete official warning and make an independent safety
-  assessment. `profiles.address()` applies only a best-effort area-name filter to warning summaries;
-  an empty profile match is never an all-clear. Query the complete official Varsom/NVE services
-  directly for safety decisions.
+  assessment. `profiles.address()` applies only the exact structured administrative filter above;
+  even a precise match does not establish local conditions, and an empty match is never an
+  all-clear. Query the complete official Varsom/NVE services directly for safety decisions.
 - **Restricted access not supported:** The SDK has no Regobs write/login flow and exposes no
   protected observations, user submissions, or personal data. The free HydAPI key is the only NVE
   credential accepted.
@@ -322,7 +333,11 @@ Access labels in this document have precise meanings:
 - **Known limits:** Prices are exclusive of grid rent, taxes and supplier surcharges. Next-day
   prices are normally published in the early afternoon; requesting a date before publication
   returns HTTP 404, surfaced as `NotFoundError`. Nordic day-ahead prices can legitimately be zero
-  or negative, so the SDK does not constrain them to positive values.
+  or negative, so the SDK does not constrain them to positive values. The SDK validates the ordered
+  starts and provider-native ends for one Europe/Oslo calendar day: normally 24 entries, 23 at the
+  spring transition, and 25 at the autumn transition. Normalized interval ends follow the next start
+  (or following local midnight); `{ includeRaw: true }` preserves provider-native end timestamps,
+  including a narrowly accepted historical autumn repeated-hour anomaly.
 
 ## Verification policy
 

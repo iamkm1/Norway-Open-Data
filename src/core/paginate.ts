@@ -1,4 +1,4 @@
-import { InputValidationError } from "./errors.js";
+import { InputValidationError, ResponseValidationError } from "./errors.js";
 
 /** Default cap on logical page or continuation batches walked by one iterator. */
 const DEFAULT_MAX_PAGES = 100;
@@ -86,12 +86,24 @@ export async function* paginateCursor<T>(
   fetchPage: (cursor: string | undefined) => Promise<CursorResult<T>>,
   startCursor: string | undefined,
   options: PaginateOptions = {},
+  provider?: string,
 ): AsyncGenerator<T, void, undefined> {
   const { maxItems, maxPages } = resolvePaginateOptions(options);
   if (maxItems === 0) return;
   let cursor = startCursor;
   let emitted = 0;
+  const requestedCursors = new Set<string>();
   for (let request = 0; request < maxPages; request += 1) {
+    if (cursor !== undefined) {
+      if (requestedCursors.has(cursor)) {
+        throw new ResponseValidationError(
+          "A provider returned a repeated pagination cursor; stopped before requesting the same page again.",
+          provider === undefined ? {} : { provider },
+        );
+      }
+      requestedCursors.add(cursor);
+    }
+
     const { items, nextCursor } = await fetchPage(cursor);
     for (const item of items) {
       yield item;

@@ -1,7 +1,7 @@
 import companyFixture from "../fixtures/brreg-company.json" with { type: "json" };
 import { describe, expect, it, vi } from "vitest";
 
-import { InputValidationError } from "../../src/core/errors.js";
+import { InputValidationError, ResponseValidationError } from "../../src/core/errors.js";
 import { paginateCursor, paginatePages } from "../../src/core/paginate.js";
 import { NorwayOpenData } from "../../src/index.js";
 import { jsonResponse } from "./helpers.js";
@@ -90,6 +90,64 @@ describe("paginateCursor", () => {
     const fetchPage = vi.fn(async () => ({ items: [] as string[], nextCursor: "loop" }));
     expect(await collect(paginateCursor(fetchPage, undefined))).toEqual([]);
     expect(fetchPage).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects an immediately repeated cursor before requesting its page twice", async () => {
+    const fetchPage = vi.fn(async (cursor: string | undefined) => ({
+      items: [cursor ?? "initial"],
+      nextCursor: "same",
+    }));
+    const yielded: string[] = [];
+
+    const result = (async () => {
+      for await (const item of paginateCursor(fetchPage, undefined)) yielded.push(item);
+    })();
+
+    await expect(result).rejects.toBeInstanceOf(ResponseValidationError);
+    await expect(result).rejects.toThrow(/repeated pagination cursor/u);
+    expect(yielded).toEqual(["initial", "same"]);
+    expect(fetchPage).toHaveBeenCalledTimes(2);
+    expect(fetchPage).toHaveBeenNthCalledWith(1, undefined);
+    expect(fetchPage).toHaveBeenNthCalledWith(2, "same");
+  });
+
+  it("also bounds a provider that repeats an empty cursor", async () => {
+    const fetchPage = vi.fn(async (cursor: string | undefined) => ({
+      items: [cursor ?? "initial"],
+      nextCursor: "",
+    }));
+
+    await expect(collect(paginateCursor(fetchPage, undefined))).rejects.toBeInstanceOf(
+      ResponseValidationError,
+    );
+    expect(fetchPage).toHaveBeenCalledTimes(2);
+    expect(fetchPage).toHaveBeenNthCalledWith(2, "");
+  });
+
+  it("rejects a cursor cycle before requesting an earlier page again", async () => {
+    const pages = new Map<string | undefined, { items: string[]; nextCursor: string }>([
+      [undefined, { items: ["initial"], nextCursor: "a" }],
+      ["a", { items: ["a"], nextCursor: "b" }],
+      ["b", { items: ["b"], nextCursor: "a" }],
+    ]);
+    const fetchPage = vi.fn(async (cursor: string | undefined) => {
+      const page = pages.get(cursor);
+      if (page === undefined) throw new Error("Unexpected cursor.");
+      return page;
+    });
+    const yielded: string[] = [];
+
+    const result = (async () => {
+      for await (const item of paginateCursor(fetchPage, undefined)) yielded.push(item);
+    })();
+
+    await expect(result).rejects.toBeInstanceOf(ResponseValidationError);
+    await expect(result).rejects.toThrow(/repeated pagination cursor/u);
+    expect(yielded).toEqual(["initial", "a", "b"]);
+    expect(fetchPage).toHaveBeenCalledTimes(3);
+    expect(fetchPage).toHaveBeenNthCalledWith(1, undefined);
+    expect(fetchPage).toHaveBeenNthCalledWith(2, "a");
+    expect(fetchPage).toHaveBeenNthCalledWith(3, "b");
   });
 
   it("honors maxItems", async () => {

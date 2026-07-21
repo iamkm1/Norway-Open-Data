@@ -1,14 +1,28 @@
 import { createResponse } from "../core/client.js";
 import { NotFoundError } from "../core/errors.js";
+import { providers, responseSource } from "../core/metadata.js";
 import type { OpenDataResponse, RequestOptions } from "../core/types.js";
 import type { BrregClient } from "../providers/brreg/client.js";
 import type { KartverketAddressClient } from "../providers/kartverket/address-client.js";
 import type { MetClient } from "../providers/met/client.js";
 import type { NveHazardsClient } from "../providers/nve/hazards-client.js";
 import type { VegvesenClient } from "../providers/vegvesen/client.js";
-import { boundingBoxAround, warningMatchesArea } from "./address-profile.js";
+import {
+  boundingBoxAround,
+  ROAD_BOX_HALF_SIZE_METRES,
+  warningMatchesArea,
+  type WarningAreaMatch,
+} from "./address-profile.js";
 import { selectAddressMatch } from "./company-profile.js";
-import type { AddressProfile, CompanyProfile } from "./types.js";
+import type {
+  AddressHazardMatch,
+  AddressProfile,
+  CompanyProfile,
+  ProfileComponent,
+  ProfileComponentOperation,
+  ProfileComponentSection,
+  ProfileOmissionReason,
+} from "./types.js";
 
 const PROJECT_URL = "https://github.com/iamkm1/Norway-Open-Data";
 
@@ -46,6 +60,70 @@ function addressProfileSource(includeWeather: boolean, includeRoads: boolean): P
     ],
     "cross-provider-address-profile",
   );
+}
+
+function availableComponent<T>(
+  operation: ProfileComponentOperation,
+  section: ProfileComponentSection,
+  response: OpenDataResponse<T>,
+): ProfileComponent {
+  return {
+    operation,
+    section,
+    status: "available",
+    source: response.source,
+    retrievedAt: response.retrievedAt,
+    cached: response.cached,
+  };
+}
+
+function omittedComponent(
+  operation: ProfileComponentOperation,
+  section: ProfileComponentSection,
+  source: Parameters<typeof responseSource>[0],
+  reason: ProfileOmissionReason,
+): ProfileComponent {
+  return {
+    operation,
+    section,
+    status: "omitted",
+    source: responseSource(source),
+    reason,
+  };
+}
+
+function addressHazardMatch(
+  warning: AddressProfile["hazards"][number],
+  match: WarningAreaMatch,
+  address: AddressProfile["address"],
+): AddressHazardMatch {
+  const municipality = match.basis.startsWith("municipality");
+  const codeMatch = match.basis.endsWith("code");
+  const warningAreas = municipality ? warning.municipalities : warning.counties;
+  const warningArea = warningAreas?.find((area) =>
+    codeMatch ? area.code === match.warningValue : area.name === match.warningValue,
+  );
+  return {
+    warning,
+    matchBasis: match.basis,
+    addressArea: municipality
+      ? {
+          ...(address.municipalityCode === undefined ? {} : { code: address.municipalityCode }),
+          ...(address.municipalityName === undefined ? {} : { name: address.municipalityName }),
+        }
+      : {
+          ...(address.countyCode === undefined ? {} : { code: address.countyCode }),
+          ...(address.countyName === undefined ? {} : { name: address.countyName }),
+        },
+    warningArea: {
+      ...(warningArea?.code === undefined ? {} : { code: warningArea.code }),
+      ...(warningArea?.name === undefined
+        ? codeMatch
+          ? {}
+          : { name: match.warningValue }
+        : { name: warningArea.name }),
+    },
+  };
 }
 
 /**
@@ -101,10 +179,10 @@ export class ProfileClient {
    * Answers one location from several providers at once.
    *
    * Resolves the address through Kartverket, then adds conditions from MET
-   * Norway, best-effort NVE region matches, and the road segments around the
-   * coordinate. A missing warning match is not an all-clear. Sections whose
-   * provider needs identification the client does not have are omitted rather
-   * than failing the call.
+   * Norway, exact NVE administrative-area matches, and the first page of NVDB
+   * segments intersecting a derived bounding box. A missing warning match is
+   * not an all-clear. Sections whose provider needs identification the client
+   * does not have are omitted rather than failing the call.
    */
   async address(
     query: string,
@@ -131,14 +209,18 @@ export class ProfileClient {
     const { latitude, longitude } = address;
     const hasCoordinates = latitude !== undefined && longitude !== undefined;
 
+    const roadBoundingBox =
+      hasCoordinates && latitude !== undefined && longitude !== undefined
+        ? boundingBoxAround(latitude, longitude)
+        : undefined;
     const weatherPromise =
       hasCoordinates && dependencies.hasMetIdentity
         ? dependencies.weather.current({ latitude, longitude }, forwarded)
         : undefined;
     const roadsPromise =
-      hasCoordinates && dependencies.hasApplicationName
+      roadBoundingBox !== undefined && dependencies.hasApplicationName
         ? dependencies.roads.getRoadNetwork(
-            { boundingBox: boundingBoxAround(latitude, longitude), pageSize: 10 },
+            { boundingBox: roadBoundingBox, pageSize: 10 },
             forwarded,
           )
         : undefined;
@@ -151,16 +233,60 @@ export class ProfileClient {
       roadsPromise,
     ]);
 
-    const areas = [address.municipalityName, address.countyName];
-    const hazards = [...flood.data, ...avalanche.data, ...landslide.data].filter((warning) =>
-      warningMatchesArea(warning, areas),
+    const hazardMatches = [...flood.data, ...avalanche.data, ...landslide.data].flatMap(
+      (warning) => {
+        const match = warningMatchesArea(warning, {
+          municipalityCode: address.municipalityCode,
+          municipalityName: address.municipalityName,
+          countyCode: address.countyCode,
+          countyName: address.countyName,
+        });
+        return match === undefined ? [] : [addressHazardMatch(warning, match, address)];
+      },
     );
+    const components: ProfileComponent[] = [
+      availableComponent("addresses.search", "address", addressResponse),
+      availableComponent("hazards.getFloodWarnings", "hazards", flood),
+      availableComponent("hazards.getAvalancheWarnings", "hazards", avalanche),
+      availableComponent("hazards.getLandslideWarnings", "hazards", landslide),
+      weather === undefined
+        ? omittedComponent(
+            "weather.current",
+            "weather",
+            providers.met,
+            hasCoordinates ? "not-configured" : "missing-coordinate",
+          )
+        : availableComponent("weather.current", "weather", weather),
+      roads === undefined
+        ? omittedComponent(
+            "roads.getRoadNetwork",
+            "roads",
+            providers.vegvesen,
+            hasCoordinates ? "not-configured" : "missing-coordinate",
+          )
+        : availableComponent("roads.getRoadNetwork", "roads", roads),
+    ];
 
     const profile: AddressProfile = {
       address,
-      hazards,
+      hazards: hazardMatches.map((match) => match.warning),
+      hazardMatches,
       ...(weather?.data === undefined ? {} : { weather: weather.data }),
       ...(roads === undefined ? {} : { roads: roads.data.items }),
+      ...(roads === undefined || roadBoundingBox === undefined
+        ? {}
+        : {
+            roadSearch: {
+              shape: "bounding-box" as const,
+              halfSizeMetres: ROAD_BOX_HALF_SIZE_METRES,
+              boundingBox: roadBoundingBox,
+              requestedPageSize: 10,
+              truncated:
+                roads.data.pagination.nextStart !== undefined ||
+                roads.data.pagination.nextUrl !== undefined,
+            },
+          }),
+      components,
     };
 
     return createResponse(
@@ -195,10 +321,17 @@ export class ProfileClient {
       includeRaw: options?.includeRaw === true,
     });
     const company = companyResponse.data;
+    const companyComponent = availableComponent("companies.get", "company", companyResponse);
     const businessAddress = company.businessAddress;
     if (!hasUsableAddress(businessAddress) || businessAddress === undefined) {
       return createResponse(
-        { company },
+        {
+          company,
+          components: [
+            companyComponent,
+            omittedComponent("addresses.search", "address", providers.kartverket, "not-applicable"),
+          ],
+        },
         companyProfileSource(false),
         { company: companyResponse.raw },
         companyResponse.cached,
@@ -227,6 +360,10 @@ export class ProfileClient {
       {
         company,
         ...(match === undefined ? {} : { location: match }),
+        components: [
+          companyComponent,
+          availableComponent("addresses.search", "address", addressResponse),
+        ],
       },
       companyProfileSource(true),
       { company: companyResponse.raw, addressSearch: addressResponse.raw },

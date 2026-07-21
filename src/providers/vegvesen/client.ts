@@ -457,6 +457,7 @@ export class VegvesenClient {
       },
       parameters.start,
       options ?? {},
+      "vegvesen",
     );
   }
 
@@ -482,6 +483,7 @@ export class VegvesenClient {
       },
       parameters.start,
       options ?? {},
+      "vegvesen",
     );
   }
 

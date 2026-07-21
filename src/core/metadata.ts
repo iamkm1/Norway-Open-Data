@@ -10,6 +10,12 @@ export type ProviderMetadata = {
   attribution?: string;
 };
 
+/** Source metadata attached to every successful SDK response. */
+export type OpenDataSource = Pick<
+  ProviderMetadata,
+  "id" | "name" | "homepage" | "documentation" | "license" | "attribution"
+>;
+
 /** Registry of all providers currently supported by the SDK. */
 export const providers = {
   brreg: {
@@ -121,7 +127,6 @@ export const providers = {
     documentation: "https://www.hvakosterstrommen.no/strompris-api",
     access: "open",
     authentication: "None.",
-    license: "Provider describes the API as open and free; no standardized licence stated",
     attribution:
       "Credit hvakosterstrommen.no; its API states that it sources euro prices from ENTSO-E and converts them using Norges Bank exchange rates.",
   },
@@ -131,18 +136,13 @@ export const providers = {
 export type ProviderId = keyof typeof providers;
 
 /** Creates the response-envelope source representation. */
-export function responseSource(provider: ProviderMetadata): {
-  id: string;
-  name: string;
-  homepage: string;
-  documentation: string;
-  license?: string;
-} {
+export function responseSource(provider: ProviderMetadata): OpenDataSource {
   return {
     id: provider.id,
     name: provider.name,
     homepage: provider.homepage,
     documentation: provider.documentation,
     ...(provider.license === undefined ? {} : { license: provider.license }),
+    ...(provider.attribution === undefined ? {} : { attribution: provider.attribution }),
   };
 }

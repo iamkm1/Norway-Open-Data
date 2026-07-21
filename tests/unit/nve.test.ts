@@ -102,9 +102,57 @@ describe("NVE clients", () => {
       id: "123",
       type,
       level: "2",
+      forecastRegion: { id: "3001", name: "Svalbard øst" },
+      counties: [{ code: "21", name: "Svalbard" }],
+      municipalities: [{ code: "2100", name: "Svalbard" }],
       regions: ["Svalbard øst", "Svalbard"],
     });
     expect(response.raw).toEqual(warningFixture);
+  });
+
+  it("pads numeric administrative codes while preserving structured warning areas", async () => {
+    const warning = warningFixture[0];
+    if (warning === undefined) throw new Error("NVE warning fixture must contain one record.");
+    const { fetch } = sequenceFetch(
+      jsonResponse([
+        {
+          ...warning,
+          CountyList: [{ Id: 3, Name: "Oslo" }],
+          MunicipalityList: [{ Id: 301, Name: "Oslo" }],
+        },
+      ]),
+    );
+
+    const response = await new NorwayOpenData({ fetch, retries: 0 }).hazards.getFloodWarnings();
+
+    expect(response.data[0]).toMatchObject({
+      counties: [{ code: "03", name: "Oslo" }],
+      municipalities: [{ code: "0301", name: "Oslo" }],
+    });
+  });
+
+  it("normalizes administrative-name whitespace without changing included raw data", async () => {
+    const warning = warningFixture[0];
+    if (warning === undefined) throw new Error("NVE warning fixture must contain one record.");
+    const payload = [
+      {
+        ...warning,
+        CountyList: [{ Id: "11", Name: " Rogaland " }],
+        MunicipalityList: [{ Id: "1106", Name: " Haugesund " }],
+      },
+    ];
+    const { fetch } = sequenceFetch(jsonResponse(payload));
+
+    const response = await new NorwayOpenData({ fetch, retries: 0 }).hazards.getFloodWarnings(
+      {},
+      { includeRaw: true },
+    );
+
+    expect(response.data[0]).toMatchObject({
+      counties: [{ code: "11", name: "Rogaland" }],
+      municipalities: [{ code: "1106", name: "Haugesund" }],
+    });
+    expect(response.raw).toEqual(payload);
   });
 
   it("rejects invalid warning date ranges before fetch", async () => {

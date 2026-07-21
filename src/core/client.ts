@@ -8,6 +8,7 @@ import {
   RequestTimeoutError,
   ResponseValidationError,
 } from "./errors.js";
+import type { OpenDataSource } from "./metadata.js";
 import { delay, parseRetryAfter, RETRYABLE_STATUS_CODES, retryDelayMs } from "./retry.js";
 import type { HttpResult, QueryParameters, RequestOptions, ResolvedConfig } from "./types.js";
 
@@ -382,13 +383,7 @@ export class HttpClient {
 /** Builds a response envelope without including raw data by default. */
 export function createResponse<T>(
   data: T,
-  source: {
-    id: string;
-    name: string;
-    homepage: string;
-    documentation: string;
-    license?: string;
-  },
+  source: OpenDataSource,
   raw: unknown,
   cached: boolean,
   options?: RequestOptions,

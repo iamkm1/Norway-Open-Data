@@ -1,4 +1,4 @@
-import type { ProviderMetadata } from "./metadata.js";
+import type { OpenDataSource } from "./metadata.js";
 
 /** Options accepted by every provider request. */
 export type RequestOptions = {
@@ -15,7 +15,7 @@ export type OpenDataResponse<T> = {
   /** Provider data, normalized only where semantics are unambiguous. */
   data: T;
   /** The public-data source responsible for the result. */
-  source: Pick<ProviderMetadata, "id" | "name" | "homepage" | "documentation" | "license">;
+  source: OpenDataSource;
   /** ISO-8601 timestamp for this SDK retrieval. */
   retrievedAt: string;
   /** Whether the provider payload was served from the SDK memory cache. */

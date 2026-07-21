@@ -22,7 +22,8 @@ NorwayOpenData
 
 Provider clients own request construction and normalization. The shared layer deliberately does
 not force unrelated provider records into one universal data model. Every successful call uses
-`OpenDataResponse<T>` and identifies its source.
+`OpenDataResponse<T>` and identifies its source, including licence and attribution metadata when
+the provider registry declares them.
 
 `includeRaw` exposes the validated provider representation, not an unfiltered network payload.
 Adapters allowlist or sanitize fields where provider responses can contain unsupported personal or
@@ -45,13 +46,27 @@ documentation and review requirements.
 
 `profiles.company()` composes Brønnøysundregistrene and Kartverket when a deterministic address
 match is available. `profiles.address()` starts with one Kartverket address and can add MET
-conditions, NVE warning summaries and nearby NVDB road segments. Enrichments that require missing
-caller identification are omitted instead of failing the base address result.
+conditions, NVE warning summaries and NVDB road candidates. Enrichments that require missing caller
+identification are omitted instead of failing the base address result.
 
-Address-profile hazard matches are deliberately best-effort discovery. NVE hydrological and
-avalanche regions do not map one-to-one to municipalities, so the adapter compares published area
-names and can miss relevant warnings. An empty `hazards` array is never an all-clear. Safety users
-must query the complete official Varsom/NVE services directly and follow their current guidance.
+Every profile carries a `components` entry for each operation it used or deliberately skipped. An
+`available` entry records the operation, logical section, provider source, retrieval time and cache
+state. An `omitted` entry records its provider source and a `not-configured`, `missing-coordinate`
+or `not-applicable` reason. The composite response is marked cached only when every provider call
+included in it was served from cache.
+
+Address-profile warning discovery uses only structured NVE municipality/county data. An explicit
+municipality is matched by official code, then exact case-insensitive, NFC-normalized name. County
+matching is used only when the warning has no municipality list, because NVE can include a parent
+county as context. Forecast-region names and the backwards-compatible flattened `regions` list are
+not automatic match inputs.
+`hazardMatches` preserves the matching field and both sides of the administrative evidence.
+
+The optional `roads` array is the first NVDB page intersecting a WGS84 bounding box, not a circular
+distance-filtered result. `roadSearch` reports that box, its approximate 250-metre half-size, the
+requested page size and whether NVDB advertised another page. An empty warning match is never an
+all-clear, and road candidates are not a proximity guarantee. Safety users must query the complete
+official Varsom/NVE services directly and follow their current guidance.
 
 ## Auto-pagination
 
@@ -61,7 +76,9 @@ Five list methods expose bounded async generators: `companies.searchAll()`,
 continuation markers and request the next page only when iteration advances. `maxItems` and
 `maxPages` stop a walk early. `maxItems` must be a non-negative integer; `maxPages` must be an
 integer from 1 to 100 and defaults to 100 so a provider contract change cannot create an unbounded
-request loop.
+request loop. Cursor-based walks retain every requested marker and raise
+`ResponseValidationError` before requesting an already-seen marker, including an immediate repeat
+or a longer cycle.
 
 ## Formats
 
@@ -71,7 +88,11 @@ those formats into explicit intermediate structures before normalization. Dynami
 NVDB road-object properties, use `unknown` and are never accepted through `any`.
 
 The `electricity` adapter validates the third-party JSON response independently and keeps that
-source classification and attribution separate from the official public-sector providers.
+source classification and attribution separate from the official public-sector providers. It
+requires the ordered elapsed-hour sequence and valid provider end boundaries for the requested
+Europe/Oslo day, so ordinary days have 24 entries and daylight-saving changes have 23 or 25.
+Normalized interval ends use the next start or following local midnight; optional `raw` data
+preserves provider-native end timestamps.
 
 ## Caching
 
