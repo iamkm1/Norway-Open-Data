@@ -1,11 +1,10 @@
 # Changelog
 
-All notable user-visible changes are recorded here. The project follows semantic versioning once
-published.
+All notable user-visible changes are recorded here. The project follows semantic versioning.
 
-## 0.2.0 - Unreleased
+## 0.2.0 - 2026-07-21
 
-This version exists in the repository but has not been published to npm or tagged as a release.
+Current release of the expanded Norway Open Data SDK.
 
 ### Added
 

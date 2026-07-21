@@ -1,9 +1,7 @@
 # API stability
 
-Norway Open Data SDK is currently version `0.2.0`, which is unreleased and not available from npm.
-Version `0.1.0` was published briefly and then unpublished; the repository's `v0.1.1` tag was not
-an npm release. The intended public surface is usable, tested and typed, but it should not be
-treated as a 1.0 stability promise.
+Norway Open Data SDK is currently version `0.2.0`. The public surface is usable, tested and typed,
+but it should not be treated as a 1.0 stability promise.
 
 ## Supported consumer surface
 

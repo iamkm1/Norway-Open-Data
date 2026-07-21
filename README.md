@@ -29,14 +29,13 @@ backend, database, account system or scraping layer.
 
 Requires Node.js 20 or newer. TypeScript declarations are included.
 
-Version `0.2.0` is unreleased, and there is currently no installable npm version. After an
-authorized npm release, installation will be:
+Version `0.2.0` is the current release. Install it with:
 
 ```bash
 npm install norway-open-data-sdk
 ```
 
-For collaborators with repository access, build a local tarball:
+Contributors can also build and test a local tarball:
 
 ```bash
 git clone https://github.com/iamkm1/Norway-Open-Data.git
@@ -361,9 +360,8 @@ Generate the TypeDoc API reference locally with:
 pnpm run docs
 ```
 
-TypeDoc writes to `docs/api`; open `docs/api/index.html`. Because the repository is currently
-private and `0.2.0` is unreleased, no public TypeDoc site is available. The Pages workflow is
-prepared for an authorized future deployment.
+TypeDoc writes to `docs/api`; open `docs/api/index.html`. The Pages workflow can deploy the same
+reference when GitHub Pages is enabled.
 
 ## Testing
 
