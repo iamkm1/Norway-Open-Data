@@ -46,6 +46,7 @@
   },
   "files": [
     "dist",
+    "examples",
     "README.md",
     "LICENSE",
     "PROVIDERS.md",
@@ -87,7 +88,6 @@
     "docs": "typedoc",
     "changeset": "changeset",
     "prepublishOnly": "npm run verify",
-    "release": "npm publish",
     "smoke": "tsx scripts/smoke-test.ts"
   },
   "dependencies": {
