@@ -29,7 +29,7 @@ backend, database, account system or scraping layer.
 
 Requires Node.js 22 or newer. TypeScript declarations are included.
 
-Version `0.2.0` is the current release. Install it with:
+Version `0.2.1` is the current release. Install it with:
 
 ```bash
 npm install norway-open-data-sdk
@@ -49,7 +49,7 @@ corepack pnpm pack
 Install the generated tarball from another project:
 
 ```bash
-npm install /path/to/Norway-Open-Data/norway-open-data-sdk-0.2.0.tgz
+npm install /path/to/Norway-Open-Data/norway-open-data-sdk-0.2.1.tgz
 ```
 
 ## Quick start

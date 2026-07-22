@@ -1,6 +1,6 @@
 # API stability
 
-Norway Open Data SDK is currently version `0.2.0`. The public surface is usable, tested and typed,
+Norway Open Data SDK is currently version `0.2.1`. The public surface is usable, tested and typed,
 but it should not be treated as a 1.0 stability promise.
 
 ## Supported consumer surface

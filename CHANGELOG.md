@@ -2,6 +2,12 @@
 
 All notable user-visible changes are recorded here. The project follows semantic versioning.
 
+## 0.2.1 - 2026-07-22
+
+### Patch Changes
+
+- f924276: Include the runnable example sources in the published package so packaged documentation links work.
+
 ## 0.2.0 - 2026-07-21
 
 Current release of the expanded Norway Open Data SDK.
