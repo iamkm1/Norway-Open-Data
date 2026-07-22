@@ -323,6 +323,7 @@ export class VegvesenClient {
       provider: "vegvesen",
       url: `${BASE_URL}/datakatalog/api/v1/vegobjekttyper/${parsedTypeId}`,
       query: { inkluder: "alle" },
+      resourceDescription: `road-object type ${parsedTypeId}`,
       headers,
       schema: roadObjectTypeSchema,
       transform: (data) => {
@@ -410,6 +411,7 @@ export class VegvesenClient {
         inkluder: ["metadata", "egenskaper", "lokasjon", "geometri"],
         srid: 4326,
       },
+      resourceDescription: `road object ${parsedObjectId} of type ${parsedTypeId}`,
       headers,
       schema: roadObjectSchema,
       transform: (data) => {

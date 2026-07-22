@@ -29,7 +29,7 @@ backend, database, account system or scraping layer.
 
 Requires Node.js 22 or newer. TypeScript declarations are included.
 
-Version `0.2.1` is the current release. Install it with:
+Version `0.2.2` is the current release. Install it with:
 
 ```bash
 npm install norway-open-data-sdk
@@ -49,31 +49,35 @@ corepack pnpm pack
 Install the generated tarball from another project:
 
 ```bash
-npm install /path/to/Norway-Open-Data/norway-open-data-sdk-0.2.1.tgz
+npm install /path/to/Norway-Open-Data/norway-open-data-sdk-0.2.2.tgz
 ```
 
 ## Quick start
 
 ```ts
-import { NorwayOpenData } from "norway-open-data-sdk";
+import { NorwayOpenData, type Company, type NorwegianAddress } from "norway-open-data-sdk";
 
 const norway = new NorwayOpenData({
   applicationName: "my-application",
   contactEmail: "developer@example.no",
 });
 
-const company = await norway.companies.get("923609016");
+const company = await norway.companies.get("923609016"); // OpenDataResponse<Company>
 console.log(company.data.name);
 
 const addresses = await norway.addresses.search({
   query: "Haraldsgata 100, Haugesund",
   limit: 1,
 });
-console.log(addresses.data.items[0]);
+console.log(addresses.data.items[0]); // NorwegianAddress
 
 const profile = await norway.profiles.company("923609016");
 console.log(profile.data.location);
 ```
+
+Result types follow each provider's own domain language rather than one shared prefix: companies
+return `Company`, Kartverket lookups return `NorwegianAddress`, and every entity type is exported
+from the package root, so editor auto-import finds the exact name.
 
 Anonymous methods work without configuration. Entur and NVDB require `applicationName`; MET
 requires `applicationName` and `contactEmail`; NVE HydAPI requires the caller's own API key.
@@ -146,7 +150,14 @@ console.log(place.data.hazards); // Exact administrative-area matches from NVE
 console.log(place.data.hazardMatches); // Code/name evidence for each match
 console.log(place.data.roads); // First-page NVDB bounding-box candidates
 console.log(place.data.roadSearch); // Bounds, page size and truncation state
-console.log(place.data.components); // Status and source for every operation
+
+// components is an array with one entry per SDK operation:
+for (const component of place.data.components) {
+  console.log(component.operation, component.status);
+  // "addresses.search" "available"
+  // "hazards.getFloodWarnings" "available"
+  // "weather.current" "omitted"  (reason: "not-configured")
+}
 ```
 
 Enrichment degrades gracefully: `weather` and `roads` are omitted when the client has no
@@ -239,6 +250,10 @@ const rate = await norway.currency.getExchangeRate(
 console.log(rate.raw);
 ```
 
+Note that the normalized result names the pair with SDMX terminology: the `from` currency is
+`data.baseCurrency` and the `to` currency is `data.quoteCurrency`, alongside `date`, `value` and
+an optional `unit` multiplier for currencies quoted per 100 units.
+
 ## Configuration
 
 ```ts
@@ -304,7 +319,13 @@ or sanitized.
 ## Error handling
 
 ```ts
-import { NorwayOpenData, NotFoundError, OpenDataError, RateLimitError } from "norway-open-data-sdk";
+import {
+  NorwayOpenData,
+  NotFoundError,
+  OpenDataError,
+  ProviderError,
+  RateLimitError,
+} from "norway-open-data-sdk";
 
 const norway = new NorwayOpenData();
 
@@ -327,6 +348,22 @@ Exported errors are `OpenDataError`, `ConfigurationError`, `InputValidationError
 `NotFoundError`, `RateLimitError`, `ProviderError`, `RequestTimeoutError` and
 `ResponseValidationError`. Retryable provider responses, timeouts and temporary network failures
 use bounded retries and honor `Retry-After`; validation and other client errors are not retried.
+
+Caller cancellation also surfaces as `ProviderError`, with the abort reason attached as `cause`.
+When retry or reporting logic must distinguish a deliberate abort from a provider failure, check
+the caller's own signal rather than the error:
+
+```ts
+try {
+  await norway.companies.get("923609016", { signal: controller.signal });
+} catch (error) {
+  if (controller.signal.aborted) {
+    // Cancelled by this application — do not retry or alert.
+  } else if (error instanceof ProviderError) {
+    // Genuine provider failure.
+  }
+}
+```
 
 ## Caching
 

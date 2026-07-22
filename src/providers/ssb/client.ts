@@ -73,6 +73,7 @@ export class SsbClient {
       provider: "ssb",
       url: `${BASE_URL}/tables/${parsed.data}/metadata`,
       query: { lang: "en" },
+      resourceDescription: `table ${parsed.data}`,
       schema: jsonStatSchema,
       transform: (data) => {
         parseTableMetadata(parsed.data, data as JsonStatDataset);
@@ -139,6 +140,7 @@ export class SsbClient {
     return this.#http.request({
       provider: "ssb",
       url: `${BASE_URL}/tables/${parsed.data.tableId}/data`,
+      resourceDescription: `table ${parsed.data.tableId}`,
       method: "POST",
       query: {
         lang: parsed.data.language ?? "no",

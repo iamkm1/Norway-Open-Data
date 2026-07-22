@@ -2,6 +2,24 @@
 
 All notable user-visible changes are recorded here. The project follows semantic versioning.
 
+## 0.2.2 - 2026-07-22
+
+### Patch Changes
+
+- Not-found errors now name the requested resource. Detail lookups such as
+  `companies.get`, `catalog.getDataset`, `parliament.getCase`, `roads.getRoadObject`,
+  `statistics.getTableMetadata` and `electricity.getPrices` report messages like
+  `brreg organization 000000000 was not found.` instead of a generic
+  `resource was not found.`, and the electricity message notes when the
+  requested day may not be published yet.
+- Documentation now covers the points first-time consumers stumbled on: how to
+  distinguish caller cancellation from a provider failure (check your own
+  `signal.aborted`; the SDK reports both as `ProviderError`), that entity types
+  follow provider domain naming (`Company`, `NorwegianAddress`) and are all
+  exported from the package root, that normalized exchange rates use
+  `baseCurrency`/`quoteCurrency` for the requested `from`/`to` pair, and that a
+  profile's `components` is an array with one entry per SDK operation.
+
 ## 0.2.1 - 2026-07-22
 
 ### Patch Changes

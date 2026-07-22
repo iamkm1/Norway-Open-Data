@@ -448,10 +448,11 @@ export class StortingetClient {
       provider: "stortinget",
       url: `${BASE_URL}/person`,
       query: { format: "json", personid: parsed.data },
+      resourceDescription: `representative ${parsed.data}`,
       schema: representativeSchema,
       transform: (data) => {
         if (data.id == null) {
-          throw new NotFoundError("Stortinget representative was not found.", {
+          throw new NotFoundError(`Stortinget representative ${parsed.data} was not found.`, {
             provider: "stortinget",
           });
         }
@@ -468,7 +469,7 @@ export class StortingetClient {
       cacheTtlMs: PEOPLE_TTL_MS,
     });
     if (result.data.id == null) {
-      throw new NotFoundError("Stortinget representative was not found.", {
+      throw new NotFoundError(`Stortinget representative ${parsed.data} was not found.`, {
         provider: "stortinget",
       });
     }
@@ -576,6 +577,7 @@ export class StortingetClient {
       provider: "stortinget",
       url: `${BASE_URL}/sak`,
       query: { format: "json", sakid: normalizedId },
+      resourceDescription: `case ${normalizedId}`,
       schema: parliamentaryCaseSchema,
       transform: (data) => {
         if (String(data.id) !== normalizedId) {

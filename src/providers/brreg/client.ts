@@ -165,6 +165,7 @@ export class BrregClient {
     const result = await this.#http.request({
       provider: "brreg",
       url: `${BASE_URL}/enheter/${normalized}`,
+      resourceDescription: `organization ${normalized}`,
       schema: companySchema,
       transform: (data) => {
         if (data.organisasjonsnummer !== normalized) {
@@ -257,6 +258,7 @@ export class BrregClient {
     const result = await this.#http.request({
       provider: "brreg",
       url: `${BASE_URL}/underenheter/${normalized}`,
+      resourceDescription: `sub-entity ${normalized}`,
       schema: companySchema,
       transform: (data) => {
         if (data.organisasjonsnummer !== normalized) {

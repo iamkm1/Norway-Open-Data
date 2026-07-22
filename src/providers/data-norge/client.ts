@@ -428,6 +428,7 @@ export class DataNorgeClient {
     const result = await this.#http.request({
       provider: "data-norge",
       url: `${PUBLISHER_URL}/${parsed.data}`,
+      resourceDescription: `publisher ${parsed.data}`,
       headers: { Accept: "text/turtle" },
       responseType: "text",
       schema: publisherTurtleSchema,
@@ -507,6 +508,7 @@ export class DataNorgeClient {
     const result = await this.#http.request({
       provider: "data-norge",
       url: `${RESOURCE_URL}/${path}/${parsed.data}`,
+      resourceDescription: `${type} ${parsed.data}`,
       schema: catalogResourceResponseSchema,
       transform: (data) => {
         if (data.id !== parsed.data) {

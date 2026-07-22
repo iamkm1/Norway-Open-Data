@@ -39,6 +39,10 @@ export type HttpRequest<T> = {
   responseType?: "json" | "text";
   options?: RequestOptions;
   cacheTtlMs?: number;
+  /** Names the requested resource in not-found errors, e.g. `organization 923609016`. */
+  resourceDescription?: string;
+  /** Appends one follow-up sentence to not-found errors, e.g. a publication-timing note. */
+  notFoundHint?: string;
   /** Performs provider-specific semantic validation or sanitization before caching. */
   transform?: (data: T) => T;
 };
@@ -237,7 +241,9 @@ export class HttpClient {
             continue;
           }
           if (response.status === 404) {
-            throw new NotFoundError(`${request.provider} resource was not found.`, {
+            const subject = `${request.provider} ${request.resourceDescription ?? "resource"}`;
+            const hint = request.notFoundHint === undefined ? "" : ` ${request.notFoundHint}`;
+            throw new NotFoundError(`${subject} was not found.${hint}`, {
               provider: request.provider,
               statusCode: 404,
             });

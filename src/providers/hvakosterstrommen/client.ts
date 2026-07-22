@@ -188,6 +188,8 @@ export class ElectricityClient {
     const result = await this.#http.request({
       provider: "hvakosterstrommen",
       url: `${BASE_URL}/${year}/${month}-${day}_${parsed.data.area}.json`,
+      resourceDescription: `price data for ${parsed.data.area} on ${date}`,
+      notFoundHint: "Next-day prices are normally published in the early afternoon.",
       schema: electricityPricesSchema,
       transform: (data) => validatePriceIntervals(data, date),
       options,
