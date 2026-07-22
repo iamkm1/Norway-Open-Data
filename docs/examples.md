@@ -85,8 +85,29 @@ for (const component of address.data.components ?? []) {
 `components` distinguishes a successful (possibly empty) operation from an omitted one. Available
 entries carry `source`, `retrievedAt` and `cached`; `retrievedAt` is when the SDK operation resolved,
 including cache hits, rather than the original upstream fetch time. Omitted entries carry
-`not-configured`, `missing-coordinate` or `not-applicable`. Sources include provider attribution
-text, with service-specific wording for each Varsom warning feed.
+`not-configured`, `missing-coordinate`, `not-applicable` or `provider-error`; the last means the
+operation was attempted but its provider failed, and the component then carries a sanitized `error`.
+Sources include provider attribution text, with service-specific wording for each Varsom warning
+feed.
+
+Municipality profiles answer one kommune from SSB, FHI, Brønnøysundregistrene and NVE at once:
+
+```ts
+const kommune = await norway.profiles.municipality("Haugesund"); // or the code "1106"
+
+console.log(kommune.data.municipality); // { code, name, countyCode }
+console.log(kommune.data.population); // SDK-summed residents for the two newest years
+console.log(kommune.data.lifeExpectancy); // FHI value, or years: null with a suppression flag
+console.log(kommune.data.companies?.registered); // Brønnøysundregistrene organization count
+console.log(kommune.data.hazards); // Exact NVE warning matches for the municipality
+```
+
+The lookup accepts a four-digit municipality code or an exact municipality name. Counties and the
+whole-country region never resolve, and duplicated municipality names (Herøy) require SSB's
+county-qualified label, so a profile never silently resolves to the wrong kommune. Population totals
+are aggregated by the SDK from SSB's per-sex, per-age rows rather than published directly, and life
+expectancy preserves FHI's suppression flag for small municipalities. Each optional section degrades
+to a `provider-error` component when its provider fails.
 
 Automatic hazard matching checks an explicit municipality by official code, then exact
 case-insensitive, Unicode-normalized name. It checks a county only when the warning has no

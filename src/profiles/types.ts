@@ -8,7 +8,11 @@ import type { RoadNetworkSegment } from "../providers/vegvesen/types.js";
 /** Provider operation that contributed to, or was intentionally omitted from, a profile. */
 export type ProfileComponentOperation =
   | "companies.get"
+  | "companies.search"
   | "addresses.search"
+  | "statistics.getTableMetadata"
+  | "statistics.query"
+  | "health.query"
   | "weather.current"
   | "hazards.getFloodWarnings"
   | "hazards.getAvalancheWarnings"
@@ -16,7 +20,16 @@ export type ProfileComponentOperation =
   | "roads.getRoadNetwork";
 
 /** Logical profile section populated by a component operation. */
-export type ProfileComponentSection = "company" | "address" | "weather" | "hazards" | "roads";
+export type ProfileComponentSection =
+  | "company"
+  | "address"
+  | "municipality"
+  | "population"
+  | "health"
+  | "companies"
+  | "weather"
+  | "hazards"
+  | "roads";
 
 /**
  * Why an optional profile component is missing. `provider-error` means the
@@ -78,6 +91,58 @@ export type CompanyProfile = {
     matchConfidence: "exact" | "high" | "possible";
   };
   /** Provenance and availability for each component operation. */
+  components?: ProfileComponent[];
+};
+
+/** Population totals aggregated by the SDK from SSB's per-sex, per-age rows. */
+export type MunicipalityPopulation = {
+  /** Resident count for `year`, summed across sexes and single ages. */
+  total: number;
+  year: string;
+  previousTotal?: number;
+  previousYear?: string;
+  /** `total` minus `previousTotal`. */
+  change?: number;
+};
+
+/** FHI life expectancy at birth over a seven-year rolling window. */
+export type MunicipalityLifeExpectancy = {
+  /** Expected years, or null when FHI suppresses the value. */
+  years: number | null;
+  /** Provider period code, e.g. `2018_2024`. */
+  period: string;
+  /** FHI measure code for the observation. */
+  measure: string;
+  /** FHI suppression flag, preserved when `years` is not published. */
+  flag?: string;
+  /** The provider's explanation for `flag`. */
+  flagMeaning?: string;
+};
+
+/**
+ * One municipality answered from several agencies at once.
+ *
+ * Optional sections degrade to `provider-error` components when their provider
+ * fails; `hazards` may then be incomplete and is never an all-clear.
+ */
+export type MunicipalityProfile = {
+  /** The resolved municipality; `countyCode` is the code's leading two digits. */
+  municipality: { code: string; name: string; countyCode: string };
+  /** SSB population totals for the two newest published years. */
+  population?: MunicipalityPopulation;
+  /** FHI life expectancy at birth, with suppression flags preserved. */
+  lifeExpectancy?: MunicipalityLifeExpectancy;
+  /** Organizations registered in the municipality according to Brønnøysundregistrene. */
+  companies?: { registered: number };
+  /**
+   * Current NVE warnings whose explicit administrative areas match the
+   * municipality. An empty array is not an all-clear; use the `hazards`
+   * namespace and official Varsom/NVE services for safety decisions.
+   */
+  hazards: HazardWarning[];
+  /** Exact administrative evidence for each warning in `hazards`. */
+  hazardMatches?: AddressHazardMatch[];
+  /** Provenance and availability for every component operation. */
   components?: ProfileComponent[];
 };
 

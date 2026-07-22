@@ -61,6 +61,7 @@ const expectedPackageFiles = [
   "examples/energy.ts",
   "examples/hazards.ts",
   "examples/health-statistics.ts",
+  "examples/municipality-profile.ts",
   "examples/parliament.ts",
   "examples/roads.ts",
   "examples/statistics.ts",

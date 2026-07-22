@@ -2,6 +2,19 @@
 
 All notable user-visible changes are recorded here. The project follows semantic versioning.
 
+## 0.4.0 - 2026-07-23
+
+### Minor Changes
+
+- New `profiles.municipality()` composition answers one municipality from SSB, FHI,
+  Brønnøysundregistrene and NVE in a single call. It resolves a four-digit municipality
+  code or an exact municipality name against SSB's region register (counties and the
+  whole-country region never resolve, and duplicated names such as Herøy require SSB's
+  county-qualified label), then adds SDK-aggregated population totals for the two newest
+  years, FHI life expectancy at birth with suppression flags preserved, the registered
+  organization count from Brønnøysundregistrene, and exact NVE warning matches. Every
+  optional section degrades to a `provider-error` component instead of failing the call.
+
 ## 0.3.0 - 2026-07-22
 
 ### Minor Changes

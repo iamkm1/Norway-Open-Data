@@ -115,6 +115,16 @@ await check("Profiles profiles.company", async () => {
   )},${String(location.address.longitude ?? "?")}`;
 });
 
+await check("Profiles profiles.municipality", async () => {
+  const response = await norway.profiles.municipality("Haugesund");
+  const population = response.data.population;
+  requireResult(population !== undefined, "No SSB population total was aggregated.");
+  const life = response.data.lifeExpectancy;
+  const lifeText =
+    life?.years === null ? `suppressed (${life.flag ?? "?"})` : String(life?.years ?? "?");
+  return `${response.data.municipality.name}: ${String(population.total)} residents (${population.year}); life expectancy ${lifeText}; ${String(response.data.companies?.registered ?? "?")} companies`;
+});
+
 await check("Data.norge catalog.search", async () => {
   const response = await norway.catalog.search({
     query: "transport",

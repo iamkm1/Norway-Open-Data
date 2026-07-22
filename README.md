@@ -29,7 +29,7 @@ backend, database, account system or scraping layer.
 
 Requires Node.js 22 or newer. TypeScript declarations are included.
 
-Version `0.3.0` is the current release. Install it with:
+Version `0.4.0` is the current release. Install it with:
 
 ```bash
 npm install norway-open-data-sdk
@@ -49,7 +49,7 @@ corepack pnpm pack
 Install the generated tarball from another project:
 
 ```bash
-npm install /path/to/Norway-Open-Data/norway-open-data-sdk-0.3.0.tgz
+npm install /path/to/Norway-Open-Data/norway-open-data-sdk-0.4.0.tgz
 ```
 
 ## Quick start
@@ -100,7 +100,8 @@ requires `applicationName` and `contactEmail`; NVE HydAPI requires the caller's 
 | Hva koster strømmen?    | `electricity`         | Hourly spot prices for all five bidding zones                  | Anonymous third-party API      |
 
 `profiles` composes several providers into one answer: `company` combines Brønnøysundregistrene
-with a Kartverket address match, and `address` combines Kartverket, MET Norway, NVE and NVDB.
+with a Kartverket address match, `address` combines Kartverket, MET Norway, NVE and NVDB, and
+`municipality` combines SSB, FHI, Brønnøysundregistrene and NVE.
 
 Hva koster strømmen? is an independent third-party service, not a government or official data
 provider. Its documentation says the API derives EUR electricity prices from ENTSO-E and converts
@@ -182,6 +183,29 @@ each side. Check `roadSearch.truncated` before assuming that all candidates were
 > no municipalities, because a county can be parent context. Forecast-region names are not matched
 > automatically. An empty match is never an all-clear. For any safety decision, consult the current,
 > complete official warnings directly from Varsom/NVE and follow their guidance.
+
+### Cross-provider municipality profile
+
+One call answers a municipality from four agencies at once:
+
+```ts
+const kommune = await norway.profiles.municipality("Haugesund"); // code "1106" also works
+
+console.log(kommune.data.municipality); // { code, name, countyCode } — SSB region register
+console.log(kommune.data.population); // SSB-aggregated residents for the two newest years
+console.log(kommune.data.lifeExpectancy); // FHI life expectancy, suppression flags preserved
+console.log(kommune.data.companies?.registered); // Brønnøysundregistrene organization count
+console.log(kommune.data.hazards); // Exact NVE warning matches for the municipality
+console.log(kommune.data.components); // Status and source for every operation
+```
+
+The lookup accepts a four-digit municipality code or an exact municipality name; counties and the
+whole-country region never resolve, and a duplicated municipality name (Herøy exists twice) requires
+SSB's county-qualified label. Population totals are summed by the SDK from SSB's per-sex, per-age
+rows — the aggregation is the SDK's, not an SSB-published figure. Life expectancy keeps FHI's
+suppression flag with `years: null` for the smallest municipalities. Every optional section degrades
+to a `provider-error` component if its provider fails, and the `hazards` safety boundary above
+applies here too.
 
 ### Health statistics with suppression flags
 

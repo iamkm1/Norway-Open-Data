@@ -246,6 +246,37 @@ live("Cross-provider — profiles", () => {
       expect(response.data.location.address).toBeDefined();
     }
   });
+
+  it("composes a municipality profile from SSB, FHI, Brreg and NVE", async () => {
+    const response = await sdk.profiles.municipality("Haugesund");
+    expect(response.data.municipality).toMatchObject({
+      code: "1106",
+      name: "Haugesund",
+      countyCode: "11",
+    });
+    expect(response.data.population?.total).toBeGreaterThan(0);
+    expect(typeof response.data.companies?.registered).toBe("number");
+    expect(Array.isArray(response.data.hazards)).toBe(true);
+
+    const components = response.data.components ?? [];
+    expect(components).toHaveLength(7);
+    expect(components.every((component) => component.status === "available")).toBe(true);
+
+    // Life expectancy is present as a value or an explicitly flagged suppression.
+    const life = response.data.lifeExpectancy;
+    expect(life).toBeDefined();
+    if (life?.years === null) {
+      expect(life.flag).toBeTruthy();
+    } else {
+      expect(life?.years).toBeGreaterThan(0);
+    }
+
+    // A tiny municipality reliably suppresses its life-expectancy value.
+    const utsira = await sdk.profiles.municipality("1151");
+    expect(utsira.data.lifeExpectancy?.years).toBeNull();
+    expect(utsira.data.lifeExpectancy?.flag).toBeTruthy();
+    expect(utsira.data.lifeExpectancy?.flagMeaning).toBeTruthy();
+  });
 });
 
 live("Data.norge — catalog", () => {

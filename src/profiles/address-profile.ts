@@ -29,7 +29,8 @@ export function boundingBoxAround(
   ];
 }
 
-function normalizeName(value: string): string {
+/** Normalizes an administrative-area name for exact comparison. @internal */
+export function normalizeName(value: string): string {
   return value.trim().replace(/\s+/gu, " ").normalize("NFC").toLocaleLowerCase("nb-NO");
 }
 

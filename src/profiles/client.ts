@@ -3,9 +3,11 @@ import { NotFoundError } from "../core/errors.js";
 import { providers, responseSource } from "../core/metadata.js";
 import type { OpenDataResponse, RequestOptions } from "../core/types.js";
 import type { BrregClient } from "../providers/brreg/client.js";
+import type { FhiClient } from "../providers/fhi/client.js";
 import type { KartverketAddressClient } from "../providers/kartverket/address-client.js";
 import type { MetClient } from "../providers/met/client.js";
 import type { NveHazardsClient } from "../providers/nve/hazards-client.js";
+import type { SsbClient } from "../providers/ssb/client.js";
 import type { VegvesenClient } from "../providers/vegvesen/client.js";
 import {
   boundingBoxAround,
@@ -14,10 +16,18 @@ import {
   type WarningAreaMatch,
 } from "./address-profile.js";
 import { selectAddressMatch } from "./company-profile.js";
+import {
+  LIFE_EXPECTANCY_TABLE,
+  pickLifeExpectancy,
+  POPULATION_TABLE_ID,
+  resolveMunicipality,
+  summarizePopulation,
+} from "./municipality-profile.js";
 import type {
   AddressHazardMatch,
   AddressProfile,
   CompanyProfile,
+  MunicipalityProfile,
   ProfileComponent,
   ProfileComponentOperation,
   ProfileComponentSection,
@@ -62,6 +72,22 @@ function addressProfileSource(includeWeather: boolean, includeRoads: boolean): P
       ...(includeRoads ? [{ id: "vegvesen", name: "Statens vegvesen" }] : []),
     ],
     "cross-provider-address-profile",
+  );
+}
+
+function municipalityProfileSource(
+  includeFhi: boolean,
+  includeBrreg: boolean,
+  includeNve: boolean,
+): ProfileSource {
+  return profileSource(
+    [
+      { id: "ssb", name: "Statistics Norway" },
+      ...(includeFhi ? [{ id: "fhi", name: "FHI" }] : []),
+      ...(includeBrreg ? [{ id: "brreg", name: "Brønnøysundregistrene" }] : []),
+      ...(includeNve ? [{ id: "nve", name: "NVE" }] : []),
+    ],
+    "cross-provider-municipality-profile",
   );
 }
 
@@ -170,20 +196,38 @@ function addressHazardMatch(
 }
 
 /**
- * Providers used by cross-provider address enrichment, plus the identification
- * the current configuration actually supplies.
+ * Providers used by cross-provider enrichment, plus the identification the
+ * current configuration actually supplies.
  *
  * @internal
  */
-export type AddressProfileDependencies = {
+export type ProfileDependencies = {
   weather: MetClient;
   hazards: NveHazardsClient;
   roads: VegvesenClient;
+  statistics: SsbClient;
+  health: FhiClient;
   /** True when both `applicationName` and `contactEmail` are configured. */
   hasMetIdentity: boolean;
   /** True when `applicationName` is configured. */
   hasApplicationName: boolean;
 };
+
+function warningFeedComponent(
+  operation: ProfileComponentOperation,
+  result: AttemptResult<AddressProfile["hazards"]> | undefined,
+  response: OpenDataResponse<AddressProfile["hazards"]> | undefined,
+  attribution: string,
+): ProfileComponent {
+  return response !== undefined
+    ? availableComponent(operation, "hazards", response, attribution)
+    : failedComponent(
+        operation,
+        "hazards",
+        providers.nve,
+        result !== undefined && "failure" in result ? result.failure : new Error("Unknown"),
+      );
+}
 
 function hasUsableAddress(address: CompanyProfile["company"]["businessAddress"]): boolean {
   const addressText = address?.addressText?.trim();
@@ -205,13 +249,13 @@ function hasUsableAddress(address: CompanyProfile["company"]["businessAddress"])
 export class ProfileClient {
   readonly #companies: BrregClient;
   readonly #addresses: KartverketAddressClient;
-  readonly #dependencies?: AddressProfileDependencies;
+  readonly #dependencies?: ProfileDependencies;
 
   /** @internal */
   constructor(
     companies: BrregClient,
     addresses: KartverketAddressClient,
-    dependencies?: AddressProfileDependencies,
+    dependencies?: ProfileDependencies,
   ) {
     this.#companies = companies;
     this.#addresses = addresses;
@@ -296,30 +340,21 @@ export class ProfileClient {
       });
       return match === undefined ? [] : [addressHazardMatch(warning, match, address)];
     });
-    const hazardComponent = (
-      operation: ProfileComponentOperation,
-      result: AttemptResult<AddressProfile["hazards"]> | undefined,
-      response: OpenDataResponse<AddressProfile["hazards"]> | undefined,
-      attribution: string,
-    ): ProfileComponent =>
-      response !== undefined
-        ? availableComponent(operation, "hazards", response, attribution)
-        : failedComponent(
-            operation,
-            "hazards",
-            providers.nve,
-            result !== undefined && "failure" in result ? result.failure : new Error("Unknown"),
-          );
     const components: ProfileComponent[] = [
       availableComponent("addresses.search", "address", addressResponse),
-      hazardComponent("hazards.getFloodWarnings", floodResult, flood, FLOOD_WARNING_ATTRIBUTION),
-      hazardComponent(
+      warningFeedComponent(
+        "hazards.getFloodWarnings",
+        floodResult,
+        flood,
+        FLOOD_WARNING_ATTRIBUTION,
+      ),
+      warningFeedComponent(
         "hazards.getAvalancheWarnings",
         avalancheResult,
         avalanche,
         AVALANCHE_WARNING_ATTRIBUTION,
       ),
-      hazardComponent(
+      warningFeedComponent(
         "hazards.getLandslideWarnings",
         landslideResult,
         landslide,
@@ -386,6 +421,234 @@ export class ProfileClient {
         (landslide?.cached ?? true) &&
         (weather?.cached ?? true) &&
         (roads?.cached ?? true),
+      options,
+    );
+  }
+
+  /**
+   * Answers one municipality from several agencies at once.
+   *
+   * Resolves a four-digit municipality code or exact municipality name against
+   * SSB's region register, then adds SDK-aggregated population totals from
+   * SSB, FHI life expectancy with suppression flags preserved, the count of
+   * registered organizations from Brønnøysundregistrene, and exact NVE warning
+   * matches. Every optional section degrades to a `provider-error` component
+   * instead of failing the call; a missing warning match is not an all-clear.
+   */
+  async municipality(
+    query: string,
+    options?: RequestOptions,
+  ): Promise<OpenDataResponse<MunicipalityProfile>> {
+    const dependencies = this.#dependencies;
+    if (dependencies === undefined) {
+      throw new NotFoundError(
+        "Municipality profiles require a fully configured NorwayOpenData client.",
+      );
+    }
+    const forwarded: RequestOptions = {
+      ...(options?.signal === undefined ? {} : { signal: options.signal }),
+      ...(options?.bypassCache === undefined ? {} : { bypassCache: options.bypassCache }),
+      includeRaw: options?.includeRaw === true,
+    };
+
+    const metadataResponse = await dependencies.statistics.getTableMetadata(
+      POPULATION_TABLE_ID,
+      forwarded,
+    );
+    const regionDimension = metadataResponse.data.dimensions.find(
+      (dimension) => dimension.code === "Region",
+    );
+    const resolved = resolveMunicipality(regionDimension, query);
+    if (resolved === undefined) {
+      throw new NotFoundError(`No Norwegian municipality matched "${query}".`, {
+        provider: "ssb",
+      });
+    }
+    const countyCode = resolved.code.slice(0, 2);
+
+    const signal = forwarded.signal;
+    const [
+      populationResult,
+      lifeResult,
+      companiesResult,
+      floodResult,
+      avalancheResult,
+      landslideResult,
+    ] = await Promise.all([
+      attempt(
+        dependencies.statistics.query(
+          {
+            tableId: POPULATION_TABLE_ID,
+            selections: {
+              Region: [resolved.code],
+              Kjonn: ["1", "2"],
+              Alder: ["*"],
+              ContentsCode: ["Personer1"],
+              Tid: ["top(2)"],
+            },
+          },
+          forwarded,
+        ),
+        signal,
+      ),
+      attempt(
+        dependencies.health.query(
+          {
+            source: LIFE_EXPECTANCY_TABLE.source,
+            tableId: LIFE_EXPECTANCY_TABLE.tableId,
+            selections: {
+              GEO: [resolved.code],
+              AAR: ["*"],
+              KJONN: ["0"],
+              ALDER: ["0"],
+              UTDANN: ["0"],
+              MEASURE_TYPE: [LIFE_EXPECTANCY_TABLE.measure],
+            },
+          },
+          forwarded,
+        ),
+        signal,
+      ),
+      attempt(
+        this.#companies.search({ municipalityCode: resolved.code, size: 1 }, forwarded),
+        signal,
+      ),
+      attempt(dependencies.hazards.getFloodWarnings({}, forwarded), signal),
+      attempt(dependencies.hazards.getAvalancheWarnings({}, forwarded), signal),
+      attempt(dependencies.hazards.getLandslideWarnings({}, forwarded), signal),
+    ]);
+    const populationResponse = succeeded(populationResult);
+    const lifeResponse = succeeded(lifeResult);
+    const companiesResponse = succeeded(companiesResult);
+    const flood = succeeded(floodResult);
+    const avalanche = succeeded(avalancheResult);
+    const landslide = succeeded(landslideResult);
+
+    const population =
+      populationResponse === undefined ? undefined : summarizePopulation(populationResponse.data);
+    const lifeExpectancy =
+      lifeResponse === undefined ? undefined : pickLifeExpectancy(lifeResponse.data);
+    const matchArea = {
+      municipalityCode: resolved.code,
+      municipalityName: resolved.name,
+      countyCode,
+    };
+    const hazardMatches = [
+      ...(flood?.data ?? []),
+      ...(avalanche?.data ?? []),
+      ...(landslide?.data ?? []),
+    ].flatMap((warning) => {
+      const match = warningMatchesArea(warning, matchArea);
+      if (match === undefined) return [];
+      const municipality = match.basis.startsWith("municipality");
+      const warningAreas = municipality ? warning.municipalities : warning.counties;
+      const warningArea = warningAreas?.find((area) =>
+        match.basis.endsWith("code")
+          ? area.code === match.warningValue
+          : area.name === match.warningValue,
+      );
+      return [
+        {
+          warning,
+          matchBasis: match.basis,
+          addressArea: municipality
+            ? { code: resolved.code, name: resolved.name }
+            : { code: countyCode },
+          warningArea: {
+            ...(warningArea?.code === undefined ? {} : { code: warningArea.code }),
+            ...(warningArea?.name === undefined ? {} : { name: warningArea.name }),
+          },
+        } satisfies AddressHazardMatch,
+      ];
+    });
+
+    const sectionComponent = <T>(
+      operation: ProfileComponentOperation,
+      section: ProfileComponentSection,
+      result: AttemptResult<T> | undefined,
+      response: OpenDataResponse<T> | undefined,
+      provider: Parameters<typeof responseSource>[0],
+    ): ProfileComponent =>
+      response !== undefined
+        ? availableComponent(operation, section, response)
+        : failedComponent(
+            operation,
+            section,
+            provider,
+            result !== undefined && "failure" in result ? result.failure : new Error("Unknown"),
+          );
+    const components: ProfileComponent[] = [
+      availableComponent("statistics.getTableMetadata", "municipality", metadataResponse),
+      sectionComponent(
+        "statistics.query",
+        "population",
+        populationResult,
+        populationResponse,
+        providers.ssb,
+      ),
+      sectionComponent("health.query", "health", lifeResult, lifeResponse, providers.fhi),
+      sectionComponent(
+        "companies.search",
+        "companies",
+        companiesResult,
+        companiesResponse,
+        providers.brreg,
+      ),
+      warningFeedComponent(
+        "hazards.getFloodWarnings",
+        floodResult,
+        flood,
+        FLOOD_WARNING_ATTRIBUTION,
+      ),
+      warningFeedComponent(
+        "hazards.getAvalancheWarnings",
+        avalancheResult,
+        avalanche,
+        AVALANCHE_WARNING_ATTRIBUTION,
+      ),
+      warningFeedComponent(
+        "hazards.getLandslideWarnings",
+        landslideResult,
+        landslide,
+        LANDSLIDE_WARNING_ATTRIBUTION,
+      ),
+    ];
+
+    const profile: MunicipalityProfile = {
+      municipality: { code: resolved.code, name: resolved.name, countyCode },
+      ...(population === undefined ? {} : { population }),
+      ...(lifeExpectancy === undefined ? {} : { lifeExpectancy }),
+      ...(companiesResponse === undefined
+        ? {}
+        : { companies: { registered: companiesResponse.data.pagination.totalItems } }),
+      hazards: hazardMatches.map((match) => match.warning),
+      hazardMatches,
+      components,
+    };
+
+    return createResponse(
+      profile,
+      municipalityProfileSource(
+        lifeResponse !== undefined,
+        companiesResponse !== undefined,
+        flood !== undefined || avalanche !== undefined || landslide !== undefined,
+      ),
+      {
+        regionMetadata: metadataResponse.raw,
+        ...(populationResponse === undefined ? {} : { population: populationResponse.raw }),
+        ...(lifeResponse === undefined ? {} : { lifeExpectancy: lifeResponse.raw }),
+        ...(companiesResponse === undefined ? {} : { companySearch: companiesResponse.raw }),
+        ...(flood === undefined ? {} : { floodWarnings: flood.raw }),
+        ...(avalanche === undefined ? {} : { avalancheWarnings: avalanche.raw }),
+        ...(landslide === undefined ? {} : { landslideWarnings: landslide.raw }),
+      },
+      metadataResponse.cached &&
+        (populationResponse?.cached ?? true) &&
+        (lifeResponse?.cached ?? true) &&
+        (companiesResponse?.cached ?? true) &&
+        (flood?.cached ?? true) &&
+        (avalanche?.cached ?? true) &&
+        (landslide?.cached ?? true),
       options,
     );
   }

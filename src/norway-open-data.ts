@@ -141,6 +141,8 @@ export class NorwayOpenData {
       weather: this.weather,
       hazards: this.hazards,
       roads: this.roads,
+      statistics: this.statistics,
+      health: this.health,
       hasMetIdentity: resolved.applicationName !== undefined && resolved.contactEmail !== undefined,
       hasApplicationName: resolved.applicationName !== undefined,
     });
