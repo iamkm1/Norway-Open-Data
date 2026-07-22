@@ -17,7 +17,7 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "baseUrl": ".",
+    "ignoreDeprecations": "6.0",
     "paths": {
       "norway-open-data-sdk": ["./src/index.ts"]
     },
