@@ -1,0 +1,16 @@
+[
+  {
+    "id": "abr",
+    "title": "Abortregisteret (ABR)",
+    "description": "Om svangerskapsbrudd i Norge fra 1979 til i dag.",
+    "aboutUrl": "https://www.fhi.no/op/abortregisteret",
+    "publishedBy": "Folkehelseinstituttet"
+  },
+  {
+    "id": "nokkel",
+    "title": "Folkehelsestatistikk",
+    "description": "Statistikk om befolkning, oppvekst og levekår, miljø, skader, helserelatert atferd og helsetilstand.",
+    "aboutUrl": null,
+    "publishedBy": "Helsedirektoratet"
+  }
+]

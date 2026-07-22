@@ -1,0 +1,40 @@
+{
+  "class": "dataset",
+  "version": "2.0",
+  "href": null,
+  "label": "Leseferdighet_utdann_3",
+  "updated": "2026-06-01T05:00:00+00:00",
+  "source": null,
+  "id": ["GEO", "AAR", "MEASURE_TYPE"],
+  "size": [3, 1, 1],
+  "role": { "time": null, "geo": ["GEO"], "metric": ["MEASURE_TYPE"] },
+  "dimension": {
+    "GEO": {
+      "label": "Geografi",
+      "category": {
+        "index": ["0", "34", "3450"],
+        "label": { "0": "Hele landet", "34": "Innlandet", "3450": "Etnedal" }
+      }
+    },
+    "AAR": {
+      "label": "År",
+      "category": { "index": ["2022_2024"], "label": { "2022_2024": "2022-2024" } }
+    },
+    "MEASURE_TYPE": {
+      "label": "Måltall",
+      "category": { "index": ["TELLER"], "label": { "TELLER": "Antall" } }
+    }
+  },
+  "value": [81.4, null, ":"],
+  "status": "",
+  "extension": {
+    "flags": {
+      "index": ["..", ".", ":"],
+      "label": {
+        "..": "Manglende data",
+        ".": "Lar seg ikke beregne",
+        ":": "Anonymisert eller skjult av andre årsaker"
+      }
+    }
+  }
+}

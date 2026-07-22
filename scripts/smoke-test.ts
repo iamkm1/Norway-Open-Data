@@ -68,6 +68,22 @@ await check("SSB statistics.query", async () => {
   return `${response.data.rows.length} row(s); latest value=${String(row?.value ?? "null")}`;
 });
 
+await check("FHI health.query", async () => {
+  const response = await norway.health.query({
+    source: "daar",
+    tableId: 754,
+    selections: {
+      DAAR: ["2020"],
+      KJONN: ["Total"],
+      HJERTEKAR: ["Total"],
+      MEASURE_TYPE: ["RATE_NO"],
+    },
+  });
+  const row = response.data.rows[0];
+  requireResult(row !== undefined, "FHI returned no statistical rows.");
+  return `${response.data.rows.length} row(s); 2020 cardiovascular rate=${String(row?.value ?? "null")}`;
+});
+
 await check("Entur transport.autocomplete", async () => {
   const response = await norway.transport.autocomplete({
     text: "Haugesund bussterminal",

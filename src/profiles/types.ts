@@ -18,8 +18,13 @@ export type ProfileComponentOperation =
 /** Logical profile section populated by a component operation. */
 export type ProfileComponentSection = "company" | "address" | "weather" | "hazards" | "roads";
 
-/** Why an optional profile component was not requested. */
-export type ProfileOmissionReason = "not-configured" | "missing-coordinate" | "not-applicable";
+/**
+ * Why an optional profile component is missing. `provider-error` means the
+ * operation was attempted but its provider failed at request time; the other
+ * reasons mean the operation was deliberately never requested.
+ */
+export type ProfileOmissionReason =
+  "not-configured" | "missing-coordinate" | "not-applicable" | "provider-error";
 
 /** Per-operation provenance and availability for a composed profile. */
 export type ProfileComponent =
@@ -41,6 +46,8 @@ export type ProfileComponent =
       status: "omitted";
       source: OpenDataSource;
       reason: ProfileOmissionReason;
+      /** Sanitized failure summary, present only when `reason` is `provider-error`. */
+      error?: { name: string; message: string };
     };
 
 /** Administrative evidence used to attach one NVE warning to an address profile. */

@@ -2,6 +2,26 @@
 
 All notable user-visible changes are recorded here. The project follows semantic versioning.
 
+## 0.3.0 - 2026-07-22
+
+### Minor Changes
+
+- New `health` namespace for the FHI Statistikk open API: `getSources`, `getTables`,
+  `getTableMetadata`, `getTableDimensions`, `query` and `queryRaw` cover source and
+  table discovery, provider-authored documentation, hierarchical dimensions and
+  JSON-stat2 data queries across Norwegian health registers. FHI's cell-suppression
+  flags are preserved rather than hidden: flagged observations normalize to
+  `value: null` with the provider's `flag` symbol, and every result carries FHI's
+  flag legend. The JSON-stat parsing core is now shared between SSB and FHI, with
+  `parseJsonStat` and `parseTableMetadata` unchanged.
+- Cross-provider profiles now degrade optional provider failures to partial results
+  instead of failing the whole call. If MET, NVDB or one Varsom warning feed errors
+  at request time, `profiles.address()` returns every surviving section and reports
+  the failing operation as an omitted component with the new `provider-error`
+  reason and a sanitized error name and message; `profiles.company()` likewise
+  returns a location-less profile when the Kartverket lookup fails. Required
+  operations still throw, and caller cancellation always rejects the whole call.
+
 ## 0.2.2 - 2026-07-22
 
 ### Patch Changes

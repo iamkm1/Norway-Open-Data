@@ -96,6 +96,45 @@ function omittedComponent(
   };
 }
 
+function failedComponent(
+  operation: ProfileComponentOperation,
+  section: ProfileComponentSection,
+  source: Parameters<typeof responseSource>[0],
+  failure: Error,
+): ProfileComponent {
+  return {
+    operation,
+    section,
+    status: "omitted",
+    source: responseSource(source),
+    reason: "provider-error",
+    error: { name: failure.name, message: failure.message },
+  };
+}
+
+type AttemptResult<T> = { response: OpenDataResponse<T> } | { failure: Error };
+
+/**
+ * Converts an optional provider failure into a value so one provider outage
+ * degrades its section instead of failing the whole profile. Caller
+ * cancellation is never degraded: an aborted signal rethrows immediately.
+ */
+async function attempt<T>(
+  promise: Promise<OpenDataResponse<T>>,
+  signal: AbortSignal | undefined,
+): Promise<AttemptResult<T>> {
+  try {
+    return { response: await promise };
+  } catch (error) {
+    if (signal?.aborted === true) throw error;
+    return { failure: error instanceof Error ? error : new Error(String(error)) };
+  }
+}
+
+function succeeded<T>(result: AttemptResult<T> | undefined): OpenDataResponse<T> | undefined {
+  return result !== undefined && "response" in result ? result.response : undefined;
+}
+
 function addressHazardMatch(
   warning: AddressProfile["hazards"][number],
   match: WarningAreaMatch,
@@ -229,56 +268,83 @@ export class ProfileClient {
           )
         : undefined;
 
-    const [flood, avalanche, landslide, weather, roads] = await Promise.all([
-      dependencies.hazards.getFloodWarnings({}, forwarded),
-      dependencies.hazards.getAvalancheWarnings({}, forwarded),
-      dependencies.hazards.getLandslideWarnings({}, forwarded),
-      weatherPromise,
-      roadsPromise,
-    ]);
+    const signal = forwarded.signal;
+    const [floodResult, avalancheResult, landslideResult, weatherResult, roadsResult] =
+      await Promise.all([
+        attempt(dependencies.hazards.getFloodWarnings({}, forwarded), signal),
+        attempt(dependencies.hazards.getAvalancheWarnings({}, forwarded), signal),
+        attempt(dependencies.hazards.getLandslideWarnings({}, forwarded), signal),
+        weatherPromise === undefined ? undefined : attempt(weatherPromise, signal),
+        roadsPromise === undefined ? undefined : attempt(roadsPromise, signal),
+      ]);
+    const flood = succeeded(floodResult);
+    const avalanche = succeeded(avalancheResult);
+    const landslide = succeeded(landslideResult);
+    const weather = succeeded(weatherResult);
+    const roads = succeeded(roadsResult);
 
-    const hazardMatches = [...flood.data, ...avalanche.data, ...landslide.data].flatMap(
-      (warning) => {
-        const match = warningMatchesArea(warning, {
-          municipalityCode: address.municipalityCode,
-          municipalityName: address.municipalityName,
-          countyCode: address.countyCode,
-          countyName: address.countyName,
-        });
-        return match === undefined ? [] : [addressHazardMatch(warning, match, address)];
-      },
-    );
+    const hazardMatches = [
+      ...(flood?.data ?? []),
+      ...(avalanche?.data ?? []),
+      ...(landslide?.data ?? []),
+    ].flatMap((warning) => {
+      const match = warningMatchesArea(warning, {
+        municipalityCode: address.municipalityCode,
+        municipalityName: address.municipalityName,
+        countyCode: address.countyCode,
+        countyName: address.countyName,
+      });
+      return match === undefined ? [] : [addressHazardMatch(warning, match, address)];
+    });
+    const hazardComponent = (
+      operation: ProfileComponentOperation,
+      result: AttemptResult<AddressProfile["hazards"]> | undefined,
+      response: OpenDataResponse<AddressProfile["hazards"]> | undefined,
+      attribution: string,
+    ): ProfileComponent =>
+      response !== undefined
+        ? availableComponent(operation, "hazards", response, attribution)
+        : failedComponent(
+            operation,
+            "hazards",
+            providers.nve,
+            result !== undefined && "failure" in result ? result.failure : new Error("Unknown"),
+          );
     const components: ProfileComponent[] = [
       availableComponent("addresses.search", "address", addressResponse),
-      availableComponent("hazards.getFloodWarnings", "hazards", flood, FLOOD_WARNING_ATTRIBUTION),
-      availableComponent(
+      hazardComponent("hazards.getFloodWarnings", floodResult, flood, FLOOD_WARNING_ATTRIBUTION),
+      hazardComponent(
         "hazards.getAvalancheWarnings",
-        "hazards",
+        avalancheResult,
         avalanche,
         AVALANCHE_WARNING_ATTRIBUTION,
       ),
-      availableComponent(
+      hazardComponent(
         "hazards.getLandslideWarnings",
-        "hazards",
+        landslideResult,
         landslide,
         LANDSLIDE_WARNING_ATTRIBUTION,
       ),
-      weather === undefined
-        ? omittedComponent(
-            "weather.current",
-            "weather",
-            providers.met,
-            hasCoordinates ? "not-configured" : "missing-coordinate",
-          )
-        : availableComponent("weather.current", "weather", weather),
-      roads === undefined
-        ? omittedComponent(
-            "roads.getRoadNetwork",
-            "roads",
-            providers.vegvesen,
-            hasCoordinates ? "not-configured" : "missing-coordinate",
-          )
-        : availableComponent("roads.getRoadNetwork", "roads", roads),
+      weatherResult !== undefined && "failure" in weatherResult
+        ? failedComponent("weather.current", "weather", providers.met, weatherResult.failure)
+        : weather === undefined
+          ? omittedComponent(
+              "weather.current",
+              "weather",
+              providers.met,
+              hasCoordinates ? "not-configured" : "missing-coordinate",
+            )
+          : availableComponent("weather.current", "weather", weather),
+      roadsResult !== undefined && "failure" in roadsResult
+        ? failedComponent("roads.getRoadNetwork", "roads", providers.vegvesen, roadsResult.failure)
+        : roads === undefined
+          ? omittedComponent(
+              "roads.getRoadNetwork",
+              "roads",
+              providers.vegvesen,
+              hasCoordinates ? "not-configured" : "missing-coordinate",
+            )
+          : availableComponent("roads.getRoadNetwork", "roads", roads),
     ];
 
     const profile: AddressProfile = {
@@ -308,16 +374,16 @@ export class ProfileClient {
       addressProfileSource(weather !== undefined, roads !== undefined),
       {
         addressSearch: addressResponse.raw,
-        floodWarnings: flood.raw,
-        avalancheWarnings: avalanche.raw,
-        landslideWarnings: landslide.raw,
+        ...(flood === undefined ? {} : { floodWarnings: flood.raw }),
+        ...(avalanche === undefined ? {} : { avalancheWarnings: avalanche.raw }),
+        ...(landslide === undefined ? {} : { landslideWarnings: landslide.raw }),
         ...(weather === undefined ? {} : { weather: weather.raw }),
         ...(roads === undefined ? {} : { roadNetwork: roads.raw }),
       },
       addressResponse.cached &&
-        flood.cached &&
-        avalanche.cached &&
-        landslide.cached &&
+        (flood?.cached ?? true) &&
+        (avalanche?.cached ?? true) &&
+        (landslide?.cached ?? true) &&
         (weather?.cached ?? true) &&
         (roads?.cached ?? true),
       options,
@@ -352,23 +418,47 @@ export class ProfileClient {
         options,
       );
     }
-    const addressResponse = await this.#addresses.search(
-      {
-        query: businessAddress.addressText ?? "",
-        ...(businessAddress.municipalityCode === undefined
-          ? {}
-          : { municipalityCode: businessAddress.municipalityCode }),
-        ...(businessAddress.postalCode === undefined
-          ? {}
-          : { postalCode: businessAddress.postalCode }),
-        limit: 10,
-      },
-      {
-        ...(options?.signal === undefined ? {} : { signal: options.signal }),
-        ...(options?.bypassCache === undefined ? {} : { bypassCache: options.bypassCache }),
-        includeRaw: options?.includeRaw === true,
-      },
+    const addressResult = await attempt(
+      this.#addresses.search(
+        {
+          query: businessAddress.addressText ?? "",
+          ...(businessAddress.municipalityCode === undefined
+            ? {}
+            : { municipalityCode: businessAddress.municipalityCode }),
+          ...(businessAddress.postalCode === undefined
+            ? {}
+            : { postalCode: businessAddress.postalCode }),
+          limit: 10,
+        },
+        {
+          ...(options?.signal === undefined ? {} : { signal: options.signal }),
+          ...(options?.bypassCache === undefined ? {} : { bypassCache: options.bypassCache }),
+          includeRaw: options?.includeRaw === true,
+        },
+      ),
+      options?.signal,
     );
+    if ("failure" in addressResult) {
+      return createResponse(
+        {
+          company,
+          components: [
+            companyComponent,
+            failedComponent(
+              "addresses.search",
+              "address",
+              providers.kartverket,
+              addressResult.failure,
+            ),
+          ],
+        },
+        companyProfileSource(false),
+        { company: companyResponse.raw },
+        companyResponse.cached,
+        options,
+      );
+    }
+    const addressResponse = addressResult.response;
     const match = selectAddressMatch(businessAddress, addressResponse.data.items);
     return createResponse(
       {

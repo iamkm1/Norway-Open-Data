@@ -1,0 +1,14 @@
+{
+  "name": "D5c_hjertekar_rater",
+  "isOfficialStatistics": true,
+  "paragraphs": [
+    {
+      "header": "Om statistikken",
+      "content": "<p><strong>Sammendrag</strong></p><p>Dødsfall med underliggende dødsårsak hjerte- og karsykdom. Aldersstandardiserte rater for dødsfall.</p>"
+    },
+    {
+      "header": "Innsamling, tolkning og bearbeiding av data",
+      "content": "<p><strong>Datakilde</strong></p><p>Dødsårsaksregisteret</p>"
+    }
+  ]
+}

@@ -202,11 +202,23 @@ describe("company profiles", () => {
     expect(response.data.location?.matchConfidence).toBe("high");
   });
 
-  it("propagates provider failure and cancellation", async () => {
+  it("degrades an address-lookup failure to a partial profile and still rejects cancellation", async () => {
     const failed = sequenceFetch(jsonResponse(brregCompany), jsonResponse({}, 503));
-    await expect(
-      new NorwayOpenData({ fetch: failed.fetch, retries: 0 }).profiles.company("923609016"),
-    ).rejects.toMatchObject({ provider: "kartverket" });
+    const partial = await new NorwayOpenData({
+      fetch: failed.fetch,
+      retries: 0,
+    }).profiles.company("923609016");
+    expect(partial.data.company.name).toBe("EKSEMPEL TEKNOLOGI AS");
+    expect(partial.data.location).toBeUndefined();
+    const addressComponent = partial.data.components?.find(
+      (component) => component.operation === "addresses.search",
+    );
+    expect(addressComponent).toMatchObject({
+      status: "omitted",
+      reason: "provider-error",
+      error: { name: "ProviderError", message: expect.stringMatching(/kartverket/) },
+    });
+    expect(partial.source.id).toBe("brreg");
 
     const controller = new AbortController();
     const fetch = vi

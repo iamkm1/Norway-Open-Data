@@ -43,6 +43,21 @@ export type {
   CompanySearchResult,
 } from "./providers/brreg/types.js";
 
+export { FhiClient } from "./providers/fhi/client.js";
+export type {
+  HealthCubeDimension,
+  HealthDimension,
+  HealthDimensionValue,
+  HealthJsonStatDataset,
+  HealthStatisticsQuery,
+  HealthStatisticsResult,
+  HealthStatisticsRow,
+  HealthStatisticsSource,
+  HealthStatisticsTable,
+  HealthTableDimensions,
+  HealthTableMetadata,
+} from "./providers/fhi/types.js";
+
 export { SsbClient } from "./providers/ssb/client.js";
 export { parseJsonStat, parseTableMetadata } from "./providers/ssb/json-stat.js";
 export type {

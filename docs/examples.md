@@ -129,6 +129,38 @@ SSB currently caps one extraction at 800,000 cells and rate-limits to 30 queries
 SDK validates explicit values but sends provider expressions such as `*`, `top(3)`, and `from(2020)`
 through unchanged.
 
+## Health statistics
+
+FHI table and dimension codes are source-specific. Discover them first, then query:
+
+```ts
+import { NorwayOpenData } from "norway-open-data-sdk";
+
+const norway = new NorwayOpenData();
+const sources = await norway.health.getSources();
+console.log(sources.data.map((source) => source.id)); // ["abr", "daar", "nokkel", ...]
+
+const tables = await norway.health.getTables("daar");
+const dimensions = await norway.health.getTableDimensions("daar", 754);
+
+const rates = await norway.health.query({
+  source: "daar",
+  tableId: 754,
+  selections: {
+    DAAR: ["2020", "2021"],
+    KJONN: ["Total"],
+    HJERTEKAR: ["Total"],
+    MEASURE_TYPE: ["RATE_NO"],
+  },
+});
+console.table(rates.data.rows);
+```
+
+A selection of `["*"]` selects every category of that dimension, including nested child
+categories. Suppressed cells are preserved, not hidden: a flagged row has `value: null` and a
+`flag` symbol, and `rates.data.flags` maps each symbol to FHI's own explanation (for example `":"`
+is "Anonymisert eller skjult av andre årsaker"). Keep flagged observations suppressed downstream.
+
 ## Transport and weather
 
 Entur requires `applicationName`. MET Norway requires both identity fields:

@@ -8,6 +8,7 @@ import { ProfileClient } from "./profiles/client.js";
 import { BrregClient } from "./providers/brreg/client.js";
 import { DataNorgeClient } from "./providers/data-norge/client.js";
 import { EnturClient } from "./providers/entur/client.js";
+import { FhiClient } from "./providers/fhi/client.js";
 import { ElectricityClient } from "./providers/hvakosterstrommen/client.js";
 import { KartverketAddressClient } from "./providers/kartverket/address-client.js";
 import { KartverketPlaceClient } from "./providers/kartverket/place-client.js";
@@ -101,6 +102,7 @@ export class NorwayOpenData {
   readonly #cache: MemoryCache;
   readonly companies: BrregClient;
   readonly statistics: SsbClient;
+  readonly health: FhiClient;
   readonly addresses: KartverketAddressClient;
   readonly places: KartverketPlaceClient;
   readonly transport: EnturClient;
@@ -122,6 +124,7 @@ export class NorwayOpenData {
     const http = new HttpClient(resolved, cache);
     this.companies = new BrregClient(http);
     this.statistics = new SsbClient(http);
+    this.health = new FhiClient(http);
     this.addresses = new KartverketAddressClient(http);
     this.places = new KartverketPlaceClient(http);
     this.transport = new EnturClient(http, resolved.applicationName);

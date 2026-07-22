@@ -110,6 +110,59 @@ live("SSB — statistics", () => {
   });
 });
 
+live("FHI — health statistics", () => {
+  it("discovers sources and tables, then reads metadata and dimensions", async () => {
+    const sources = await sdk.health.getSources();
+    expect(sources.data.length).toBeGreaterThan(0);
+    expect(sources.data.some((source) => source.id === "daar")).toBe(true);
+
+    const tables = await sdk.health.getTables("daar");
+    expect(tables.data.length).toBeGreaterThan(0);
+    const tableId = tables.data[0]?.tableId;
+    expect(tableId).toBeDefined();
+    if (tableId === undefined) return;
+
+    const metadata = await sdk.health.getTableMetadata("daar", tableId);
+    expect(metadata.data.name.length).toBeGreaterThan(0);
+
+    const dimensions = await sdk.health.getTableDimensions("daar", tableId);
+    expect(dimensions.data.dimensions.length).toBeGreaterThan(0);
+  });
+
+  it("runs a bounded query and preserves provider flags with their legend", async () => {
+    const dimensions = await sdk.health.getTableDimensions("daar", 754);
+    const selections: Record<string, string[]> = {};
+    for (const dimension of dimensions.data.dimensions) {
+      const first = dimension.values[0]?.code;
+      if (first !== undefined) selections[dimension.code] = [first];
+    }
+    const result = await sdk.health.query({ source: "daar", tableId: 754, selections });
+    expect(result.data.rows).toHaveLength(1);
+    expect(result.data.rows[0]).toHaveProperty("value");
+
+    // Flag preservation: municipality-level reading skills include anonymized
+    // cells for the smallest municipalities.
+    const flagDimensions = await sdk.health.getTableDimensions("nokkel", 670);
+    const flagSelections: Record<string, string[]> = {};
+    for (const dimension of flagDimensions.data.dimensions) {
+      flagSelections[dimension.code] =
+        dimension.code === "GEO" ? ["*"] : [dimension.values[0]?.code ?? ""];
+    }
+    const flagged = await sdk.health.query({
+      source: "nokkel",
+      tableId: 670,
+      selections: flagSelections,
+    });
+    expect(flagged.data.rows.length).toBeGreaterThan(300);
+    const flaggedRows = flagged.data.rows.filter((row) => row.flag !== undefined);
+    expect(flaggedRows.length).toBeGreaterThan(0);
+    for (const row of flaggedRows) {
+      expect(row.value).toBeNull();
+      expect(flagged.data.flags[row.flag ?? ""]).toBeDefined();
+    }
+  });
+});
+
 live("Entur — transport", () => {
   it("uses the identified geocoder", async () => {
     const response = await sdk.transport.autocomplete({ text: "Oslo S", limit: 1 });

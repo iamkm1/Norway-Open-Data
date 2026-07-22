@@ -8,13 +8,13 @@
 One typed TypeScript interface for Norwegian public data.
 
 Norway Open Data SDK provides a consistent, runtime-validated client for official Norwegian APIs
-from Brønnøysundregistrene, SSB, Kartverket, Entur, MET Norway, Data.norge, Norges Bank,
+from Brønnøysundregistrene, SSB, FHI, Kartverket, Entur, MET Norway, Data.norge, Norges Bank,
 Stortinget, Statens vegvesen and NVE. It also wraps the documented third-party public electricity
 API from Hva koster strømmen?.
 
-- 10 public-sector data sources plus 1 third-party derived API
-- 14 service namespaces
-- 50+ public methods
+- 11 public-sector data sources plus 1 third-party derived API
+- 15 service namespaces
+- 55+ public methods
 - Runtime-validated responses
 - Cross-provider profiles that answer one question from several agencies
 - Auto-paginating async iterators for list endpoints
@@ -29,7 +29,7 @@ backend, database, account system or scraping layer.
 
 Requires Node.js 22 or newer. TypeScript declarations are included.
 
-Version `0.2.2` is the current release. Install it with:
+Version `0.3.0` is the current release. Install it with:
 
 ```bash
 npm install norway-open-data-sdk
@@ -49,7 +49,7 @@ corepack pnpm pack
 Install the generated tarball from another project:
 
 ```bash
-npm install /path/to/Norway-Open-Data/norway-open-data-sdk-0.2.2.tgz
+npm install /path/to/Norway-Open-Data/norway-open-data-sdk-0.3.0.tgz
 ```
 
 ## Quick start
@@ -88,6 +88,7 @@ requires `applicationName` and `contactEmail`; NVE HydAPI requires the caller's 
 | ----------------------- | --------------------- | -------------------------------------------------------------- | ------------------------------ |
 | Brønnøysundregistrene   | `companies`           | Organizations, search and sub-entities                         | Anonymous                      |
 | Statistics Norway / SSB | `statistics`          | PxWeb metadata and JSON-stat2 data                             | Anonymous                      |
+| FHI                     | `health`              | Health-register statistics with preserved suppression flags    | Anonymous                      |
 | Kartverket              | `addresses`, `places` | Addresses, place names and nearby search                       | Anonymous                      |
 | Entur                   | `transport`           | Autocomplete, departures and journeys                          | Identification required        |
 | MET Norway              | `weather`             | Locationforecast data and current entry                        | Identification + contact email |
@@ -161,9 +162,13 @@ for (const component of place.data.components) {
 ```
 
 Enrichment degrades gracefully: `weather` and `roads` are omitted when the client has no
-`applicationName`/`contactEmail`, rather than failing the whole call. `components` reports each
-operation as `available`, with its source, `retrievedAt` and `cached` values, or `omitted`, with a
-`not-configured`, `missing-coordinate` or `not-applicable` reason. A component's `retrievedAt` is
+`applicationName`/`contactEmail`, rather than failing the whole call. Optional provider _failures_
+degrade the same way: if MET, NVDB or one Varsom warning feed errors at request time, the profile
+still returns with every surviving section, and the failing operation is reported as `omitted` with
+reason `provider-error` and a sanitized `error` name and message. Caller cancellation is never
+degraded — aborting the request still rejects the whole call. `components` reports each operation
+as `available`, with its source, `retrievedAt` and `cached` values, or `omitted`, with a
+`not-configured`, `missing-coordinate`, `not-applicable` or `provider-error` reason. A component's `retrievedAt` is
 when that SDK operation resolved, including cache hits, not when its payload was originally fetched
 upstream. Sources include provider attribution text, with service-specific wording for each Varsom
 warning feed.
@@ -177,6 +182,36 @@ each side. Check `roadSearch.truncated` before assuming that all candidates were
 > no municipalities, because a county can be parent context. Forecast-region names are not matched
 > automatically. An empty match is never an all-clear. For any safety decision, consult the current,
 > complete official warnings directly from Varsom/NVE and follow their guidance.
+
+### Health statistics with suppression flags
+
+FHI publishes statistics from Norwegian health registers — cause-of-death rates, abortion
+statistics, drug sales and municipal public-health indicators — through one open API:
+
+```ts
+const sources = await norway.health.getSources(); // daar, abr, nokkel, ...
+
+const result = await norway.health.query({
+  source: "daar",
+  tableId: 754,
+  selections: {
+    DAAR: ["2020"],
+    KJONN: ["Total"],
+    HJERTEKAR: ["Total"],
+    MEASURE_TYPE: ["RATE_NO"],
+  },
+});
+console.log(result.data.rows[0]?.value); // age-standardized cardiovascular death rate
+```
+
+Discover what a table accepts with `health.getTables(source)`, `health.getTableMetadata(source,
+tableId)` and `health.getTableDimensions(source, tableId)`; a selection of `["*"]` selects every
+category of a dimension, including nested child categories.
+
+Small-count health cells are **suppressed at the source** — anonymized or not computable. The SDK
+preserves FHI's markers instead of hiding them: a suppressed row is `{ value: null, flag: ":" }`,
+and `result.data.flags` maps every symbol to the provider's own explanation. A `flag` is
+information, not absence: keep flagged observations suppressed in anything you build on top.
 
 ### Electricity spot prices
 

@@ -505,4 +505,74 @@ describe("profiles.address", () => {
       new NorwayOpenData({ fetch, retries: 0 }).profiles.address("nowhere at all"),
     ).rejects.toBeInstanceOf(NotFoundError);
   });
+
+  it("degrades failing optional providers to provider-error components", async () => {
+    const mock = vi.fn(async (input: unknown) => {
+      const url = String(input);
+      if (url.includes("ws.geonorge.no")) return jsonResponse(addressFixture);
+      if (url.includes("flood")) return jsonResponse(matchingWarningFixture);
+      if (url.includes("avalanche")) return jsonResponse({}, 500);
+      if (url.includes("landslide")) return jsonResponse([]);
+      if (url.includes("api.met.no")) return jsonResponse({}, 503);
+      if (url.includes("veglenkesekvenser")) return jsonResponse(finalRoadPageFixture);
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    const response = await new NorwayOpenData({
+      applicationName: "example-profile",
+      contactEmail: "profile@example.no",
+      fetch: mock as unknown as typeof globalThis.fetch,
+      retries: 0,
+    }).profiles.address("Haraldsgata 100, Haugesund");
+
+    // The surviving feeds still contribute: the flood warning matches, roads resolve.
+    expect(response.data.hazards).toHaveLength(1);
+    expect(response.data.roads).toBeDefined();
+    expect(response.data.weather).toBeUndefined();
+
+    const byOperation = new Map(
+      (response.data.components ?? []).map((component) => [component.operation, component]),
+    );
+    expect(byOperation.get("hazards.getFloodWarnings")?.status).toBe("available");
+    expect(byOperation.get("hazards.getAvalancheWarnings")).toMatchObject({
+      status: "omitted",
+      reason: "provider-error",
+      error: { name: "ProviderError", message: expect.stringMatching(/nve/) as string },
+    });
+    expect(byOperation.get("weather.current")).toMatchObject({
+      status: "omitted",
+      reason: "provider-error",
+      error: { name: "ProviderError" },
+    });
+    expect(byOperation.get("roads.getRoadNetwork")?.status).toBe("available");
+    // A degraded provider is excluded from the composed source attribution.
+    expect(response.source.id).not.toContain("met");
+  });
+
+  it("still rejects when the caller aborts during enrichment", async () => {
+    const controller = new AbortController();
+    const mock = vi.fn(async (input: unknown, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("ws.geonorge.no")) return jsonResponse(addressFixture);
+      if (url.includes("flood") || url.includes("landslide")) return jsonResponse([]);
+      if (url.includes("avalanche")) {
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            "abort",
+            () => reject(new DOMException("Aborted", "AbortError")),
+            { once: true },
+          );
+        });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    const request = new NorwayOpenData({
+      fetch: mock as unknown as typeof globalThis.fetch,
+      retries: 0,
+    }).profiles.address("Haraldsgata 100, Haugesund", { signal: controller.signal });
+    await vi.waitFor(() => expect(mock.mock.calls.length).toBeGreaterThanOrEqual(4));
+    controller.abort();
+    await expect(request).rejects.toMatchObject({
+      message: expect.stringMatching(/cancelled/) as string,
+    });
+  });
 });

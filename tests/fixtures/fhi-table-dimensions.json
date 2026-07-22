@@ -1,0 +1,31 @@
+{
+  "dimensions": [
+    {
+      "code": "GEO",
+      "label": "Geografi",
+      "categories": [
+        {
+          "label": "Hele landet",
+          "value": "0",
+          "children": [
+            {
+              "label": "Innlandet",
+              "value": "34",
+              "children": [{ "label": "Etnedal", "value": "3450", "children": [] }]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "AAR",
+      "label": "År",
+      "categories": [{ "label": "2022-2024", "value": "2022_2024", "children": [] }]
+    },
+    {
+      "code": "MEASURE_TYPE",
+      "label": "Måltall",
+      "categories": [{ "label": "Antall", "value": "TELLER", "children": [] }]
+    }
+  ]
+}

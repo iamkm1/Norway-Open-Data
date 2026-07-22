@@ -37,6 +37,18 @@ export const providers = {
     license: "Creative Commons Attribution 4.0 International (CC BY 4.0)",
     attribution: "Attribute Statistics Norway when redistributing data.",
   },
+  fhi: {
+    id: "fhi",
+    name: "Norwegian Institute of Public Health (FHI)",
+    homepage: "https://www.fhi.no/",
+    documentation:
+      "https://www.fhi.no/ta/statistikkalender_og_statistikkbanker/apen-api-og-statistikk/",
+    access: "open",
+    authentication: "None.",
+    license: "Open API; each statistics bank publishes its own terms and source notes",
+    attribution:
+      "Credit Folkehelseinstituttet (FHI) and the publishing register; flagged observations must stay suppressed.",
+  },
   kartverket: {
     id: "kartverket",
     name: "Kartverket",

@@ -54,6 +54,31 @@ Access labels in this document have precise meanings:
   `/api/pxwebapi/v2/tables/{id}/metadata` and `/data`. POST selection objects use
   `variableCode`/`valueCodes`. Table value codes can change and must be discovered from metadata.
 
+## Norwegian Institute of Public Health (FHI)
+
+- **Supported methods:** `health.getSources()`, `health.getTables()`, `health.getTableMetadata()`,
+  `health.getTableDimensions()`, `health.query()`, `health.queryRaw()`
+- **Official homepage:** https://www.fhi.no/
+- **API documentation:**
+  https://www.fhi.no/ta/statistikkalender_og_statistikkbanker/apen-api-og-statistikk/ (Swagger:
+  https://statistikk-data.fhi.no/swagger/index.html)
+- **Access:** Open; no authentication.
+- **Licence:** The API is presented as open; each statistics bank publishes its own terms and
+  documentation. Check the `aboutUrl` returned by `getSources()` for the bank you use.
+- **Attribution:** Credit Folkehelseinstituttet (FHI) and the publishing register — for example
+  Dødsårsaksregisteret for cause-of-death tables, or Helsedirektoratet for the public-health
+  statistics source.
+- **Known limits:** Data queries are POST selections and `maxRowCount` caps returned rows.
+  Small-count health cells are suppressed at the source: the JSON-stat2 `value` array mixes numbers
+  with flag symbols and `extension.flags` carries the legend (for example `":"` for anonymized
+  cells). The SDK preserves flags as `flag` with `value: null` and never attempts to reconstruct
+  suppressed values; downstream use must keep them suppressed.
+- **Contract note:** The adapter uses `/api/open/v1/Common/source`, `/{source}/table`,
+  `/{source}/table/{id}/metadata`, `/{source}/table/{id}/dimension` and POST
+  `/{source}/table/{id}/data` with `dimensions: [{code, filter: "item" | "all", values}]`.
+  Dimension categories nest hierarchically; table metadata paragraphs are provider-authored HTML;
+  `status` can be an empty string and several metadata fields are null rather than absent.
+
 ## Kartverket
 
 - **Supported methods:** `addresses.search()`, `places.search()`, `places.nearby()`
