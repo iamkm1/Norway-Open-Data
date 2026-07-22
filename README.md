@@ -444,6 +444,7 @@ flowchart LR
 - The shared core handles timeout, cancellation, retries, errors and caching.
 - Provider-specific semantics are preserved instead of forced into one universal model.
 
+- [Hosted API reference](https://iamkm1.github.io/Norway-Open-Data/) — every exported class, method and type
 - [Complete API capabilities](docs/capabilities.md)
 - [Examples](docs/examples.md)
 - [Architecture](docs/architecture.md)
@@ -459,8 +460,8 @@ Generate the TypeDoc API reference locally with:
 pnpm run docs
 ```
 
-TypeDoc writes to `docs/api`; open `docs/api/index.html`. The Pages workflow can deploy the same
-reference when GitHub Pages is enabled.
+TypeDoc writes to `docs/api`; open `docs/api/index.html`. The same reference is published at
+https://iamkm1.github.io/Norway-Open-Data/ and is redeployed on demand through the Pages workflow.
 
 ## Testing
 
