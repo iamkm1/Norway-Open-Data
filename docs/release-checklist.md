@@ -54,7 +54,8 @@ cannot produce npm provenance and is not the supported release path.
 - [ ] Apply the Changeset version and changelog updates, then merge them to `main`.
 - [ ] Confirm CI, CodeQL, package checks, and the required live checks are green on that commit.
 - [ ] In GitHub Actions, run `Publish to npm` and enter the exact version from `package.json`.
-- [ ] Confirm npm shows provenance for the published version and run `npm audit signatures`.
+- [ ] Install the published version in a fresh temporary consumer and run `npm audit signatures`
+      there, confirming npm reports a provenance attestation for this SDK.
 - [ ] Confirm the registry `gitHead` matches the intended GitHub commit.
 - [ ] Create the version tag at that exact commit only after the registry checks pass.
 
