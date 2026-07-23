@@ -32,7 +32,7 @@ Runs on Node.js 22+, Deno, Bun and edge runtimes such as Cloudflare Workers. Typ
 declarations are included. See [Runtime support](#runtime-support) for what a host runtime must
 provide.
 
-Version `0.4.1` is the current release. Install it with:
+Version `0.5.0` is the current release. Install it with:
 
 ```bash
 npm install norway-open-data-sdk
@@ -52,7 +52,7 @@ corepack pnpm pack
 Install the generated tarball from another project:
 
 ```bash
-npm install /path/to/Norway-Open-Data/norway-open-data-sdk-0.4.1.tgz
+npm install /path/to/Norway-Open-Data/norway-open-data-sdk-0.5.0.tgz
 ```
 
 ## Quick start
