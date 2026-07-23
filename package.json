@@ -1,6 +1,6 @@
 {
   "name": "norway-open-data-sdk",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "One TypeScript interface for Norway's open public APIs.",
   "keywords": [
     "norway",

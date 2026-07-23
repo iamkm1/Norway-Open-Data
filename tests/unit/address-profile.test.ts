@@ -548,6 +548,28 @@ describe("profiles.address", () => {
     expect(response.source.id).not.toContain("met");
   });
 
+  it("does not credit NVE when every warning feed failed", async () => {
+    const mock = vi.fn(async (input: unknown) => {
+      const url = String(input);
+      if (url.includes("ws.geonorge.no")) return jsonResponse(addressFixture);
+      return jsonResponse({}, 500);
+    });
+    const response = await new NorwayOpenData({
+      fetch: mock as unknown as typeof globalThis.fetch,
+      retries: 0,
+    }).profiles.address("Haraldsgata 100");
+
+    // Only Kartverket produced data, so only Kartverket may be attributed:
+    // an empty `hazards` array here means "nothing was retrieved", and naming
+    // NVE as a source would read as an all-clear it never issued.
+    expect(response.data.hazards).toEqual([]);
+    expect(
+      response.data.components?.filter((component) => component.status === "available"),
+    ).toHaveLength(1);
+    expect(response.source.id).toBe("kartverket");
+    expect(response.source.name).toBe("Kartverket");
+  });
+
   it("still rejects when the caller aborts during enrichment", async () => {
     const controller = new AbortController();
     const mock = vi.fn(async (input: unknown, init?: RequestInit) => {

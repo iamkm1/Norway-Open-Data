@@ -105,6 +105,38 @@ export class SsbClient {
     );
   }
 
+  /**
+   * Runs a validated SSB query against table metadata the caller already holds.
+   *
+   * A composition that resolves a dimension value from the metadata -- the
+   * municipality profile resolves a region there -- would otherwise pay for the
+   * same document twice inside one call, against the tightest request budget any
+   * supported provider documents.
+   *
+   * @internal
+   */
+  async queryWithMetadata(
+    query: StatisticsQuery,
+    metadata: StatisticsTableMetadata,
+    options?: RequestOptions,
+  ): Promise<OpenDataResponse<StatisticsResult>> {
+    const parsed = this.#parseQuery(query);
+    if (metadata.tableId !== parsed.tableId) {
+      throw new InputValidationError(
+        `SSB metadata for table ${metadata.tableId} cannot validate a query for table ${parsed.tableId}.`,
+        { provider: ssbProvider.id },
+      );
+    }
+    const raw = await this.#requestQuery(parsed, metadata, options);
+    return createResponse(
+      parseJsonStat(parsed.tableId, raw.data as JsonStatDataset),
+      responseSource(ssbProvider),
+      raw.data,
+      raw.cached,
+      options,
+    );
+  }
+
   /** Runs a validated SSB query and returns the provider's JSON-stat2 dataset. */
   async queryRaw(
     query: StatisticsQuery,
@@ -120,10 +152,7 @@ export class SsbClient {
     );
   }
 
-  async #executeQuery(
-    query: StatisticsQuery,
-    options?: RequestOptions,
-  ): Promise<{ data: RawJsonStat; cached: boolean }> {
+  #parseQuery(query: StatisticsQuery): StatisticsQuery {
     const parsed = querySchema.safeParse(query);
     if (!parsed.success) {
       throw new InputValidationError("Invalid SSB statistics query.", {
@@ -131,29 +160,45 @@ export class SsbClient {
         cause: parsed.error,
       });
     }
-    const metadataResponse = await this.getTableMetadata(parsed.data.tableId, {
+    return parsed.data;
+  }
+
+  async #executeQuery(
+    query: StatisticsQuery,
+    options?: RequestOptions,
+  ): Promise<{ data: RawJsonStat; cached: boolean }> {
+    const parsed = this.#parseQuery(query);
+    const metadataResponse = await this.getTableMetadata(parsed.tableId, {
       ...(options?.signal === undefined ? {} : { signal: options.signal }),
       ...(options?.bypassCache === undefined ? {} : { bypassCache: options.bypassCache }),
     });
-    validateSelections(parsed.data, metadataResponse.data);
+    return this.#requestQuery(parsed, metadataResponse.data, options);
+  }
+
+  async #requestQuery(
+    query: StatisticsQuery,
+    metadata: StatisticsTableMetadata,
+    options?: RequestOptions,
+  ): Promise<{ data: RawJsonStat; cached: boolean }> {
+    validateSelections(query, metadata);
     return this.#http.request({
       provider: ssbProvider,
-      url: `${BASE_URL}/tables/${parsed.data.tableId}/data`,
-      resourceDescription: `table ${parsed.data.tableId}`,
+      url: `${BASE_URL}/tables/${query.tableId}/data`,
+      resourceDescription: `table ${query.tableId}`,
       method: "POST",
       query: {
-        lang: parsed.data.language ?? "no",
+        lang: query.language ?? "no",
         outputFormat: "json-stat2",
       },
       body: {
-        selection: Object.entries(parsed.data.selections).map(([variableCode, valueCodes]) => ({
+        selection: Object.entries(query.selections).map(([variableCode, valueCodes]) => ({
           variableCode,
           valueCodes,
         })),
       },
       schema: jsonStatSchema,
       transform: (data) => {
-        parseJsonStat(parsed.data.tableId, data as JsonStatDataset);
+        parseJsonStat(query.tableId, data as JsonStatDataset);
         return data;
       },
       options,

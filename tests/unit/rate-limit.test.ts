@@ -195,6 +195,25 @@ describe("provider request budgets", () => {
     expect(Date.now() - started).toBeGreaterThanOrEqual(60);
   });
 
+  it("shares one limiter between an unknown budget name and the default budget", async () => {
+    const fetch = vi.fn(async () => jsonResponse({ ok: true })) as typeof globalThis.fetch;
+    const client = new HttpClient(resolvedConfig(fetch, { rateLimit: { enabled: true } }));
+
+    // Falling back to the `default` policy is not enough on its own: an
+    // undeclared name that gets its own limiter carrying a copy of that policy
+    // lets the provider's default budget be spent twice over per window.
+    await client.request({ provider: budgeted, url: "https://example.test/a", schema });
+    const started = Date.now();
+    await client.request({
+      provider: budgeted,
+      url: "https://example.test/b",
+      rateLimitKey: "does-not-exist",
+      schema,
+    });
+
+    expect(Date.now() - started).toBeGreaterThanOrEqual(60);
+  });
+
   it("serves a cached response without consuming budget", async () => {
     const fetch = vi.fn(async () => jsonResponse({ ok: true })) as typeof globalThis.fetch;
     const client = new HttpClient(

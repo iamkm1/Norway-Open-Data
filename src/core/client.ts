@@ -287,14 +287,17 @@ export class HttpClient {
    */
   #limiter(provider: ProviderDescriptor, operationClass?: string): RateLimiter | undefined {
     if (!this.#config.rateLimit.enabled || provider.rateLimit === undefined) return undefined;
-    const policy =
-      operationClass === undefined
-        ? provider.rateLimit.default
-        : (provider.rateLimit[operationClass] ?? provider.rateLimit.default);
-    const key = `${provider.id}:${operationClass ?? "default"}`;
+    // Resolve the budget name before keying the limiter. Keying by the requested
+    // name would give an undeclared one its own limiter carrying a copy of the
+    // default policy, letting that budget be spent twice over instead of shared.
+    const budget =
+      operationClass !== undefined && provider.rateLimit[operationClass] !== undefined
+        ? operationClass
+        : "default";
+    const key = `${provider.id}:${budget}`;
     const existing = this.#limiters.get(key);
     if (existing !== undefined) return existing;
-    const created = new RateLimiter(policy);
+    const created = new RateLimiter(provider.rateLimit[budget] ?? provider.rateLimit.default);
     this.#limiters.set(key, created);
     return created;
   }

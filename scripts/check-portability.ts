@@ -159,15 +159,21 @@ writeFileSync(probePath, probe);
 
 console.log("Running the built package against a minimal spec-compliant fetch...");
 let output: string;
+let probeFailure: string | undefined;
 try {
   output = execFileSync(process.execPath, [probePath], { encoding: "utf8", stdio: "pipe" });
 } catch (error) {
-  const details = error instanceof Error ? error.message : String(error);
-  console.error(`  FAIL: probe process errored\n${details}`);
-  process.exit(1);
+  output = "";
+  probeFailure = error instanceof Error ? error.message : String(error);
 } finally {
   // The probe lives inside dist/, which is published; never leave it behind.
+  // Reporting the failure has to wait until after this runs, because
+  // `process.exit` inside the catch would terminate before it did.
   rmSync(probePath, { force: true });
+}
+if (probeFailure !== undefined) {
+  console.error(`  FAIL: probe process errored\n${probeFailure}`);
+  process.exit(1);
 }
 
 if (!output.includes("PORTABILITY_PROBE_OK:")) {

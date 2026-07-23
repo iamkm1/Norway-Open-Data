@@ -2,6 +2,31 @@
 
 All notable user-visible changes are recorded here. The project follows semantic versioning.
 
+## 0.5.1 - 2026-07-23
+
+### Patch Changes
+
+- Fixes three defects found in the 0.5.0 request-budget and profile code, each now covered by a
+  regression test.
+
+  - A request naming a budget the provider never declared was given its own limiter holding a copy of
+    the `default` policy, so that budget could be spent twice over per window. The limiter is now keyed
+    by the resolved budget name, so an undeclared name shares the provider's `default` limiter as the
+    documentation always said it would. Declared budgets such as Data.norge's `resource` stay separate.
+  - `profiles.address()` credited NVE in the composed `source` even when all three Varsom warning feeds
+    had failed and contributed nothing. An empty `hazards` array alongside an NVE attribution reads as
+    an all-clear NVE never issued. NVE is now named only when at least one feed answered, matching the
+    behaviour `profiles.municipality()` already had. Callers that need per-feed status continue to read
+    `components`.
+  - `profiles.municipality()` fetched SSB's table 07459 metadata twice per call: once to resolve the
+    municipality and once inside the population query. That spent two requests of SSB's documented
+    30-per-minute budget on identical bytes. The metadata is now fetched once and reused, through a new
+    `@internal` `SsbClient.queryWithMetadata`; the supported `query()` and `queryRaw()` surface is
+    unchanged.
+
+  Also fixes `pnpm check:portability` leaving its generated probe file inside `dist/` when the probe
+  process failed, because `process.exit` in the error path pre-empted the cleanup.
+
 ## 0.5.0 - 2026-07-23
 
 ### Minor Changes

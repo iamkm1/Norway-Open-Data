@@ -264,6 +264,19 @@ describe("profiles.municipality", () => {
     expect(response.source.id).toBe("ssb+fhi+brreg+nve");
   });
 
+  it("reads the SSB region metadata once per profile", async () => {
+    const { fetch, mock } = routedFetch(defaultRoutes());
+    await new NorwayOpenData({ fetch, retries: 0 }).profiles.municipality("1106");
+
+    // The region is resolved from this document and the population query is
+    // validated against it. Fetching it twice would spend two requests of SSB's
+    // documented 30-per-minute budget on one call, for identical bytes.
+    const metadataRequests = mock.mock.calls
+      .map((call) => String(call[0]))
+      .filter((url) => url.includes("/tables/07459/metadata"));
+    expect(metadataRequests).toHaveLength(1);
+  });
+
   it("resolves an exact municipality name to the same profile", async () => {
     const response = await client(defaultRoutes()).profiles.municipality("Haugesund");
     expect(response.data.municipality.code).toBe("1106");

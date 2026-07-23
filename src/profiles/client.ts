@@ -68,12 +68,16 @@ function companyProfileSource(includeKartverket: boolean): ProfileSource {
   );
 }
 
-function addressProfileSource(includeWeather: boolean, includeRoads: boolean): ProfileSource {
+function addressProfileSource(
+  includeWeather: boolean,
+  includeNve: boolean,
+  includeRoads: boolean,
+): ProfileSource {
   return profileSource(
     [
       { id: "kartverket", name: "Kartverket" },
       ...(includeWeather ? [{ id: "met", name: "MET Norway" }] : []),
-      { id: "nve", name: "NVE" },
+      ...(includeNve ? [{ id: "nve", name: "NVE" }] : []),
       ...(includeRoads ? [{ id: "vegvesen", name: "Statens vegvesen" }] : []),
     ],
     "cross-provider-address-profile",
@@ -413,7 +417,11 @@ export class ProfileClient {
 
     return createResponse(
       profile,
-      addressProfileSource(weather !== undefined, roads !== undefined),
+      addressProfileSource(
+        weather !== undefined,
+        flood !== undefined || avalanche !== undefined || landslide !== undefined,
+        roads !== undefined,
+      ),
       {
         addressSearch: addressResponse.raw,
         ...(flood === undefined ? {} : { floodWarnings: flood.raw }),
@@ -483,7 +491,9 @@ export class ProfileClient {
       landslideResult,
     ] = await Promise.all([
       attempt(
-        dependencies.statistics.query(
+        // The region was resolved from this metadata, so reuse it rather than
+        // spending a second SSB request on the same document.
+        dependencies.statistics.queryWithMetadata(
           {
             tableId: POPULATION_TABLE_ID,
             selections: {
@@ -494,6 +504,7 @@ export class ProfileClient {
               Tid: ["top(2)"],
             },
           },
+          metadataResponse.data,
           forwarded,
         ),
         signal,
