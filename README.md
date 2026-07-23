@@ -341,9 +341,11 @@ const norway = new NorwayOpenData({
 | `timeoutMs`              | `10_000`           | Per-attempt timeout in milliseconds                  |
 | `retries`                | `2`                | Retry attempts after the initial request; range 0–10 |
 | `fetch`                  | `globalThis.fetch` | Custom Fetch-compatible implementation               |
-| `cache.enabled`          | `false`            | Enables the per-client memory cache                  |
+| `cache.enabled`          | `false`            | Enables the response cache                           |
 | `cache.ttlMs`            | Provider default   | Overrides provider-specific TTLs                     |
-| `cache.maxEntries`       | `100`              | Maximum memory-cache entries                         |
+| `cache.maxEntries`       | `100`              | Maximum entries for the built-in in-memory cache     |
+| `cache.store`            | In-memory          | Custom `CacheStore` for sharing across instances     |
+| `rateLimit.enabled`      | `true`             | Enforces each provider's declared request budget     |
 | `credentials.nve.apiKey` | None               | Free NVE HydAPI key for stations and observations    |
 
 When required by the selected service, each application must provide its own identity, contact
@@ -467,15 +469,74 @@ console.log(first.cached); // false
 const second = await norway.companies.get("923609016");
 console.log(second.cached); // true
 
-norway.clearCache();
+await norway.clearCache();
 const afterClear = await norway.companies.get("923609016");
 console.log(afterClear.cached); // false
 ```
 
-Caching is disabled by default. When enabled, each client uses a bounded in-memory TTL/LRU cache
-with provider-specific TTLs. Failures are never cached, and `{ bypassCache: true }` skips both
-reads and writes. `clearCache()` removes all entries shared by that `NorwayOpenData` instance. See
-[Architecture](docs/architecture.md) for implementation details.
+Caching is disabled by default. When enabled, the SDK uses a bounded in-memory TTL/LRU cache with
+provider-specific TTLs. Failures are never cached, and `{ bypassCache: true }` skips both reads and
+writes.
+
+### Sharing a cache between instances
+
+The default cache lives inside one `NorwayOpenData` instance, so a second instance — another
+worker, another process — starts cold. Supply a `CacheStore` to share responses. Every method may
+be synchronous or asynchronous.
+
+```ts
+import type { CacheStore } from "norway-open-data-sdk";
+
+const store: CacheStore = {
+  async get(key) {
+    const raw = await redis.get(key);
+    return raw === null ? undefined : JSON.parse(raw);
+  },
+  async set(key, value, ttlMs) {
+    await redis.set(key, JSON.stringify(value), { PX: ttlMs });
+  },
+  async clear() {
+    await redis.flushDb();
+  },
+};
+
+const norway = new NorwayOpenData({ cache: { enabled: true, store } });
+```
+
+The store receives values that have already passed runtime validation and is expected to return
+them unchanged. It owns expiry and eviction, so `cache.maxEntries` no longer applies. `clearCache()`
+resolves once the store has cleared, and with a shared store it affects every reader.
+
+## Request budgets
+
+Each provider declares how often the SDK may call it, and that budget is enforced by default across
+every client sharing one `NorwayOpenData` instance. A request that would exceed the budget waits its
+turn rather than being rejected, and waiting never counts against `timeoutMs`. Cached responses cost
+no budget, and cancelling a caller's `signal` rejects a queued request immediately.
+
+```ts
+import { providers } from "norway-open-data-sdk";
+
+console.log(providers.ssb.rateLimit?.default);
+// { requests: 30, intervalMs: 60_000, basis: "provider-documented", note: "..." }
+```
+
+`basis` distinguishes a limit the provider publishes from a conservative budget the SDK chose for a
+provider that publishes none.
+
+Budgets are named per operation class, because a provider can publish very different limits for
+different services. Data.norge allows 10 search requests per minute but 5 resource lookups per
+second, so those get separate budgets and neither throttles the other:
+
+```ts
+console.log(providers["data-norge"].rateLimit?.default.requests); // 10 per minute (search)
+console.log(providers["data-norge"].rateLimit?.resource.requests); // 5 per second (lookups)
+```
+
+Set `rateLimit: { enabled: false }` only when your traffic is already bounded elsewhere, such as
+behind your own scheduler or a shared gateway.
+
+See [Architecture](docs/architecture.md) for implementation details.
 
 ## Documentation
 

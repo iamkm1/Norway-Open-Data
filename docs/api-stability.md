@@ -1,7 +1,7 @@
 # API stability
 
-Norway Open Data SDK is currently version `0.2.1`. The public surface is usable, tested and typed,
-but it should not be treated as a 1.0 stability promise.
+Norway Open Data SDK is pre-1.0; see `CHANGELOG.md` for the current release. The public surface is
+usable, tested and typed, but it should not be treated as a 1.0 stability promise.
 
 ## Supported consumer surface
 
@@ -35,7 +35,9 @@ Changesets record user-visible changes and drive semantic versions:
 - Major: incompatible changes to public imports, signatures, normalized output or behavior.
 
 Before 1.0, breaking changes may still be necessary, but they must be documented through a
-Changeset and changelog entry rather than introduced silently.
+Changeset and changelog entry rather than introduced silently. A breaking change is released as a
+minor version while the major version is `0`, so a caret range such as `^0.4.1` does not pick it up
+automatically. Patch releases stay compatible.
 
 ## Provider contract risk
 

@@ -96,14 +96,49 @@ Europe/Oslo day, so ordinary days have 24 entries and daylight-saving changes ha
 Normalized interval ends use the next start or following local midnight; optional `raw` data
 preserves provider-native end timestamps.
 
+## Provider descriptors
+
+Each provider declares itself once, in `src/providers/<provider>/provider.ts`, as a
+`ProviderDescriptor`: legal metadata, how a caller identifies itself, how often the provider may be
+called, and how long each class of response stays fresh. `src/providers/registry.ts` collects the
+descriptors and derives the `ProviderId` union from its own keys, with a signature that refuses to
+compile when a registry key and a descriptor `id` disagree. One spelling of an identifier therefore
+reaches error messages, response `source.id`, cache keys and the `credentials` configuration.
+
+The core reads descriptors and never special-cases a provider. Requests carry the descriptor itself
+rather than a provider name, so a typo is a type error rather than a misleading error message.
+Adding a provider means writing its folder and adding one registry line; no file under `src/core/`
+changes.
+
+`providers` exposes the documented subset of every descriptor. The behavioural fields — header
+builders and cache lifetimes — stay internal.
+
 ## Caching
 
 Caching is disabled by default. When enabled, provider methods supply TTLs appropriate to their
-update cadence. `cache.ttlMs` can override those recommendations globally. Cache bypass skips both
-reads and writes, and unsuccessful responses are never cached. Cache keys include the expected
-response representation and `Accept` value so JSON and text variants of one URL cannot collide.
-`NorwayOpenData.clearCache()` removes every entry shared by that SDK instance without exposing
+update cadence, named per operation class on the descriptor. `cache.ttlMs` can override those
+recommendations globally. Cache bypass skips both reads and writes, and unsuccessful responses are
+never cached. Cache keys include the expected response representation and `Accept` value so JSON and
+text variants of one URL cannot collide.
+
+Storage is pluggable. The default `MemoryCache` is a bounded TTL/LRU cache private to one SDK
+instance; a caller-supplied `CacheStore` can share validated responses across instances or
+processes and then owns expiry and eviction. Reads and writes are awaited either way.
+`NorwayOpenData.clearCache()` resolves once the backing store has cleared, without exposing
 internal keys or values.
+
+## Request budgets
+
+Every descriptor may declare a `rateLimit`. Enforcement is on by default: one sliding-window
+limiter per provider is shared by all clients on a `NorwayOpenData` instance, and admission is
+serialized so concurrent callers cannot observe the same free slot and overshoot together.
+
+Budget is consumed per network attempt, so a retry pays for itself and a cache hit pays nothing.
+Waiting happens before the request timeout is armed, so a queued request is not charged for time
+spent waiting its turn, and a caller's `signal` rejects a waiting request immediately.
+
+`basis` records whether a number is `provider-documented` or an `sdk-courtesy` budget chosen for a
+provider that publishes none.
 
 ## Identification and credentials
 
@@ -113,6 +148,14 @@ internal keys or values.
 - NVE HydAPI station and observation methods require `credentials.nve.apiKey` from free
   registration.
 
+These requirements are declared on each descriptor rather than implemented per client. A descriptor
+names the configuration values it needs and builds its own headers from them; the HTTP client
+verifies the values are present and raises `ConfigurationError` with the provider's own instructions
+before any network access. Cross-provider profiles ask the same question to decide whether to skip a
+section as `not-configured` rather than failing the whole composition.
+
+`credentials` is keyed by provider id, so a new credentialled provider needs no configuration
+change in the core, and an unknown provider key is rejected rather than silently ignored.
 Credentials remain instance configuration. They are never embedded in source, fixtures, examples,
 generated documentation, or package artifacts.
 

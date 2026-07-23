@@ -1,5 +1,6 @@
 import { createResponse, HttpClient } from "../../core/client.js";
-import { providers, responseSource } from "../../core/metadata.js";
+import { responseSource } from "../../core/provider.js";
+import { nveProvider } from "./provider.js";
 import type { OpenDataResponse, RequestOptions } from "../../core/types.js";
 import {
   hydropowerPlantsSchema,
@@ -15,8 +16,6 @@ const RESERVOIR_URL =
   "https://biapi.nve.no/magasinstatistikk/api/Magasinstatistikk/HentOffentligDataSisteUke";
 const HYDROPOWER_URL = "https://api.nve.no/web/Powerplant/GetHydroPowerPlantsInOperation";
 const WIND_POWER_URL = "https://api.nve.no/web/WindPowerplant/GetWindPowerPlantsInOperation";
-const RESERVOIR_TTL_MS = 60 * 60 * 1_000;
-const POWER_PLANT_TTL_MS = 24 * 60 * 60 * 1_000;
 
 function normalizeReservoir(raw: RawReservoirStatistics[number]): ReservoirStatistic {
   return {
@@ -81,15 +80,15 @@ export class NveEnergyClient {
     options?: RequestOptions,
   ): Promise<OpenDataResponse<ReservoirStatistic[]>> {
     const result = await this.#http.request({
-      provider: "nve",
+      provider: nveProvider,
       url: RESERVOIR_URL,
       schema: reservoirStatisticsSchema,
       options,
-      cacheTtlMs: RESERVOIR_TTL_MS,
+      cacheTtlMs: nveProvider.cacheTtlMs.reservoir,
     });
     return createResponse(
       result.data.map(normalizeReservoir),
-      responseSource(providers.nve),
+      responseSource(nveProvider),
       result.data,
       result.cached,
       options,
@@ -99,15 +98,15 @@ export class NveEnergyClient {
   /** Gets all hydropower plants that NVE currently marks as operational. */
   async getHydropowerPlants(options?: RequestOptions): Promise<OpenDataResponse<PowerPlant[]>> {
     const result = await this.#http.request({
-      provider: "nve",
+      provider: nveProvider,
       url: HYDROPOWER_URL,
       schema: hydropowerPlantsSchema,
       options,
-      cacheTtlMs: POWER_PLANT_TTL_MS,
+      cacheTtlMs: nveProvider.cacheTtlMs.powerPlant,
     });
     return createResponse(
       result.data.map(normalizeHydropower),
-      responseSource(providers.nve),
+      responseSource(nveProvider),
       result.data,
       result.cached,
       options,
@@ -117,15 +116,15 @@ export class NveEnergyClient {
   /** Gets all wind-power plants that NVE currently marks as operational. */
   async getWindPowerPlants(options?: RequestOptions): Promise<OpenDataResponse<PowerPlant[]>> {
     const result = await this.#http.request({
-      provider: "nve",
+      provider: nveProvider,
       url: WIND_POWER_URL,
       schema: windPowerPlantsSchema,
       options,
-      cacheTtlMs: POWER_PLANT_TTL_MS,
+      cacheTtlMs: nveProvider.cacheTtlMs.powerPlant,
     });
     return createResponse(
       result.data.map(normalizeWindPower),
-      responseSource(providers.nve),
+      responseSource(nveProvider),
       result.data,
       result.cached,
       options,
@@ -145,7 +144,7 @@ export class NveEnergyClient {
     ]);
     return createResponse(
       [...hydropower.data, ...wind.data],
-      responseSource(providers.nve),
+      responseSource(nveProvider),
       { hydropower: hydropower.raw, wind: wind.raw },
       hydropower.cached && wind.cached,
       options,

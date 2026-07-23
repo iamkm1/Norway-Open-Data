@@ -2,10 +2,11 @@ import { z } from "zod";
 
 import { createResponse, HttpClient } from "../../core/client.js";
 import { InputValidationError, ResponseValidationError } from "../../core/errors.js";
-import { providers, responseSource } from "../../core/metadata.js";
+import { responseSource } from "../../core/provider.js";
 import { paginatePages, type PaginateOptions } from "../../core/paginate.js";
 import type { OpenDataResponse, RequestOptions } from "../../core/types.js";
 import type { NorwegianAddress } from "../kartverket/types.js";
+import { brregProvider } from "./provider.js";
 import {
   companySchema,
   companySearchSchema,
@@ -15,7 +16,6 @@ import {
 import type { Company, CompanySearchParameters, CompanySearchResult } from "./types.js";
 
 const BASE_URL = "https://data.brreg.no/enhetsregisteret/api";
-const COMPANY_TTL_MS = 15 * 60 * 1_000;
 const MAX_SEARCH_SIZE = 100;
 
 const searchSchema = z.object({
@@ -35,13 +35,13 @@ const searchSchema = z.object({
 export function normalizeOrganizationNumber(value: string): string {
   if (typeof value !== "string") {
     throw new InputValidationError("Organization number must be a string.", {
-      provider: "brreg",
+      provider: brregProvider.id,
     });
   }
   const normalized = value.replaceAll(/\s/g, "");
   if (!/^\d{9}$/.test(normalized)) {
     throw new InputValidationError("Organization number must contain exactly nine digits.", {
-      provider: "brreg",
+      provider: brregProvider.id,
     });
   }
   return normalized;
@@ -163,7 +163,7 @@ export class BrregClient {
   ): Promise<OpenDataResponse<Company>> {
     const normalized = normalizeOrganizationNumber(organizationNumber);
     const result = await this.#http.request({
-      provider: "brreg",
+      provider: brregProvider,
       url: `${BASE_URL}/enheter/${normalized}`,
       resourceDescription: `organization ${normalized}`,
       schema: companySchema,
@@ -171,17 +171,17 @@ export class BrregClient {
         if (data.organisasjonsnummer !== normalized) {
           throw new ResponseValidationError(
             "Brreg returned a different organization than requested.",
-            { provider: "brreg" },
+            { provider: brregProvider.id },
           );
         }
         return data;
       },
       options,
-      cacheTtlMs: COMPANY_TTL_MS,
+      cacheTtlMs: brregProvider.cacheTtlMs.company,
     });
     return createResponse(
       normalizeCompany(result.data),
-      responseSource(providers.brreg),
+      responseSource(brregProvider),
       result.data,
       result.cached,
       options,
@@ -196,7 +196,7 @@ export class BrregClient {
     const parsed = searchSchema.safeParse(parameters);
     if (!parsed.success) {
       throw new InputValidationError("Invalid company search parameters.", {
-        provider: "brreg",
+        provider: brregProvider.id,
         cause: parsed.error,
       });
     }
@@ -205,7 +205,7 @@ export class BrregClient {
         ? undefined
         : normalizeOrganizationNumber(parsed.data.organizationNumber);
     const result = await this.#http.request({
-      provider: "brreg",
+      provider: brregProvider,
       url: `${BASE_URL}/enheter`,
       query: {
         navn: parsed.data.name,
@@ -218,11 +218,11 @@ export class BrregClient {
       },
       schema: companySearchSchema,
       options,
-      cacheTtlMs: COMPANY_TTL_MS,
+      cacheTtlMs: brregProvider.cacheTtlMs.company,
     });
     return createResponse(
       normalizeSearch(result.data),
-      responseSource(providers.brreg),
+      responseSource(brregProvider),
       result.data,
       result.cached,
       options,
@@ -256,7 +256,7 @@ export class BrregClient {
   ): Promise<OpenDataResponse<Company>> {
     const normalized = normalizeOrganizationNumber(organizationNumber);
     const result = await this.#http.request({
-      provider: "brreg",
+      provider: brregProvider,
       url: `${BASE_URL}/underenheter/${normalized}`,
       resourceDescription: `sub-entity ${normalized}`,
       schema: companySchema,
@@ -264,17 +264,17 @@ export class BrregClient {
         if (data.organisasjonsnummer !== normalized) {
           throw new ResponseValidationError(
             "Brreg returned a different sub-entity than requested.",
-            { provider: "brreg" },
+            { provider: brregProvider.id },
           );
         }
         return data;
       },
       options,
-      cacheTtlMs: COMPANY_TTL_MS,
+      cacheTtlMs: brregProvider.cacheTtlMs.company,
     });
     return createResponse(
       normalizeCompany(result.data),
-      responseSource(providers.brreg),
+      responseSource(brregProvider),
       result.data,
       result.cached,
       options,

@@ -20,6 +20,38 @@ Access labels in this document have precise meanings:
 - **Restricted access not supported:** endpoints or fields that require roles, delegated authority,
   private agreements, or access to sensitive/personal data are outside this SDK.
 
+## Enforced request budgets
+
+Each provider declares a request budget that the SDK enforces by default, shared by every client on
+one `NorwayOpenData` instance. A request that would exceed its budget waits rather than failing.
+Budgets are named per operation class where a provider publishes different limits per service.
+
+`basis` records where a number comes from: `provider-documented` numbers are the provider's own,
+cited from the sections below; `sdk-courtesy` numbers are conservative budgets the SDK chose for
+providers that publish none, so that ordinary use stays comfortable while a runaway loop cannot
+resemble abuse.
+
+| Provider              | Budget                             | Basis               |
+| --------------------- | ---------------------------------- | ------------------- |
+| Brønnøysundregistrene | 60/minute                          | sdk-courtesy        |
+| Statistics Norway     | 30/minute                          | provider-documented |
+| FHI                   | 30/minute                          | sdk-courtesy        |
+| Kartverket            | 60/minute                          | sdk-courtesy        |
+| Entur                 | 60/minute                          | sdk-courtesy        |
+| MET Norway            | 60/minute                          | sdk-courtesy        |
+| Data.norge            | 10/minute search; 5/second lookups | provider-documented |
+| Norges Bank           | 60/minute                          | sdk-courtesy        |
+| Stortinget            | 100/minute                         | provider-documented |
+| Statens vegvesen      | 60/minute                          | sdk-courtesy        |
+| NVE                   | 30/minute                          | sdk-courtesy        |
+| Hva koster strømmen?  | 30/minute                          | sdk-courtesy        |
+
+These budgets bound this SDK's own traffic only. They cannot account for other clients sharing your
+IP address or API key, so a provider may still return HTTP 429; the SDK honours `Retry-After` when
+it does. Enforcement can be disabled with `rateLimit: { enabled: false }` when traffic is already
+bounded by your own scheduler or gateway, which makes staying inside each provider's terms your
+responsibility.
+
 ## Brønnøysundregistrene
 
 - **Supported methods:** `companies.get()`, `companies.search()`, `companies.searchAll()`,

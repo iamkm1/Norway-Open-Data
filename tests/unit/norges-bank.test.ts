@@ -29,7 +29,8 @@ function createClient(fetch: typeof globalThis.fetch, cacheEnabled = false): Nor
       retries: 0,
       fetch,
       cache: { enabled: cacheEnabled, maxEntries: 100 },
-      credentials: { nve: {} },
+      rateLimit: { enabled: false },
+      credentials: {},
     }),
   );
 }

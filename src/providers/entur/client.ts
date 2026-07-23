@@ -2,13 +2,13 @@ import { z } from "zod";
 
 import { createResponse, HttpClient } from "../../core/client.js";
 import {
-  ConfigurationError,
   InputValidationError,
   NotFoundError,
   ProviderError,
   ResponseValidationError,
 } from "../../core/errors.js";
-import { providers, responseSource } from "../../core/metadata.js";
+import { responseSource } from "../../core/provider.js";
+import { enturProvider } from "./provider.js";
 import type { OpenDataResponse, RequestOptions } from "../../core/types.js";
 import { DEPARTURES_QUERY, JOURNEYS_QUERY } from "./queries.js";
 import {
@@ -33,8 +33,6 @@ import type {
 
 const GRAPHQL_URL = "https://api.entur.io/journey-planner/v3/graphql";
 const GEOCODER_URL = "https://api.entur.io/geocoder/v1/autocomplete";
-const AUTOCOMPLETE_TTL_MS = 5 * 60 * 1_000;
-const REALTIME_TTL_MS = 20 * 1_000;
 
 const dateTimeSchema = z.union([z.date(), z.iso.datetime({ offset: true })]).optional();
 
@@ -93,7 +91,7 @@ function isoDateTime(value: Date | string | undefined): string | undefined {
 function assertGraphQlSuccess(raw: { errors?: Array<{ message: string }> }): void {
   if (raw.errors !== undefined && raw.errors.length > 0) {
     throw new ProviderError("Entur GraphQL returned one or more query errors.", {
-      provider: "entur",
+      provider: enturProvider.id,
       statusCode: 200,
     });
   }
@@ -126,7 +124,7 @@ function normalizeDepartures(raw: RawDepartures): Departure[] {
   const stopPlace = raw.data?.stopPlace;
   if (stopPlace == null) {
     throw new NotFoundError("Entur stop place was not found.", {
-      provider: "entur",
+      provider: enturProvider.id,
       statusCode: 404,
     });
   }
@@ -253,12 +251,10 @@ function graphQlLocation(location: JourneyLocationInput): Record<string, unknown
 /** Client for Entur geocoding, departure-board, and journey-planning APIs. */
 export class EnturClient {
   readonly #http: HttpClient;
-  readonly #applicationName?: string;
 
   /** @internal */
-  constructor(http: HttpClient, applicationName?: string) {
+  constructor(http: HttpClient) {
     this.#http = http;
-    this.#applicationName = applicationName;
   }
 
   /** Autocompletes stops, addresses, and points of interest through Entur. */
@@ -266,16 +262,15 @@ export class EnturClient {
     parameters: AutocompleteParameters,
     options?: RequestOptions,
   ): Promise<OpenDataResponse<AutocompletePlace[]>> {
-    const applicationName = this.#requireApplicationName();
     const parsed = autocompleteSchema.safeParse(parameters);
     if (!parsed.success) {
       throw new InputValidationError("Invalid Entur autocomplete parameters.", {
-        provider: "entur",
+        provider: enturProvider.id,
         cause: parsed.error,
       });
     }
     const result = await this.#http.request({
-      provider: "entur",
+      provider: enturProvider,
       url: GEOCODER_URL,
       query: {
         text: parsed.data.text,
@@ -284,14 +279,14 @@ export class EnturClient {
         "focus.point.lat": parsed.data.latitude,
         "focus.point.lon": parsed.data.longitude,
       },
-      headers: { "ET-Client-Name": applicationName },
+      authenticate: true,
       schema: autocompleteResponseSchema,
       options,
-      cacheTtlMs: AUTOCOMPLETE_TTL_MS,
+      cacheTtlMs: enturProvider.cacheTtlMs.autocomplete,
     });
     return createResponse(
       normalizeAutocomplete(result.data),
-      responseSource(providers.entur),
+      responseSource(enturProvider),
       result.data,
       result.cached,
       options,
@@ -303,16 +298,15 @@ export class EnturClient {
     parameters: DepartureParameters,
     options?: RequestOptions,
   ): Promise<OpenDataResponse<Departure[]>> {
-    const applicationName = this.#requireApplicationName();
     const parsed = departureSchema.safeParse(parameters);
     if (!parsed.success) {
       throw new InputValidationError("Invalid Entur departure parameters.", {
-        provider: "entur",
+        provider: enturProvider.id,
         cause: parsed.error,
       });
     }
     const result = await this.#http.graphql({
-      provider: "entur",
+      provider: enturProvider,
       url: GRAPHQL_URL,
       queryDocument: DEPARTURES_QUERY,
       variables: {
@@ -320,7 +314,7 @@ export class EnturClient {
         startTime: isoDateTime(parsed.data.dateTime),
         limit: Math.min(parsed.data.limit ?? 10, 50),
       },
-      headers: { "ET-Client-Name": applicationName },
+      authenticate: true,
       schema: departuresResponseSchema,
       transform: (data) => {
         assertGraphQlSuccess(data);
@@ -330,19 +324,19 @@ export class EnturClient {
           throw new ResponseValidationError(
             "Entur returned a different stop place than requested.",
             {
-              provider: "entur",
+              provider: enturProvider.id,
             },
           );
         }
         return data;
       },
       options,
-      cacheTtlMs: REALTIME_TTL_MS,
+      cacheTtlMs: enturProvider.cacheTtlMs.realtime,
     });
     assertGraphQlSuccess(result.data);
     return createResponse(
       normalizeDepartures(result.data),
-      responseSource(providers.entur),
+      responseSource(enturProvider),
       result.data,
       result.cached,
       options,
@@ -354,16 +348,15 @@ export class EnturClient {
     parameters: JourneyParameters,
     options?: RequestOptions,
   ): Promise<OpenDataResponse<Journey[]>> {
-    const applicationName = this.#requireApplicationName();
     const parsed = journeySchema.safeParse(parameters);
     if (!parsed.success) {
       throw new InputValidationError("Invalid Entur journey parameters.", {
-        provider: "entur",
+        provider: enturProvider.id,
         cause: parsed.error,
       });
     }
     const result = await this.#http.graphql({
-      provider: "entur",
+      provider: enturProvider,
       url: GRAPHQL_URL,
       queryDocument: JOURNEYS_QUERY,
       variables: {
@@ -373,32 +366,22 @@ export class EnturClient {
         arriveBy: parsed.data.arriveBy ?? false,
         limit: Math.min(parsed.data.limit ?? 5, 10),
       },
-      headers: { "ET-Client-Name": applicationName },
+      authenticate: true,
       schema: journeysResponseSchema,
       transform: (data) => {
         assertGraphQlSuccess(data);
         return data;
       },
       options,
-      cacheTtlMs: REALTIME_TTL_MS,
+      cacheTtlMs: enturProvider.cacheTtlMs.realtime,
     });
     assertGraphQlSuccess(result.data);
     return createResponse(
       normalizeJourneys(result.data),
-      responseSource(providers.entur),
+      responseSource(enturProvider),
       result.data,
       result.cached,
       options,
     );
-  }
-
-  #requireApplicationName(): string {
-    if (this.#applicationName === undefined) {
-      throw new ConfigurationError(
-        "Entur requests require applicationName (normally company-application) for ET-Client-Name.",
-        { provider: "entur" },
-      );
-    }
-    return this.#applicationName;
   }
 }

@@ -27,7 +27,8 @@ function makeClient(fetch: typeof globalThis.fetch, cacheEnabled = false): Stort
       retries: 0,
       fetch,
       cache: { enabled: cacheEnabled, maxEntries: 20 },
-      credentials: { nve: {} },
+      rateLimit: { enabled: false },
+      credentials: {},
     }),
   );
 }

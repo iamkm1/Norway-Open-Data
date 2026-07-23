@@ -1,6 +1,11 @@
 import { createResponse } from "../core/client.js";
 import { NotFoundError } from "../core/errors.js";
-import { providers, responseSource } from "../core/metadata.js";
+import { type ProviderDescriptor, responseSource } from "../core/provider.js";
+import { providers } from "../providers/registry.js";
+import { kartverketProvider } from "../providers/kartverket/provider.js";
+import { metProvider } from "../providers/met/provider.js";
+import { ssbProvider } from "../providers/ssb/provider.js";
+import { vegvesenProvider } from "../providers/vegvesen/provider.js";
 import type { OpenDataResponse, RequestOptions } from "../core/types.js";
 import type { BrregClient } from "../providers/brreg/client.js";
 import type { FhiClient } from "../providers/fhi/client.js";
@@ -207,10 +212,12 @@ export type ProfileDependencies = {
   roads: VegvesenClient;
   statistics: SsbClient;
   health: FhiClient;
-  /** True when both `applicationName` and `contactEmail` are configured. */
-  hasMetIdentity: boolean;
-  /** True when `applicationName` is configured. */
-  hasApplicationName: boolean;
+  /**
+   * Reports whether the current configuration satisfies a provider's declared
+   * identification requirements, so a component can be skipped as
+   * `not-configured` rather than failing the whole composition.
+   */
+  canAuthenticate: (provider: ProviderDescriptor) => boolean;
 };
 
 function warningFeedComponent(
@@ -289,7 +296,7 @@ export class ProfileClient {
     const address = addressResponse.data.items[0];
     if (address === undefined) {
       throw new NotFoundError(`No official Norwegian address matched "${query}".`, {
-        provider: "kartverket",
+        provider: kartverketProvider.id,
       });
     }
 
@@ -301,11 +308,11 @@ export class ProfileClient {
         ? boundingBoxAround(latitude, longitude)
         : undefined;
     const weatherPromise =
-      hasCoordinates && dependencies.hasMetIdentity
+      hasCoordinates && dependencies.canAuthenticate(metProvider)
         ? dependencies.weather.current({ latitude, longitude }, forwarded)
         : undefined;
     const roadsPromise =
-      roadBoundingBox !== undefined && dependencies.hasApplicationName
+      roadBoundingBox !== undefined && dependencies.canAuthenticate(vegvesenProvider)
         ? dependencies.roads.getRoadNetwork(
             { boundingBox: roadBoundingBox, pageSize: 10 },
             forwarded,
@@ -461,7 +468,7 @@ export class ProfileClient {
     const resolved = resolveMunicipality(regionDimension, query);
     if (resolved === undefined) {
       throw new NotFoundError(`No Norwegian municipality matched "${query}".`, {
-        provider: "ssb",
+        provider: ssbProvider.id,
       });
     }
     const countyCode = resolved.code.slice(0, 2);

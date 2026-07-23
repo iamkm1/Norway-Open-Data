@@ -2,13 +2,13 @@ import { z } from "zod";
 
 import { createResponse, HttpClient } from "../../core/client.js";
 import { InputValidationError } from "../../core/errors.js";
-import { providers, responseSource } from "../../core/metadata.js";
+import { responseSource } from "../../core/provider.js";
+import { kartverketProvider } from "./provider.js";
 import type { OpenDataResponse, RequestOptions } from "../../core/types.js";
 import { addressResponseSchema, type RawAddressResponse } from "./schemas.js";
 import type { AddressSearchParameters, AddressSearchResult, NorwegianAddress } from "./types.js";
 
 const BASE_URL = "https://ws.geonorge.no/adresser/v1";
-const ADDRESS_TTL_MS = 24 * 60 * 60 * 1_000;
 const MAX_RESULTS = 1_000;
 
 const inputSchema = z.object({
@@ -66,14 +66,14 @@ export class KartverketAddressClient {
     const parsed = inputSchema.safeParse(parameters);
     if (!parsed.success) {
       throw new InputValidationError("Invalid Kartverket address search parameters.", {
-        provider: "kartverket",
+        provider: kartverketProvider.id,
         cause: parsed.error,
       });
     }
     const limit = Math.min(parsed.data.limit ?? 10, MAX_RESULTS);
     const requestedCount = parsed.data.countyCode === undefined ? limit : MAX_RESULTS;
     const result = await this.#http.request({
-      provider: "kartverket",
+      provider: kartverketProvider,
       url: `${BASE_URL}/sok`,
       query: {
         sok: parsed.data.query,
@@ -83,7 +83,7 @@ export class KartverketAddressClient {
       },
       schema: addressResponseSchema,
       options,
-      cacheTtlMs: ADDRESS_TTL_MS,
+      cacheTtlMs: kartverketProvider.cacheTtlMs.address,
     });
     let items = result.data.adresser.map(normalizeAddress);
     let total: number | undefined = result.data.metadata.totaltAntallTreff;
@@ -97,7 +97,7 @@ export class KartverketAddressClient {
         items,
         ...(total === undefined ? {} : { total }),
       },
-      responseSource(providers.kartverket),
+      responseSource(kartverketProvider),
       result.data,
       result.cached,
       options,

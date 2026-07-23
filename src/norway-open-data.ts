@@ -1,9 +1,10 @@
 import { z } from "zod";
 
-import { MemoryCache } from "./core/cache.js";
-import { HttpClient } from "./core/client.js";
+import { type CacheStore, MemoryCache } from "./core/cache.js";
+import { availableAuthValues, HttpClient } from "./core/client.js";
 import { ConfigurationError } from "./core/errors.js";
-import type { NorwayOpenDataConfig, ResolvedConfig } from "./core/types.js";
+import { missingAuthFields, type ProviderDescriptor } from "./core/provider.js";
+import type { NorwayOpenDataConfig, ProviderCredentials, ResolvedConfig } from "./core/types.js";
 import { ProfileClient } from "./profiles/client.js";
 import { BrregClient } from "./providers/brreg/client.js";
 import { DataNorgeClient } from "./providers/data-norge/client.js";
@@ -16,9 +17,38 @@ import { MetClient } from "./providers/met/client.js";
 import { NveEnergyClient } from "./providers/nve/energy-client.js";
 import { NveHazardsClient } from "./providers/nve/hazards-client.js";
 import { NorgesBankClient } from "./providers/norges-bank/client.js";
+import { type ProviderId, providerIds } from "./providers/registry.js";
 import { SsbClient } from "./providers/ssb/client.js";
 import { StortingetClient } from "./providers/stortinget/client.js";
 import { VegvesenClient } from "./providers/vegvesen/client.js";
+
+const secretSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(500)
+  .refine((value) => !/[\r\n]/.test(value));
+
+const providerCredentialSchema = z.object({ apiKey: secretSchema.optional() });
+
+/**
+ * Credentials are validated per registered provider id, so a new provider needs
+ * no change here, and a misspelled provider name is rejected rather than
+ * silently ignored.
+ */
+const credentialsSchema = z
+  .object(Object.fromEntries(providerIds.map((id) => [id, providerCredentialSchema.optional()])))
+  .strict();
+
+const cacheStoreSchema = z.custom<CacheStore>(
+  (value) =>
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as CacheStore).get === "function" &&
+    typeof (value as CacheStore).set === "function" &&
+    typeof (value as CacheStore).clear === "function",
+  { message: "cache.store must implement get, set and clear." },
+);
 
 const configSchema = z.object({
   applicationName: z
@@ -37,23 +67,11 @@ const configSchema = z.object({
       enabled: z.boolean().optional(),
       ttlMs: z.number().int().positive().optional(),
       maxEntries: z.number().int().positive().max(10_000).optional(),
+      store: cacheStoreSchema.optional(),
     })
     .optional(),
-  credentials: z
-    .object({
-      nve: z
-        .object({
-          apiKey: z
-            .string()
-            .trim()
-            .min(1)
-            .max(500)
-            .refine((value) => !/[\r\n]/.test(value))
-            .optional(),
-        })
-        .optional(),
-    })
-    .optional(),
+  rateLimit: z.object({ enabled: z.boolean().optional() }).optional(),
+  credentials: credentialsSchema.optional(),
 });
 
 function resolveConfig(config: NorwayOpenDataConfig): ResolvedConfig {
@@ -81,14 +99,10 @@ function resolveConfig(config: NorwayOpenDataConfig): ResolvedConfig {
       enabled: parsed.data.cache?.enabled ?? false,
       ...(parsed.data.cache?.ttlMs === undefined ? {} : { ttlMs: parsed.data.cache.ttlMs }),
       maxEntries: parsed.data.cache?.maxEntries ?? 100,
+      ...(parsed.data.cache?.store === undefined ? {} : { store: parsed.data.cache.store }),
     },
-    credentials: {
-      nve: {
-        ...(parsed.data.credentials?.nve?.apiKey === undefined
-          ? {}
-          : { apiKey: parsed.data.credentials.nve.apiKey }),
-      },
-    },
+    rateLimit: { enabled: parsed.data.rateLimit?.enabled ?? true },
+    credentials: (parsed.data.credentials ?? {}) as ProviderCredentials,
   };
 }
 
@@ -96,10 +110,11 @@ function resolveConfig(config: NorwayOpenDataConfig): ResolvedConfig {
  * Unified entry point for Norwegian open public data providers.
  *
  * Provider clients are initialized once and share retry, timeout, validation,
- * fetch injection, and optional in-memory caching infrastructure.
+ * fetch injection, per-provider request budgets, caller identification and the
+ * optional response cache.
  */
 export class NorwayOpenData {
-  readonly #cache: MemoryCache;
+  readonly #cache: CacheStore;
   readonly companies: BrregClient;
   readonly statistics: SsbClient;
   readonly health: FhiClient;
@@ -119,7 +134,7 @@ export class NorwayOpenData {
   /** Creates an SDK client with safe request defaults. */
   constructor(config: NorwayOpenDataConfig = {}) {
     const resolved = resolveConfig(config);
-    const cache = new MemoryCache(resolved.cache.maxEntries);
+    const cache = resolved.cache.store ?? new MemoryCache(resolved.cache.maxEntries);
     this.#cache = cache;
     const http = new HttpClient(resolved, cache);
     this.companies = new BrregClient(http);
@@ -127,14 +142,14 @@ export class NorwayOpenData {
     this.health = new FhiClient(http);
     this.addresses = new KartverketAddressClient(http);
     this.places = new KartverketPlaceClient(http);
-    this.transport = new EnturClient(http, resolved.applicationName);
-    this.weather = new MetClient(http, resolved.applicationName, resolved.contactEmail);
+    this.transport = new EnturClient(http);
+    this.weather = new MetClient(http);
     this.catalog = new DataNorgeClient(http);
     this.currency = new NorgesBankClient(http);
     this.energy = new NveEnergyClient(http);
-    this.hazards = new NveHazardsClient(http, resolved.credentials.nve.apiKey);
+    this.hazards = new NveHazardsClient(http);
     this.parliament = new StortingetClient(http);
-    this.roads = new VegvesenClient(http, resolved.applicationName);
+    this.roads = new VegvesenClient(http);
     this.electricity = new ElectricityClient(http);
     // Constructed last: cross-provider profiles depend on the clients above.
     this.profiles = new ProfileClient(this.companies, this.addresses, {
@@ -143,13 +158,20 @@ export class NorwayOpenData {
       roads: this.roads,
       statistics: this.statistics,
       health: this.health,
-      hasMetIdentity: resolved.applicationName !== undefined && resolved.contactEmail !== undefined,
-      hasApplicationName: resolved.applicationName !== undefined,
+      canAuthenticate: (provider: ProviderDescriptor) =>
+        missingAuthFields(provider, availableAuthValues(resolved, provider.id as ProviderId))
+          .length === 0,
     });
   }
 
-  /** Removes every response currently held in this SDK instance's in-memory cache. */
-  clearCache(): void {
-    this.#cache.clear();
+  /**
+   * Removes every response cached for this SDK instance.
+   *
+   * With the default in-memory cache this affects only this instance. With a
+   * shared {@link CacheStore} it clears whatever that store considers its
+   * contents, which other instances may also be reading.
+   */
+  async clearCache(): Promise<void> {
+    await this.#cache.clear();
   }
 }

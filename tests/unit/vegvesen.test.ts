@@ -33,9 +33,10 @@ function createClient(
     retries: 0,
     fetch,
     cache: { enabled: cacheEnabled, maxEntries: 20 },
-    credentials: { nve: {} },
+    rateLimit: { enabled: false },
+    credentials: {},
   };
-  return new VegvesenClient(new HttpClient(config), resolvedApplicationName);
+  return new VegvesenClient(new HttpClient(config));
 }
 
 function requestHeaders(mock: ReturnType<typeof vi.fn>, index = 0): Headers {

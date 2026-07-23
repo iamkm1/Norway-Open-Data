@@ -1,4 +1,4 @@
-import type { OpenDataSource } from "../core/metadata.js";
+import type { OpenDataSource } from "../core/provider.js";
 import type { Company } from "../providers/brreg/types.js";
 import type { NorwegianAddress } from "../providers/kartverket/types.js";
 import type { WeatherTimeseriesEntry } from "../providers/met/types.js";

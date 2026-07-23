@@ -2,7 +2,8 @@ import { z } from "zod";
 
 import { createResponse, HttpClient } from "../../core/client.js";
 import { InputValidationError } from "../../core/errors.js";
-import { providers, responseSource } from "../../core/metadata.js";
+import { responseSource } from "../../core/provider.js";
+import { kartverketProvider } from "./provider.js";
 import type { OpenDataResponse, RequestOptions } from "../../core/types.js";
 import { placeResponseSchema, type RawPlaceResponse } from "./schemas.js";
 import type {
@@ -13,7 +14,6 @@ import type {
 } from "./types.js";
 
 const BASE_URL = "https://ws.geonorge.no/stedsnavn/v1";
-const PLACE_TTL_MS = 24 * 60 * 60 * 1_000;
 const MAX_RESULTS = 500;
 const MAX_RADIUS_METERS = 5_000;
 
@@ -88,12 +88,12 @@ export class KartverketPlaceClient {
     const parsed = searchSchema.safeParse(parameters);
     if (!parsed.success) {
       throw new InputValidationError("Invalid Kartverket place search parameters.", {
-        provider: "kartverket",
+        provider: kartverketProvider.id,
         cause: parsed.error,
       });
     }
     const result = await this.#http.request({
-      provider: "kartverket",
+      provider: kartverketProvider,
       url: `${BASE_URL}/navn`,
       query: {
         sok: parsed.data.query,
@@ -103,11 +103,11 @@ export class KartverketPlaceClient {
       },
       schema: placeResponseSchema,
       options,
-      cacheTtlMs: PLACE_TTL_MS,
+      cacheTtlMs: kartverketProvider.cacheTtlMs.place,
     });
     return createResponse(
       normalizePlaces(result.data),
-      responseSource(providers.kartverket),
+      responseSource(kartverketProvider),
       result.data,
       result.cached,
       options,
@@ -122,12 +122,12 @@ export class KartverketPlaceClient {
     const parsed = nearbySchema.safeParse(parameters);
     if (!parsed.success) {
       throw new InputValidationError("Invalid Kartverket nearby-place parameters.", {
-        provider: "kartverket",
+        provider: kartverketProvider.id,
         cause: parsed.error,
       });
     }
     const result = await this.#http.request({
-      provider: "kartverket",
+      provider: kartverketProvider,
       url: `${BASE_URL}/punkt`,
       query: {
         nord: parsed.data.latitude,
@@ -138,11 +138,11 @@ export class KartverketPlaceClient {
       },
       schema: placeResponseSchema,
       options,
-      cacheTtlMs: PLACE_TTL_MS,
+      cacheTtlMs: kartverketProvider.cacheTtlMs.place,
     });
     return createResponse(
       normalizePlaces(result.data),
-      responseSource(providers.kartverket),
+      responseSource(kartverketProvider),
       result.data,
       result.cached,
       options,

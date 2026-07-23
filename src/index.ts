@@ -1,5 +1,5 @@
 export { NorwayOpenData } from "./norway-open-data.js";
-export { providers } from "./providers.js";
+export { providerDescriptors, providerIds, providers } from "./providers.js";
 export { version } from "./version.js";
 
 export {
@@ -13,13 +13,28 @@ export {
   ResponseValidationError,
 } from "./core/errors.js";
 export type { OpenDataErrorDetails } from "./core/errors.js";
-export type { OpenDataSource, ProviderId, ProviderMetadata } from "./core/metadata.js";
+export type { CacheStore } from "./core/cache.js";
+export type {
+  OpenDataSource,
+  ProviderAccess,
+  ProviderAuth,
+  ProviderAuthField,
+  ProviderAuthValues,
+  ProviderCacheTtls,
+  ProviderDescriptor,
+  ProviderMetadata,
+  ProviderRateLimits,
+  RateLimitPolicy,
+} from "./core/provider.js";
+export type { ProviderId } from "./providers/registry.js";
 export type { PaginateOptions } from "./core/paginate.js";
 export type {
   CacheConfig,
   NorwayOpenDataConfig,
   OpenDataResponse,
+  ProviderCredential,
   ProviderCredentials,
+  RateLimitConfig,
   RequestOptions,
 } from "./core/types.js";
 

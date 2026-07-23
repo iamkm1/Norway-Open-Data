@@ -115,7 +115,7 @@ results.push(["request", first.data.name === "EKSEMPEL TEKNOLOGI AS" && first.ca
 // Cache read path (uses structuredClone).
 const second = await norway.companies.get("923609016");
 results.push(["cache", second.cached === true]);
-norway.clearCache();
+await norway.clearCache();
 
 // Client-side input validation.
 let validationOk = false;

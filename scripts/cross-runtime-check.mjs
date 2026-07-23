@@ -67,7 +67,7 @@ try {
 
 try {
   const second = await norway.companies.get("923609016");
-  norway.clearCache();
+  await norway.clearCache();
   const third = await norway.companies.get("923609016");
   if (second.cached === true && third.cached === false) {
     ok("cache (structuredClone + TTL/LRU)", "hit then cleared");

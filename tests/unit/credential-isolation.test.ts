@@ -44,6 +44,7 @@ describe("provider credential isolation", () => {
     const sdk = new NorwayOpenData({
       applicationName,
       contactEmail,
+      rateLimit: { enabled: false },
       credentials: { nve: { apiKey } },
       fetch,
       retries: 0,
@@ -99,6 +100,7 @@ describe("provider credential isolation", () => {
       await new NorwayOpenData({
         applicationName: "credential-isolation-tests",
         contactEmail,
+        rateLimit: { enabled: false },
         credentials: { nve: { apiKey } },
         fetch,
         retries: 0,

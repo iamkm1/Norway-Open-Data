@@ -1,19 +1,14 @@
 import { z } from "zod";
 
 import { createResponse, HttpClient } from "../../core/client.js";
-import {
-  ConfigurationError,
-  InputValidationError,
-  ResponseValidationError,
-} from "../../core/errors.js";
-import { providers, responseSource } from "../../core/metadata.js";
+import { InputValidationError, ResponseValidationError } from "../../core/errors.js";
+import { responseSource } from "../../core/provider.js";
+import { metProvider } from "./provider.js";
 import type { OpenDataResponse, RequestOptions } from "../../core/types.js";
-import { version } from "../../version.js";
 import { forecastResponseSchema, type RawForecast } from "./schemas.js";
 import type { ForecastParameters, WeatherForecast, WeatherTimeseriesEntry } from "./types.js";
 
 const FORECAST_URL = "https://api.met.no/weatherapi/locationforecast/2.0/compact";
-const WEATHER_TTL_MS = 10 * 60 * 1_000;
 
 const inputSchema = z.object({
   latitude: z.number().min(-90).max(90),
@@ -64,7 +59,7 @@ function normalizeForecast(raw: RawForecast): WeatherForecast {
   const [longitude, latitude, altitude] = raw.geometry.coordinates;
   if (longitude === undefined || latitude === undefined) {
     throw new ResponseValidationError("MET Norway response omitted forecast coordinates.", {
-      provider: "met",
+      provider: metProvider.id,
     });
   }
   return {
@@ -83,14 +78,10 @@ function normalizeForecast(raw: RawForecast): WeatherForecast {
 /** Client for MET Norway's Locationforecast 2.0 compact service. */
 export class MetClient {
   readonly #http: HttpClient;
-  readonly #applicationName?: string;
-  readonly #contactEmail?: string;
 
   /** @internal */
-  constructor(http: HttpClient, applicationName?: string, contactEmail?: string) {
+  constructor(http: HttpClient) {
     this.#http = http;
-    this.#applicationName = applicationName;
-    this.#contactEmail = contactEmail;
   }
 
   /** Fetches a compact point forecast. Coordinates are rounded to four decimals. */
@@ -101,7 +92,7 @@ export class MetClient {
     const result = await this.#requestForecast(parameters, options);
     return createResponse(
       normalizeForecast(result.data),
-      responseSource(providers.met),
+      responseSource(metProvider),
       result.data,
       result.cached,
       options,
@@ -117,7 +108,7 @@ export class MetClient {
     const forecast = normalizeForecast(result.data);
     return createResponse(
       forecast.timeseries[0],
-      responseSource(providers.met),
+      responseSource(metProvider),
       result.data,
       result.cached,
       options,
@@ -128,33 +119,25 @@ export class MetClient {
     parameters: ForecastParameters,
     options?: RequestOptions,
   ): Promise<{ data: RawForecast; cached: boolean }> {
-    if (this.#applicationName === undefined || this.#contactEmail === undefined) {
-      throw new ConfigurationError(
-        "MET Norway requests require both applicationName and contactEmail so the User-Agent identifies the caller.",
-        { provider: "met" },
-      );
-    }
     const parsed = inputSchema.safeParse(parameters);
     if (!parsed.success) {
       throw new InputValidationError("Invalid MET Norway forecast coordinates.", {
-        provider: "met",
+        provider: metProvider.id,
         cause: parsed.error,
       });
     }
     return this.#http.request({
-      provider: "met",
+      provider: metProvider,
       url: FORECAST_URL,
       query: {
         lat: roundCoordinate(parsed.data.latitude),
         lon: roundCoordinate(parsed.data.longitude),
         altitude: parsed.data.altitude,
       },
-      headers: {
-        "User-Agent": `NorwayOpenDataSDK/${version} ${this.#applicationName} ${this.#contactEmail}`,
-      },
+      authenticate: true,
       schema: forecastResponseSchema,
       options,
-      cacheTtlMs: WEATHER_TTL_MS,
+      cacheTtlMs: metProvider.cacheTtlMs.forecast,
     });
   }
 }

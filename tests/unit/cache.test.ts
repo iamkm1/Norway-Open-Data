@@ -6,7 +6,7 @@ import { MemoryCache, stableCacheKey } from "../../src/core/cache.js";
 import { HttpClient } from "../../src/core/client.js";
 import type { ResolvedConfig } from "../../src/core/types.js";
 import { NorwayOpenData } from "../../src/index.js";
-import { jsonResponse, sequenceFetch } from "./helpers.js";
+import { jsonResponse, sequenceFetch, testProvider } from "./helpers.js";
 
 function httpClient(
   fetch: typeof globalThis.fetch,
@@ -19,7 +19,8 @@ function httpClient(
       retries: 0,
       fetch,
       cache: { enabled: true, maxEntries: 20 },
-      credentials: { nve: {} },
+      rateLimit: { enabled: false },
+      credentials: {},
       ...overrides,
     },
     cache,
@@ -35,7 +36,7 @@ describe("cache hardening", () => {
     const client = httpClient(fetch);
     const schema = z.object({ value: z.number() });
     const first = await client.request({
-      provider: "test",
+      provider: testProvider,
       url: "https://cache.example.no/items",
       method: "POST",
       query: { b: 2, a: 1 },
@@ -44,7 +45,7 @@ describe("cache hardening", () => {
       cacheTtlMs: 60_000,
     });
     const reordered = await client.request({
-      provider: "test",
+      provider: testProvider,
       url: "https://cache.example.no/items",
       method: "POST",
       query: { a: 1, b: 2 },
@@ -53,7 +54,7 @@ describe("cache hardening", () => {
       cacheTtlMs: 60_000,
     });
     const different = await client.request({
-      provider: "test",
+      provider: testProvider,
       url: "https://cache.example.no/items",
       method: "POST",
       query: { a: 1, b: 3 },
@@ -140,7 +141,7 @@ describe("cache hardening", () => {
 
     expect((await sdk.companies.get("923609016")).cached).toBe(false);
     expect((await sdk.companies.get("923609016")).cached).toBe(true);
-    sdk.clearCache();
+    await sdk.clearCache();
     expect((await sdk.companies.get("923609016")).cached).toBe(false);
     expect(mock).toHaveBeenCalledTimes(2);
   });
@@ -159,10 +160,11 @@ describe("cache hardening", () => {
     ) as typeof globalThis.fetch;
     const client = httpClient(fetch, cache, {
       contactEmail,
+      rateLimit: { enabled: false },
       credentials: { nve: { apiKey } },
     });
     const result = await client.request({
-      provider: "test",
+      provider: testProvider,
       url: "https://hydapi.nve.no/api/v1/test",
       headers: { "X-API-Key": apiKey },
       schema: z.object({ ok: z.boolean() }).loose(),

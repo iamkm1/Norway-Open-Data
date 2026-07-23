@@ -3,8 +3,41 @@ type CacheEntry<T> = {
   expiresAt: number;
 };
 
+/**
+ * Storage backing the SDK's response cache.
+ *
+ * The default in-memory cache is per-instance and therefore invisible to other
+ * processes. Supply your own store to share cached provider responses across
+ * instances, workers or hosts. Every method may be synchronous or asynchronous;
+ * the SDK awaits all of them.
+ *
+ * A store receives values that have already passed runtime validation, and is
+ * expected to return them unchanged. It is responsible for honouring `ttlMs`;
+ * the SDK does not re-check expiry on read.
+ *
+ * Two properties matter when the store is shared or persistent. Keys are
+ * namespaced by SDK version, so entries written by one version are never read
+ * by another whose schemas may differ. Keys never contain credentials, so a
+ * shared store serves one cached response to every caller regardless of which
+ * API key fetched it; every supported provider returns public data, but do not
+ * add a provider whose response varies per credential without revisiting this.
+ */
+export type CacheStore = {
+  /**
+   * Returns the stored value, or `undefined` when absent or expired. `null` is
+   * also treated as a miss, so a store backed by Redis or a similar client can
+   * return its native empty value directly. May return a promise; the SDK
+   * awaits the result either way.
+   */
+  get(key: string): unknown;
+  /** Stores a value for at most `ttlMs` milliseconds. */
+  set(key: string, value: unknown, ttlMs: number): void | Promise<void>;
+  /** Removes every value this SDK instance may have stored. */
+  clear(): void | Promise<void>;
+};
+
 /** A small TTL-aware least-recently-used in-memory cache. */
-export class MemoryCache {
+export class MemoryCache implements CacheStore {
   readonly #entries = new Map<string, CacheEntry<unknown>>();
   readonly #maxEntries: number;
   readonly #now: () => number;

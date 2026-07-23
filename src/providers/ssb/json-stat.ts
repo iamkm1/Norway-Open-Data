@@ -10,8 +10,9 @@ import type {
   StatisticsResult,
   StatisticsTableMetadata,
 } from "./types.js";
+import { ssbProvider } from "./provider.js";
 
-const SSB_CONTEXT: JsonStatContext = { provider: "ssb", label: "SSB" };
+const SSB_CONTEXT: JsonStatContext = { provider: ssbProvider.id, label: "SSB" };
 
 /** Converts JSON-stat2 dimensions into the SDK metadata representation. */
 export function jsonStatDimensions(dataset: JsonStatDataset): StatisticsDimension[] {

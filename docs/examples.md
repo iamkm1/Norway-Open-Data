@@ -524,3 +524,55 @@ console.log(response.raw);
 `raw` is omitted by default so applications do not accidentally depend on an undocumented
 provider field. It is still privacy-filtered where a provider response contains unsupported
 personal or sensitive metadata.
+
+## Shared cache and request budgets
+
+```ts
+import { NorwayOpenData, providers, type CacheStore } from "norway-open-data-sdk";
+
+const store: CacheStore = {
+  async get(key) {
+    const raw = await redis.get(key);
+    return raw === null ? undefined : JSON.parse(raw);
+  },
+  async set(key, value, ttlMs) {
+    await redis.set(key, JSON.stringify(value), { PX: ttlMs });
+  },
+  async clear() {
+    await redis.flushDb();
+  },
+};
+
+const norway = new NorwayOpenData({ cache: { enabled: true, store } });
+
+const first = await norway.companies.get("923609016");
+console.log(first.cached); // false
+
+// A different instance, process or worker sharing the same store:
+const second = await new NorwayOpenData({ cache: { enabled: true, store } }).companies.get(
+  "923609016",
+);
+console.log(second.cached); // true
+
+await norway.clearCache();
+```
+
+The default cache is private to one `NorwayOpenData` instance, so a second instance starts cold.
+A `CacheStore` shares validated responses across instances and then owns expiry and eviction, which
+makes `cache.maxEntries` inapplicable. Store methods may be synchronous or asynchronous.
+
+Each provider also declares how often the SDK may call it, enforced by default across every client
+sharing an instance:
+
+```ts
+console.log(providers.ssb.rateLimit?.default);
+// { requests: 30, intervalMs: 60_000, basis: "provider-documented", note: "..." }
+```
+
+A request that would exceed a budget waits its turn instead of failing, and that wait never counts
+against `timeoutMs`. Cached responses cost no budget, retries do, and cancelling a caller's `signal`
+rejects a queued request immediately. Budgets are named per operation class where a provider
+publishes different limits per service, so Data.norge's 10 searches/minute and 5 resource
+lookups/second do not throttle each other. `basis` records whether the number is the provider's own
+or a conservative budget the SDK chose. Disable enforcement with `rateLimit: { enabled: false }`
+only when your traffic is already bounded elsewhere.

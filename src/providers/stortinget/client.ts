@@ -2,7 +2,8 @@ import { z } from "zod";
 
 import { createResponse, HttpClient } from "../../core/client.js";
 import { InputValidationError, NotFoundError, ResponseValidationError } from "../../core/errors.js";
-import { providers, responseSource } from "../../core/metadata.js";
+import { responseSource } from "../../core/provider.js";
+import { stortingetProvider } from "./provider.js";
 import { resolvePaginateOptions, type PaginateOptions } from "../../core/paginate.js";
 import type { HttpResult, OpenDataResponse, RequestOptions } from "../../core/types.js";
 import {
@@ -39,12 +40,10 @@ import type {
 } from "./types.js";
 
 const BASE_URL = "https://data.stortinget.no/eksport";
-const PEOPLE_TTL_MS = 6 * 60 * 60 * 1_000;
-const PARLIAMENTARY_DATA_TTL_MS = 15 * 60 * 1_000;
 const DEFAULT_LOCAL_PAGE_SIZE = 20;
 const MAX_LOCAL_PAGE_SIZE = 100;
 
-const STORTINGET_SOURCE = responseSource(providers.stortinget);
+const STORTINGET_SOURCE = responseSource(stortingetProvider);
 
 const sessionIdSchema = z
   .string()
@@ -167,7 +166,7 @@ const QUESTION_ENDPOINT_BY_CATEGORY = {
 } as const;
 
 function invalidInput(message: string, cause: z.ZodError): InputValidationError {
-  return new InputValidationError(message, { provider: "stortinget", cause });
+  return new InputValidationError(message, { provider: stortingetProvider.id, cause });
 }
 
 function normalizedCaseId(value: string | number): string {
@@ -196,7 +195,7 @@ function trimmedString(value: string | null | undefined): string | undefined {
 function normalizeRepresentative(raw: RawRepresentative): Representative {
   if (raw.id == null) {
     throw new ResponseValidationError("Stortinget returned a representative without an ID.", {
-      provider: "stortinget",
+      provider: stortingetProvider.id,
     });
   }
   const firstName = trimmedString(raw.fornavn);
@@ -206,7 +205,7 @@ function normalizeRepresentative(raw: RawRepresentative): Representative {
     .join(" ");
   if (fullName.length === 0) {
     throw new ResponseValidationError("Stortinget returned a representative without a name.", {
-      provider: "stortinget",
+      provider: stortingetProvider.id,
     });
   }
   const party =
@@ -363,7 +362,7 @@ export class StortingetClient {
     options?: RequestOptions,
   ): Promise<HttpResult<z.infer<typeof casesResponseSchema>>> {
     return this.#http.request({
-      provider: "stortinget",
+      provider: stortingetProvider,
       url: `${BASE_URL}/saker`,
       query: { format: "json", sesjonid: sessionId },
       schema: casesResponseSchema,
@@ -371,13 +370,13 @@ export class StortingetClient {
         if (sessionId !== undefined && data.sesjon_id !== sessionId) {
           throw new ResponseValidationError(
             "Stortinget returned a different parliamentary session than requested.",
-            { provider: "stortinget" },
+            { provider: stortingetProvider.id },
           );
         }
         return data;
       },
       options,
-      cacheTtlMs: PARLIAMENTARY_DATA_TTL_MS,
+      cacheTtlMs: stortingetProvider.cacheTtlMs.parliamentaryData,
     });
   }
 
@@ -389,7 +388,7 @@ export class StortingetClient {
     const parsed = representativesParametersSchema.safeParse(parameters);
     if (!parsed.success) throw invalidInput("Invalid representative parameters.", parsed.error);
     const result = await this.#http.request({
-      provider: "stortinget",
+      provider: stortingetProvider,
       url: `${BASE_URL}/${parsed.data.periodId === undefined ? "dagensrepresentanter" : "representanter"}`,
       query: {
         format: "json",
@@ -402,7 +401,7 @@ export class StortingetClient {
         const representatives = data.representanter_liste ?? data.dagensrepresentanter_liste;
         if (representatives === undefined) {
           throw new ResponseValidationError("Stortinget returned no representative list.", {
-            provider: "stortinget",
+            provider: stortingetProvider.id,
           });
         }
         representatives.map(normalizeRepresentative);
@@ -413,19 +412,19 @@ export class StortingetClient {
         ) {
           throw new ResponseValidationError(
             "Stortinget returned a different parliamentary period than requested.",
-            { provider: "stortinget" },
+            { provider: stortingetProvider.id },
           );
         }
         return data;
       },
       options,
-      cacheTtlMs: PEOPLE_TTL_MS,
+      cacheTtlMs: stortingetProvider.cacheTtlMs.people,
     });
     const representatives =
       result.data.representanter_liste ?? result.data.dagensrepresentanter_liste;
     if (representatives === undefined) {
       throw new ResponseValidationError("Stortinget returned no representative list.", {
-        provider: "stortinget",
+        provider: stortingetProvider.id,
       });
     }
     return createResponse(
@@ -445,7 +444,7 @@ export class StortingetClient {
     const parsed = personIdSchema.safeParse(representativeId);
     if (!parsed.success) throw invalidInput("Invalid representative identifier.", parsed.error);
     const result = await this.#http.request({
-      provider: "stortinget",
+      provider: stortingetProvider,
       url: `${BASE_URL}/person`,
       query: { format: "json", personid: parsed.data },
       resourceDescription: `representative ${parsed.data}`,
@@ -453,24 +452,24 @@ export class StortingetClient {
       transform: (data) => {
         if (data.id == null) {
           throw new NotFoundError(`Stortinget representative ${parsed.data} was not found.`, {
-            provider: "stortinget",
+            provider: stortingetProvider.id,
           });
         }
         if (data.id !== parsed.data) {
           throw new ResponseValidationError(
             "Stortinget returned a different representative than requested.",
-            { provider: "stortinget" },
+            { provider: stortingetProvider.id },
           );
         }
         normalizeRepresentative(data);
         return data;
       },
       options,
-      cacheTtlMs: PEOPLE_TTL_MS,
+      cacheTtlMs: stortingetProvider.cacheTtlMs.people,
     });
     if (result.data.id == null) {
       throw new NotFoundError(`Stortinget representative ${parsed.data} was not found.`, {
-        provider: "stortinget",
+        provider: stortingetProvider.id,
       });
     }
     return createResponse(
@@ -490,7 +489,7 @@ export class StortingetClient {
     const parsed = partiesParametersSchema.safeParse(parameters);
     if (!parsed.success) throw invalidInput("Invalid party parameters.", parsed.error);
     const result = await this.#http.request({
-      provider: "stortinget",
+      provider: stortingetProvider,
       url: `${BASE_URL}/partier`,
       query: {
         format: "json",
@@ -499,7 +498,7 @@ export class StortingetClient {
       },
       schema: partiesResponseSchema,
       options,
-      cacheTtlMs: PEOPLE_TTL_MS,
+      cacheTtlMs: stortingetProvider.cacheTtlMs.people,
     });
     return createResponse(
       result.data.partier_liste.map((party) => ({ id: party.id, name: party.navn })),
@@ -574,7 +573,7 @@ export class StortingetClient {
   ): Promise<OpenDataResponse<ParliamentaryCase>> {
     const normalizedId = normalizedCaseId(caseId);
     const result = await this.#http.request({
-      provider: "stortinget",
+      provider: stortingetProvider,
       url: `${BASE_URL}/sak`,
       query: { format: "json", sakid: normalizedId },
       resourceDescription: `case ${normalizedId}`,
@@ -584,14 +583,14 @@ export class StortingetClient {
           throw new ResponseValidationError(
             "Stortinget returned a different case than requested.",
             {
-              provider: "stortinget",
+              provider: stortingetProvider.id,
             },
           );
         }
         return data;
       },
       options,
-      cacheTtlMs: PARLIAMENTARY_DATA_TTL_MS,
+      cacheTtlMs: stortingetProvider.cacheTtlMs.parliamentaryData,
     });
     return createResponse(
       normalizeCase(result.data),
@@ -609,7 +608,7 @@ export class StortingetClient {
   ): Promise<OpenDataResponse<ParliamentaryVote[]>> {
     const normalizedId = normalizedCaseId(caseId);
     const result = await this.#http.request({
-      provider: "stortinget",
+      provider: stortingetProvider,
       url: `${BASE_URL}/voteringer`,
       query: { format: "json", sakid: normalizedId },
       schema: votesResponseSchema,
@@ -620,13 +619,13 @@ export class StortingetClient {
         ) {
           throw new ResponseValidationError(
             "Stortinget returned votes for a different case than requested.",
-            { provider: "stortinget" },
+            { provider: stortingetProvider.id },
           );
         }
         return data;
       },
       options,
-      cacheTtlMs: PARLIAMENTARY_DATA_TTL_MS,
+      cacheTtlMs: stortingetProvider.cacheTtlMs.parliamentaryData,
     });
     return createResponse(
       result.data.sak_votering_liste.map(normalizeVote),
@@ -647,7 +646,7 @@ export class StortingetClient {
       throw invalidInput("Invalid parliamentary question parameters.", parsed.error);
     const category = parsed.data.category ?? "written";
     const result = await this.#http.request({
-      provider: "stortinget",
+      provider: stortingetProvider,
       url: `${BASE_URL}/${QUESTION_ENDPOINT_BY_CATEGORY[category]}`,
       query: {
         format: "json",
@@ -659,13 +658,13 @@ export class StortingetClient {
         if (parsed.data.sessionId !== undefined && data.sesjon_id !== parsed.data.sessionId) {
           throw new ResponseValidationError(
             "Stortinget returned questions for a different session than requested.",
-            { provider: "stortinget" },
+            { provider: stortingetProvider.id },
           );
         }
         return data;
       },
       options,
-      cacheTtlMs: PARLIAMENTARY_DATA_TTL_MS,
+      cacheTtlMs: stortingetProvider.cacheTtlMs.parliamentaryData,
     });
     return createResponse(
       result.data.sporsmal_liste.map(normalizeQuestion),
@@ -685,7 +684,7 @@ export class StortingetClient {
     if (!parsed.success)
       throw invalidInput("Invalid parliamentary meeting parameters.", parsed.error);
     const result = await this.#http.request({
-      provider: "stortinget",
+      provider: stortingetProvider,
       url: `${BASE_URL}/moter`,
       query: { format: "json", sesjonid: parsed.data.sessionId },
       schema: meetingsResponseSchema,
@@ -693,13 +692,13 @@ export class StortingetClient {
         if (parsed.data.sessionId !== undefined && data.sesjon_id !== parsed.data.sessionId) {
           throw new ResponseValidationError(
             "Stortinget returned meetings for a different session than requested.",
-            { provider: "stortinget" },
+            { provider: stortingetProvider.id },
           );
         }
         return data;
       },
       options,
-      cacheTtlMs: PARLIAMENTARY_DATA_TTL_MS,
+      cacheTtlMs: stortingetProvider.cacheTtlMs.parliamentaryData,
     });
     return createResponse(
       result.data.moter_liste.map((meeting) => normalizeMeeting(meeting, result.data.sesjon_id)),

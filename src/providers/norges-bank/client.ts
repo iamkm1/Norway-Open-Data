@@ -2,7 +2,8 @@ import type { z } from "zod";
 
 import { createResponse, HttpClient } from "../../core/client.js";
 import { InputValidationError, NotFoundError, ResponseValidationError } from "../../core/errors.js";
-import { providers, responseSource } from "../../core/metadata.js";
+import { responseSource } from "../../core/provider.js";
+import { norgesBankProvider } from "./provider.js";
 import type { OpenDataResponse, QueryParameters, RequestOptions } from "../../core/types.js";
 import { parseCsvDocument } from "./csv.js";
 import {
@@ -22,7 +23,6 @@ import type {
 } from "./types.js";
 
 const BASE_URL = "https://data.norges-bank.no/api/data";
-const RATES_TTL_MS = 60 * 60 * 1_000;
 const POLICY_SERIES = "IR/B.KPRA.SD.R";
 const NOWA_SERIES = "SHORT_RATES/B.NOWA.ON.R";
 
@@ -76,7 +76,7 @@ function parseRows<T>(
     records = parsedCsv.records;
   } catch (cause) {
     throw new ResponseValidationError(`Norges Bank returned malformed ${description} CSV.`, {
-      provider: "norges-bank",
+      provider: norgesBankProvider.id,
       cause,
     });
   }
@@ -84,7 +84,7 @@ function parseRows<T>(
   if (!parsed.success) {
     throw new ResponseValidationError(
       `Norges Bank returned ${description} data with an unexpected structure.`,
-      { provider: "norges-bank", cause: parsed.error },
+      { provider: norgesBankProvider.id, cause: parsed.error },
     );
   }
   return parsed.data;
@@ -96,7 +96,7 @@ function normalizeOfficialRate(row: RawExchangeRateRow): RawCurrencyObservation 
   const value = Number(row.OBS_VALUE);
   if (!Number.isSafeInteger(unit) || unit <= 0 || !Number.isFinite(value) || value <= 0) {
     throw new ResponseValidationError("Norges Bank returned an invalid exchange-rate value.", {
-      provider: "norges-bank",
+      provider: norgesBankProvider.id,
     });
   }
   return {
@@ -157,7 +157,7 @@ function normalizeInterestRows(
     const value = Number(row.OBS_VALUE);
     if (!Number.isFinite(value)) {
       throw new ResponseValidationError("Norges Bank returned an invalid interest-rate value.", {
-        provider: "norges-bank",
+        provider: norgesBankProvider.id,
       });
     }
     return { date: row.TIME_PERIOD, value, name, seriesId };
@@ -214,12 +214,12 @@ export class NorgesBankClient {
     if (rate === undefined) {
       throw new NotFoundError(
         "Norges Bank published no exchange-rate observation for the requested currencies and period.",
-        { provider: "norges-bank", statusCode: 404 },
+        { provider: norgesBankProvider.id, statusCode: 404 },
       );
     }
     return createResponse(
       rate,
-      responseSource(providers.norgesBank),
+      responseSource(norgesBankProvider),
       result.raw,
       result.cached,
       options,
@@ -238,7 +238,7 @@ export class NorgesBankClient {
     const result = await this.#exchangeData(parsed, options);
     return createResponse(
       result.rates,
-      responseSource(providers.norgesBank),
+      responseSource(norgesBankProvider),
       result.raw,
       result.cached,
       options,
@@ -271,7 +271,7 @@ export class NorgesBankClient {
     const parsed = exchangeRateInputSchema.safeParse(parameters);
     if (!parsed.success) {
       throw new InputValidationError("Invalid Norges Bank exchange-rate query.", {
-        provider: "norges-bank",
+        provider: norgesBankProvider.id,
         cause: parsed.error,
       });
     }
@@ -333,7 +333,7 @@ export class NorgesBankClient {
       const rows = parseRows(csv, exchangeRateRowSchema, "exchange-rate", EXCHANGE_RATE_COLUMNS);
       if (rows.some((row) => row.BASE_CUR !== currency)) {
         throw new ResponseValidationError("Norges Bank returned a different currency series.", {
-          provider: "norges-bank",
+          provider: norgesBankProvider.id,
         });
       }
       rows.map(normalizeOfficialRate);
@@ -358,7 +358,7 @@ export class NorgesBankClient {
     const parsed = timeSeriesInputSchema.safeParse(parameters);
     if (!parsed.success) {
       throw new InputValidationError(`Invalid Norges Bank ${name} query.`, {
-        provider: "norges-bank",
+        provider: norgesBankProvider.id,
         cause: parsed.error,
       });
     }
@@ -378,7 +378,7 @@ export class NorgesBankClient {
     const rows = validate(result.data);
     return createResponse(
       normalizeInterestRows(rows, name, seriesId),
-      responseSource(providers.norgesBank),
+      responseSource(norgesBankProvider),
       result.data,
       result.cached,
       options,
@@ -394,7 +394,7 @@ export class NorgesBankClient {
   ): Promise<TextResult> {
     try {
       return await this.#http.request({
-        provider: "norges-bank",
+        provider: norgesBankProvider,
         url: `${BASE_URL}/${seriesId}`,
         query,
         headers: { Accept: "text/csv" },
@@ -405,13 +405,13 @@ export class NorgesBankClient {
           return data;
         },
         options,
-        cacheTtlMs: RATES_TTL_MS,
+        cacheTtlMs: norgesBankProvider.cacheTtlMs.rates,
       });
     } catch (cause) {
       if (cause instanceof NotFoundError) {
         throw new NotFoundError(
           `Norges Bank published no ${description} observations for the requested series and period.`,
-          { provider: "norges-bank", statusCode: 404, cause },
+          { provider: norgesBankProvider.id, statusCode: 404, cause },
         );
       }
       throw cause;

@@ -3,7 +3,8 @@ import { z } from "zod";
 import { createResponse, HttpClient } from "../../core/client.js";
 import { InputValidationError } from "../../core/errors.js";
 import { flattenJsonStat, type JsonStatContext } from "../../core/json-stat.js";
-import { providers, responseSource } from "../../core/metadata.js";
+import { responseSource } from "../../core/provider.js";
+import { fhiProvider } from "./provider.js";
 import type { OpenDataResponse, RequestOptions } from "../../core/types.js";
 import {
   fhiJsonStatSchema,
@@ -28,12 +29,8 @@ import type {
 } from "./types.js";
 
 const BASE_URL = "https://statistikk-data.fhi.no/api/open/v1";
-const SOURCE_TTL_MS = 24 * 60 * 60 * 1_000;
-const TABLE_LIST_TTL_MS = 6 * 60 * 60 * 1_000;
-const METADATA_TTL_MS = 24 * 60 * 60 * 1_000;
-const QUERY_TTL_MS = 60 * 60 * 1_000;
 
-const FHI_CONTEXT: JsonStatContext = { provider: "fhi", label: "FHI" };
+const FHI_CONTEXT: JsonStatContext = { provider: fhiProvider.id, label: "FHI" };
 
 /** Source ids are URL path segments, so only plain identifier characters pass. */
 const sourceIdSchema = z
@@ -48,7 +45,7 @@ const querySchema = z.object({
 });
 
 function invalidInput(message: string, cause: unknown): InputValidationError {
-  return new InputValidationError(message, { provider: "fhi", cause });
+  return new InputValidationError(message, { provider: fhiProvider.id, cause });
 }
 
 function normalizeCategory(category: RawDimensionCategory): HealthDimensionValue {
@@ -75,7 +72,7 @@ function validateSelections(query: HealthStatisticsQuery, dimensions: HealthDime
     if (dimension === undefined) {
       throw new InputValidationError(
         `FHI table ${query.tableId} in source ${query.source} has no dimension "${code}".`,
-        { provider: "fhi" },
+        { provider: fhiProvider.id },
       );
     }
     if (values.includes("*")) continue;
@@ -83,7 +80,7 @@ function validateSelections(query: HealthStatisticsQuery, dimensions: HealthDime
     for (const value of values) {
       if (!known.has(value)) {
         throw new InputValidationError(`FHI dimension "${code}" has no value code "${value}".`, {
-          provider: "fhi",
+          provider: fhiProvider.id,
         });
       }
     }
@@ -134,11 +131,11 @@ export class FhiClient {
   /** Lists the registers and statistics banks publishing data through the API. */
   async getSources(options?: RequestOptions): Promise<OpenDataResponse<HealthStatisticsSource[]>> {
     const result = await this.#http.request({
-      provider: "fhi",
+      provider: fhiProvider,
       url: `${BASE_URL}/Common/source`,
       schema: sourceListSchema,
       options,
-      cacheTtlMs: SOURCE_TTL_MS,
+      cacheTtlMs: fhiProvider.cacheTtlMs.source,
     });
     return createResponse(
       result.data.map((source) => ({
@@ -154,7 +151,7 @@ export class FhiClient {
           ? {}
           : { publishedBy: source.publishedBy }),
       })),
-      responseSource(providers.fhi),
+      responseSource(fhiProvider),
       result.data,
       result.cached,
       options,
@@ -168,12 +165,12 @@ export class FhiClient {
   ): Promise<OpenDataResponse<HealthStatisticsTable[]>> {
     const parsedSource = this.#parseSource(source);
     const result = await this.#http.request({
-      provider: "fhi",
+      provider: fhiProvider,
       url: `${BASE_URL}/${parsedSource}/table`,
       resourceDescription: `source ${parsedSource}`,
       schema: tableListSchema,
       options,
-      cacheTtlMs: TABLE_LIST_TTL_MS,
+      cacheTtlMs: fhiProvider.cacheTtlMs.tableList,
     });
     return createResponse(
       result.data.map((table) => ({
@@ -186,7 +183,7 @@ export class FhiClient {
           ? {}
           : { modifiedAt: table.modifiedAt }),
       })),
-      responseSource(providers.fhi),
+      responseSource(fhiProvider),
       result.data,
       result.cached,
       options,
@@ -202,12 +199,12 @@ export class FhiClient {
     const parsedSource = this.#parseSource(source);
     const parsedTableId = this.#parseTableId(tableId);
     const result = await this.#http.request({
-      provider: "fhi",
+      provider: fhiProvider,
       url: `${BASE_URL}/${parsedSource}/table/${parsedTableId}/metadata`,
       resourceDescription: `table ${parsedTableId} in source ${parsedSource}`,
       schema: tableMetadataSchema,
       options,
-      cacheTtlMs: METADATA_TTL_MS,
+      cacheTtlMs: fhiProvider.cacheTtlMs.metadata,
     });
     return createResponse(
       {
@@ -227,7 +224,7 @@ export class FhiClient {
             : { content: paragraph.content }),
         })),
       },
-      responseSource(providers.fhi),
+      responseSource(fhiProvider),
       result.data,
       result.cached,
       options,
@@ -243,12 +240,12 @@ export class FhiClient {
     const parsedSource = this.#parseSource(source);
     const parsedTableId = this.#parseTableId(tableId);
     const result = await this.#http.request({
-      provider: "fhi",
+      provider: fhiProvider,
       url: `${BASE_URL}/${parsedSource}/table/${parsedTableId}/dimension`,
       resourceDescription: `table ${parsedTableId} in source ${parsedSource}`,
       schema: tableDimensionsSchema,
       options,
-      cacheTtlMs: METADATA_TTL_MS,
+      cacheTtlMs: fhiProvider.cacheTtlMs.metadata,
     });
     return createResponse(
       {
@@ -262,7 +259,7 @@ export class FhiClient {
           values: dimension.categories.map(normalizeCategory),
         })),
       },
-      responseSource(providers.fhi),
+      responseSource(fhiProvider),
       result.data,
       result.cached,
       options,
@@ -278,7 +275,7 @@ export class FhiClient {
     const raw = await this.#executeQuery(parsed, options);
     return createResponse(
       normalizeResult(parsed, raw.data),
-      responseSource(providers.fhi),
+      responseSource(fhiProvider),
       raw.data,
       raw.cached,
       options,
@@ -294,7 +291,7 @@ export class FhiClient {
     const raw = await this.#executeQuery(parsed, options);
     return createResponse(
       raw.data as HealthJsonStatDataset,
-      responseSource(providers.fhi),
+      responseSource(fhiProvider),
       raw.data,
       raw.cached,
       options,
@@ -329,7 +326,7 @@ export class FhiClient {
     });
     validateSelections(query, dimensionsResponse.data.dimensions);
     return this.#http.request({
-      provider: "fhi",
+      provider: fhiProvider,
       url: `${BASE_URL}/${query.source}/table/${query.tableId}/data`,
       resourceDescription: `table ${query.tableId} in source ${query.source}`,
       method: "POST",
@@ -346,7 +343,7 @@ export class FhiClient {
       },
       schema: fhiJsonStatSchema,
       options,
-      cacheTtlMs: QUERY_TTL_MS,
+      cacheTtlMs: fhiProvider.cacheTtlMs.query,
     });
   }
 }

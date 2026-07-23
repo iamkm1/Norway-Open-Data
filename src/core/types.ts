@@ -1,4 +1,6 @@
-import type { OpenDataSource } from "./metadata.js";
+import type { CacheStore } from "./cache.js";
+import type { OpenDataSource } from "./provider.js";
+import type { ProviderId } from "../providers/registry.js";
 
 /** Options accepted by every provider request. */
 export type RequestOptions = {
@@ -6,7 +8,7 @@ export type RequestOptions = {
   signal?: AbortSignal;
   /** Includes the validated, provider-native payload in `raw`. */
   includeRaw?: boolean;
-  /** Skips reading from and writing to the in-memory cache for this request. */
+  /** Skips reading from and writing to the SDK cache for this request. */
   bypassCache?: boolean;
 };
 
@@ -18,29 +20,54 @@ export type OpenDataResponse<T> = {
   source: OpenDataSource;
   /** ISO-8601 timestamp for this SDK retrieval. */
   retrievedAt: string;
-  /** Whether the provider payload was served from the SDK memory cache. */
+  /** Whether the provider payload was served from the SDK cache. */
   cached: boolean;
   /** Provider-native payload, present only when `includeRaw` is true. */
   raw?: unknown;
 };
 
-/** Configuration for the SDK's optional memory cache. */
+/** Configuration for the SDK's optional response cache. */
 export type CacheConfig = {
   /** Enables the cache. Defaults to `false`. */
   enabled?: boolean;
   /** Overrides provider-recommended TTL values globally. */
   ttlMs?: number;
-  /** Maximum number of cache entries. Defaults to 100. */
+  /** Maximum number of entries held by the built-in in-memory cache. Defaults to 100. */
   maxEntries?: number;
+  /**
+   * Storage backing the cache.
+   *
+   * Defaults to an in-memory cache private to this SDK instance. Supply a store
+   * to share cached responses across instances or processes; `maxEntries` then
+   * no longer applies, since eviction becomes the store's responsibility.
+   */
+  store?: CacheStore;
 };
 
-/** Optional credentials for provider methods that require free registration. */
-export type ProviderCredentials = {
-  nve?: {
-    /** HydAPI subscription key sent only to hydapi.nve.no. */
-    apiKey?: string;
-  };
+/** Configuration for the SDK's per-provider request budgets. */
+export type RateLimitConfig = {
+  /**
+   * Enforces each provider's declared request budget. Defaults to `true`.
+   *
+   * Disable only when you are certain your traffic is already bounded, for
+   * example behind your own scheduler or a shared gateway.
+   */
+  enabled?: boolean;
 };
+
+/** Credentials for one provider. */
+export type ProviderCredential = {
+  /** Provider-issued key, sent only to that provider's hosts. */
+  apiKey?: string;
+};
+
+/**
+ * Optional provider credentials, keyed by provider id.
+ *
+ * Anonymous methods never require these. Only providers whose descriptor
+ * declares an `apiKey` requirement read this configuration.
+ */
+export type ProviderCredentials = Partial<Record<ProviderId, ProviderCredential>>;
 
 /** Configuration shared by all provider clients. */
 export type NorwayOpenDataConfig = {
@@ -54,8 +81,10 @@ export type NorwayOpenDataConfig = {
   retries?: number;
   /** Fetch-compatible implementation for tests and custom runtimes. */
   fetch?: typeof globalThis.fetch;
-  /** Optional in-memory cache configuration. */
+  /** Optional response-cache configuration. */
   cache?: CacheConfig;
+  /** Optional per-provider request-budget configuration. */
+  rateLimit?: RateLimitConfig;
   /** Optional provider-specific credentials; anonymous methods never require these. */
   credentials?: ProviderCredentials;
 };
@@ -78,12 +107,12 @@ export type ResolvedConfig = {
     enabled: boolean;
     ttlMs?: number;
     maxEntries: number;
+    store?: CacheStore;
   };
-  credentials: {
-    nve: {
-      apiKey?: string;
-    };
+  rateLimit: {
+    enabled: boolean;
   };
+  credentials: ProviderCredentials;
 };
 
 /** @internal */

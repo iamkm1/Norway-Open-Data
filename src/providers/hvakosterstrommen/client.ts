@@ -2,7 +2,8 @@ import { z } from "zod";
 
 import { createResponse, HttpClient } from "../../core/client.js";
 import { InputValidationError, ResponseValidationError } from "../../core/errors.js";
-import { providers, responseSource } from "../../core/metadata.js";
+import { responseSource } from "../../core/provider.js";
+import { hvakosterstrommenProvider } from "./provider.js";
 import type { OpenDataResponse, RequestOptions } from "../../core/types.js";
 import { electricityPricesSchema, type RawElectricityPrices } from "./schemas.js";
 import type {
@@ -13,7 +14,6 @@ import type {
 } from "./types.js";
 
 const BASE_URL = "https://www.hvakosterstrommen.no/api/v1/prices";
-const PRICE_TTL_MS = 30 * 60 * 1_000;
 const HOUR_MS = 60 * 60 * 1_000;
 
 const areaSchema = z.enum(["NO1", "NO2", "NO3", "NO4", "NO5"]);
@@ -105,7 +105,7 @@ function osloIsoTimestamp(instant: number): string {
 function invalidPriceIntervals(): ResponseValidationError {
   return new ResponseValidationError(
     "Hva koster strømmen returned incomplete, invalid, or non-contiguous hourly price intervals.",
-    { provider: "hvakosterstrommen" },
+    { provider: hvakosterstrommenProvider.id },
   );
 }
 
@@ -179,25 +179,25 @@ export class ElectricityClient {
     const parsed = parametersSchema.safeParse(parameters);
     if (!parsed.success) {
       throw new InputValidationError("Invalid electricity price parameters.", {
-        provider: "hvakosterstrommen",
+        provider: hvakosterstrommenProvider.id,
         cause: parsed.error,
       });
     }
     const date = parsed.data.date ?? osloToday();
     const [year, month, day] = date.split("-");
     const result = await this.#http.request({
-      provider: "hvakosterstrommen",
+      provider: hvakosterstrommenProvider,
       url: `${BASE_URL}/${year}/${month}-${day}_${parsed.data.area}.json`,
       resourceDescription: `price data for ${parsed.data.area} on ${date}`,
       notFoundHint: "Next-day prices are normally published in the early afternoon.",
       schema: electricityPricesSchema,
       transform: (data) => validatePriceIntervals(data, date),
       options,
-      cacheTtlMs: PRICE_TTL_MS,
+      cacheTtlMs: hvakosterstrommenProvider.cacheTtlMs.price,
     });
     return createResponse(
       normalizePrices(result.data, parsed.data.area, date),
-      responseSource(providers.hvakosterstrommen),
+      responseSource(hvakosterstrommenProvider),
       result.data,
       result.cached,
       options,
@@ -212,7 +212,7 @@ export class ElectricityClient {
     const parsed = currentParametersSchema.safeParse(parameters);
     if (!parsed.success) {
       throw new InputValidationError("Invalid electricity price parameters.", {
-        provider: "hvakosterstrommen",
+        provider: hvakosterstrommenProvider.id,
         cause: parsed.error,
       });
     }

@@ -1,16 +1,26 @@
 import { z } from "zod";
 
-import { MemoryCache, stableCacheKey } from "./cache.js";
+import { type CacheStore, MemoryCache, stableCacheKey } from "./cache.js";
 import {
+  ConfigurationError,
   NotFoundError,
   ProviderError,
   RateLimitError,
   RequestTimeoutError,
   ResponseValidationError,
 } from "./errors.js";
-import type { OpenDataSource } from "./metadata.js";
+import {
+  type AvailableAuthValues,
+  missingAuthFields,
+  type ProviderAuthField,
+  type ProviderAuthValues,
+  type ProviderDescriptor,
+} from "./provider.js";
+import { RateLimiter } from "./rate-limit.js";
 import { delay, parseRetryAfter, RETRYABLE_STATUS_CODES, retryDelayMs } from "./retry.js";
 import type { HttpResult, QueryParameters, RequestOptions, ResolvedConfig } from "./types.js";
+import type { ProviderId } from "../providers/registry.js";
+import { version } from "../version.js";
 
 type HttpMethod = "GET" | "POST";
 const REDIRECT_STATUS_CODES = new Set([301, 302, 303, 307, 308]);
@@ -29,7 +39,8 @@ const SENSITIVE_HEADER_NAMES = new Set([
 
 /** @internal */
 export type HttpRequest<T> = {
-  provider: string;
+  /** The provider descriptor this request belongs to. */
+  provider: ProviderDescriptor;
   url: string;
   method?: HttpMethod;
   query?: QueryParameters;
@@ -39,6 +50,16 @@ export type HttpRequest<T> = {
   responseType?: "json" | "text";
   options?: RequestOptions;
   cacheTtlMs?: number;
+  /**
+   * Adds the provider's identifying headers, failing before the request when
+   * the caller has not configured what the provider requires.
+   */
+  authenticate?: boolean;
+  /**
+   * Selects one of the provider's named request budgets. Defaults to the
+   * provider's `default` budget.
+   */
+  rateLimitKey?: string;
   /** Names the requested resource in not-found errors, e.g. `organization 923609016`. */
   resourceDescription?: string;
   /** Appends one follow-up sentence to not-found errors, e.g. a publication-timing note. */
@@ -112,6 +133,19 @@ function sanitizedCause(cause: unknown, secrets: readonly string[]): unknown {
   return redactSensitiveData(cause, secrets);
 }
 
+/** Collects the identification values configured for one provider. */
+export function availableAuthValues(
+  config: Pick<ResolvedConfig, "applicationName" | "contactEmail" | "credentials">,
+  providerId: ProviderId,
+): AvailableAuthValues {
+  const apiKey = config.credentials[providerId]?.apiKey;
+  return {
+    ...(config.applicationName === undefined ? {} : { applicationName: config.applicationName }),
+    ...(config.contactEmail === undefined ? {} : { contactEmail: config.contactEmail }),
+    ...(apiKey === undefined ? {} : { apiKey }),
+  };
+}
+
 function cancellationError(
   provider: string,
   cause: unknown,
@@ -126,24 +160,34 @@ function cancellationError(
 /**
  * Internal fetch-based HTTP client shared by every provider.
  *
+ * Behaviour that varies between providers -- caller identification, request
+ * budget, cache lifetime -- is read from the provider's descriptor rather than
+ * special-cased here.
+ *
  * @internal
  */
 export class HttpClient {
   readonly #config: ResolvedConfig;
-  readonly #cache: MemoryCache;
+  readonly #cache: CacheStore;
+  readonly #limiters = new Map<string, RateLimiter>();
 
-  constructor(config: ResolvedConfig, cache?: MemoryCache) {
+  constructor(config: ResolvedConfig, cache?: CacheStore) {
     this.#config = config;
-    this.#cache = cache ?? new MemoryCache(config.cache.maxEntries);
+    this.#cache = cache ?? config.cache.store ?? new MemoryCache(config.cache.maxEntries);
   }
 
   /** Executes a validated JSON GET or POST request. */
   async request<T>(request: HttpRequest<T>): Promise<HttpResult<T>> {
+    const providerId = request.provider.id;
+    const authHeaders = request.authenticate === true ? this.#authHeaders(request.provider) : {};
+    const headers = new Headers(request.headers);
+    for (const [name, value] of Object.entries(authHeaders)) headers.set(name, value);
+
     if (isSignalAborted(request.options?.signal)) {
       throw cancellationError(
-        request.provider,
+        providerId,
         request.options?.signal?.reason,
-        this.#sensitiveValues(new Headers(request.headers)),
+        this.#sensitiveValues(headers),
       );
     }
     const method = request.method ?? "GET";
@@ -154,29 +198,39 @@ export class HttpClient {
       cacheTtlMs !== undefined &&
       cacheTtlMs > 0 &&
       request.options?.bypassCache !== true;
-    const requestHeaders = new Headers(request.headers);
     const cacheKey = stableCacheKey({
+      // Cached values are provider payloads validated by this build's schemas.
+      // A persistent or shared store can outlive the build that wrote them, so
+      // the key is namespaced by SDK version rather than trusting an older
+      // entry to still match the current schema.
+      sdk: version,
       method,
       url,
       body: request.body,
       responseType: request.responseType ?? "json",
-      accept: requestHeaders.get("Accept") ?? "application/json",
+      accept: headers.get("Accept") ?? "application/json",
     });
 
     if (canCache) {
-      const cached = this.#cache.get<T>(cacheKey);
-      if (cached !== undefined) return { data: cloneCacheValue(cached), cached: true };
+      // A store returns exactly what the SDK previously validated and stored.
+      // `null` counts as a miss: stores backed by Redis and similar return it
+      // for an absent key, and treating it as a hit would hand callers a `null`
+      // where their type says otherwise.
+      const cached = (await this.#cache.get(cacheKey)) as T | null | undefined;
+      if (cached !== undefined && cached !== null) {
+        return { data: cloneCacheValue(cached), cached: true };
+      }
     }
 
-    const data = await this.#fetchWithRetries({ ...request, method, url });
+    const data = await this.#fetchWithRetries({ ...request, method, url, headers });
     if (isSignalAborted(request.options?.signal)) {
       throw cancellationError(
-        request.provider,
+        providerId,
         request.options?.signal?.reason,
-        this.#sensitiveValues(requestHeaders),
+        this.#sensitiveValues(headers),
       );
     }
-    if (canCache) this.#cache.set(cacheKey, cloneCacheValue(data), cacheTtlMs);
+    if (canCache) await this.#cache.set(cacheKey, cloneCacheValue(data), cacheTtlMs);
     return { data, cached: false };
   }
 
@@ -197,15 +251,76 @@ export class HttpClient {
     });
   }
 
+  /** Removes every response this client may have cached. */
+  async clearCache(): Promise<void> {
+    await this.#cache.clear();
+  }
+
+  /**
+   * Builds a provider's identifying headers from the resolved configuration.
+   *
+   * Throws before any network access when a declared requirement is missing, so
+   * the caller sees the provider's own instructions rather than an HTTP 401.
+   */
+  #authHeaders(provider: ProviderDescriptor): Record<string, string> {
+    const auth = provider.auth;
+    if (auth === undefined) return {};
+    const available = availableAuthValues(this.#config, provider.id as ProviderId);
+    if (missingAuthFields(provider, available).length > 0) {
+      throw new ConfigurationError(auth.missing, { provider: provider.id });
+    }
+    // Supply exactly the fields the provider declared, so a descriptor cannot
+    // read a value it never required. Each was just proven present and non-empty.
+    const declared: AvailableAuthValues = {};
+    for (const field of auth.requires) declared[field] = available[field];
+    const values = { ...declared, sdkVersion: version } as ProviderAuthValues<ProviderAuthField>;
+    return auth.headers(values);
+  }
+
+  /**
+   * Returns the shared limiter for one of a provider's budgets, or undefined
+   * when the provider declares none.
+   *
+   * A provider that publishes different limits per service names them; an
+   * unknown or absent name falls back to the provider's `default` budget rather
+   * than silently going unlimited.
+   */
+  #limiter(provider: ProviderDescriptor, operationClass?: string): RateLimiter | undefined {
+    if (!this.#config.rateLimit.enabled || provider.rateLimit === undefined) return undefined;
+    const policy =
+      operationClass === undefined
+        ? provider.rateLimit.default
+        : (provider.rateLimit[operationClass] ?? provider.rateLimit.default);
+    const key = `${provider.id}:${operationClass ?? "default"}`;
+    const existing = this.#limiters.get(key);
+    if (existing !== undefined) return existing;
+    const created = new RateLimiter(policy);
+    this.#limiters.set(key, created);
+    return created;
+  }
+
   async #fetchWithRetries<T>(
-    request: HttpRequest<T> & { method: HttpMethod; url: string },
+    request: HttpRequest<T> & { method: HttpMethod; url: string; headers: Headers },
   ): Promise<T> {
     const callerSignal = request.options?.signal;
-    const requestHeaders = new Headers(request.headers);
-    const secrets = this.#sensitiveValues(requestHeaders);
+    const providerId = request.provider.id;
+    const secrets = this.#sensitiveValues(request.headers);
+    const limiter = this.#limiter(request.provider, request.rateLimitKey);
     for (let attempt = 0; attempt <= this.#config.retries; attempt += 1) {
       if (isSignalAborted(callerSignal)) {
-        throw cancellationError(request.provider, callerSignal?.reason, secrets);
+        throw cancellationError(providerId, callerSignal?.reason, secrets);
+      }
+      // Waiting for budget happens before the timeout is armed, so a queued
+      // request is not charged for time it spent waiting its turn.
+      if (limiter !== undefined) {
+        try {
+          await limiter.acquire(callerSignal);
+        } catch (error) {
+          if (isSignalAborted(callerSignal)) {
+            throw cancellationError(providerId, error, secrets);
+          }
+          throw error;
+        }
       }
       const timeoutController = new AbortController();
       const combinedController = new AbortController();
@@ -233,7 +348,7 @@ export class HttpClient {
           init.body = JSON.stringify(request.body);
         }
 
-        const response = await this.#fetchWithSafeRedirects(request.provider, request.url, init);
+        const response = await this.#fetchWithSafeRedirects(providerId, request.url, init);
         if (!response.ok) {
           const retryAfterMs = parseRetryAfter(response.headers.get("Retry-After"));
           if (RETRYABLE_STATUS_CODES.has(response.status) && attempt < this.#config.retries) {
@@ -241,22 +356,22 @@ export class HttpClient {
             continue;
           }
           if (response.status === 404) {
-            const subject = `${request.provider} ${request.resourceDescription ?? "resource"}`;
+            const subject = `${providerId} ${request.resourceDescription ?? "resource"}`;
             const hint = request.notFoundHint === undefined ? "" : ` ${request.notFoundHint}`;
             throw new NotFoundError(`${subject} was not found.${hint}`, {
-              provider: request.provider,
+              provider: providerId,
               statusCode: 404,
             });
           }
           if (response.status === 429) {
-            throw new RateLimitError(`${request.provider} rate limit was exceeded.`, {
-              provider: request.provider,
+            throw new RateLimitError(`${providerId} rate limit was exceeded.`, {
+              provider: providerId,
               statusCode: 429,
               retryAfter: retryAfterSeconds(retryAfterMs),
             });
           }
-          throw new ProviderError(`${request.provider} returned HTTP ${response.status}.`, {
-            provider: request.provider,
+          throw new ProviderError(`${providerId} returned HTTP ${response.status}.`, {
+            provider: providerId,
             statusCode: response.status,
           });
         }
@@ -267,9 +382,9 @@ export class HttpClient {
         } catch (cause) {
           if (isSignalAborted(callerSignal) || timeoutExpired) throw cause;
           throw new ResponseValidationError(
-            `${request.provider} returned an unreadable ${request.responseType ?? "json"} response.`,
+            `${providerId} returned an unreadable ${request.responseType ?? "json"} response.`,
             {
-              provider: request.provider,
+              provider: providerId,
               statusCode: response.status,
               cause: sanitizedCause(cause, secrets),
             },
@@ -279,9 +394,9 @@ export class HttpClient {
         const parsed = request.schema.safeParse(sanitizedPayload);
         if (!parsed.success) {
           throw new ResponseValidationError(
-            `${request.provider} returned a response with an unexpected structure.`,
+            `${providerId} returned a response with an unexpected structure.`,
             {
-              provider: request.provider,
+              provider: providerId,
               statusCode: response.status,
               cause: parsed.error,
             },
@@ -291,13 +406,13 @@ export class HttpClient {
       } catch (error) {
         if (error instanceof ResponseValidationError || error instanceof ProviderError) throw error;
         if (isSignalAborted(callerSignal)) {
-          throw cancellationError(request.provider, error, secrets);
+          throw cancellationError(providerId, error, secrets);
         }
         if (timeoutExpired) {
           if (attempt < this.#config.retries) continue;
           throw new RequestTimeoutError(
-            `${request.provider} request timed out after ${this.#config.timeoutMs}ms.`,
-            { provider: request.provider, cause: sanitizedCause(error, secrets) },
+            `${providerId} request timed out after ${this.#config.timeoutMs}ms.`,
+            { provider: providerId, cause: sanitizedCause(error, secrets) },
           );
         }
         if (isTemporaryNetworkError(error)) {
@@ -306,14 +421,14 @@ export class HttpClient {
               await delay(retryDelayMs(attempt), callerSignal);
             } catch (delayError) {
               if (isSignalAborted(callerSignal)) {
-                throw cancellationError(request.provider, delayError, secrets);
+                throw cancellationError(providerId, delayError, secrets);
               }
               throw delayError;
             }
             continue;
           }
-          throw new ProviderError(`${request.provider} request failed due to a network error.`, {
-            provider: request.provider,
+          throw new ProviderError(`${providerId} request failed due to a network error.`, {
+            provider: providerId,
             cause: sanitizedCause(error, secrets),
           });
         }
@@ -324,7 +439,7 @@ export class HttpClient {
         callerSignal?.removeEventListener("abort", onCallerAbort);
       }
     }
-    throw new ProviderError(`${request.provider} request failed.`);
+    throw new ProviderError(`${providerId} request failed.`);
   }
 
   async #fetchWithSafeRedirects(
@@ -375,7 +490,10 @@ export class HttpClient {
   }
 
   #sensitiveValues(headers: Headers): string[] {
-    const values = [this.#config.contactEmail, this.#config.credentials.nve.apiKey];
+    const values: (string | undefined)[] = [this.#config.contactEmail];
+    for (const credential of Object.values(this.#config.credentials)) {
+      values.push(credential?.apiKey);
+    }
     for (const name of SENSITIVE_HEADER_NAMES) {
       const value = headers.get(name);
       if (value !== null) values.push(value);
@@ -389,7 +507,7 @@ export class HttpClient {
 /** Builds a response envelope without including raw data by default. */
 export function createResponse<T>(
   data: T,
-  source: OpenDataSource,
+  source: import("./provider.js").OpenDataSource,
   raw: unknown,
   cached: boolean,
   options?: RequestOptions,

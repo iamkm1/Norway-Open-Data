@@ -2,7 +2,8 @@ import { z } from "zod";
 
 import { createResponse, HttpClient } from "../../core/client.js";
 import { InputValidationError } from "../../core/errors.js";
-import { providers, responseSource } from "../../core/metadata.js";
+import { responseSource } from "../../core/provider.js";
+import { ssbProvider } from "./provider.js";
 import type { OpenDataResponse, RequestOptions } from "../../core/types.js";
 import { parseJsonStat, parseTableMetadata } from "./json-stat.js";
 import { jsonStatSchema, type RawJsonStat } from "./schemas.js";
@@ -14,8 +15,6 @@ import type {
 } from "./types.js";
 
 const BASE_URL = "https://data.ssb.no/api/pxwebapi/v2";
-const METADATA_TTL_MS = 24 * 60 * 60 * 1_000;
-const QUERY_TTL_MS = 60 * 60 * 1_000;
 
 const tableIdSchema = z.string().regex(/^\d{5}$/, "SSB table IDs contain five digits.");
 const querySchema = z.object({
@@ -34,14 +33,14 @@ function validateSelections(query: StatisticsQuery, metadata: StatisticsTableMet
     const dimension = dimensions.get(code);
     if (dimension === undefined) {
       throw new InputValidationError(`SSB table ${query.tableId} has no dimension "${code}".`, {
-        provider: "ssb",
+        provider: ssbProvider.id,
       });
     }
     const knownValues = new Set(dimension.values.map((value) => value.code));
     for (const value of values) {
       if (!isExpression(value) && !knownValues.has(value)) {
         throw new InputValidationError(`SSB dimension "${code}" has no value code "${value}".`, {
-          provider: "ssb",
+          provider: ssbProvider.id,
         });
       }
     }
@@ -65,12 +64,12 @@ export class SsbClient {
     const parsed = tableIdSchema.safeParse(tableId);
     if (!parsed.success) {
       throw new InputValidationError("Invalid SSB table ID.", {
-        provider: "ssb",
+        provider: ssbProvider.id,
         cause: parsed.error,
       });
     }
     const result = await this.#http.request({
-      provider: "ssb",
+      provider: ssbProvider,
       url: `${BASE_URL}/tables/${parsed.data}/metadata`,
       query: { lang: "en" },
       resourceDescription: `table ${parsed.data}`,
@@ -80,11 +79,11 @@ export class SsbClient {
         return data;
       },
       options,
-      cacheTtlMs: METADATA_TTL_MS,
+      cacheTtlMs: ssbProvider.cacheTtlMs.metadata,
     });
     return createResponse(
       parseTableMetadata(parsed.data, result.data as JsonStatDataset),
-      responseSource(providers.ssb),
+      responseSource(ssbProvider),
       result.data,
       result.cached,
       options,
@@ -99,7 +98,7 @@ export class SsbClient {
     const raw = await this.#executeQuery(query, options);
     return createResponse(
       parseJsonStat(query.tableId, raw.data as JsonStatDataset),
-      responseSource(providers.ssb),
+      responseSource(ssbProvider),
       raw.data,
       raw.cached,
       options,
@@ -114,7 +113,7 @@ export class SsbClient {
     const raw = await this.#executeQuery(query, options);
     return createResponse(
       raw.data as JsonStatDataset,
-      responseSource(providers.ssb),
+      responseSource(ssbProvider),
       raw.data,
       raw.cached,
       options,
@@ -128,7 +127,7 @@ export class SsbClient {
     const parsed = querySchema.safeParse(query);
     if (!parsed.success) {
       throw new InputValidationError("Invalid SSB statistics query.", {
-        provider: "ssb",
+        provider: ssbProvider.id,
         cause: parsed.error,
       });
     }
@@ -138,7 +137,7 @@ export class SsbClient {
     });
     validateSelections(parsed.data, metadataResponse.data);
     return this.#http.request({
-      provider: "ssb",
+      provider: ssbProvider,
       url: `${BASE_URL}/tables/${parsed.data.tableId}/data`,
       resourceDescription: `table ${parsed.data.tableId}`,
       method: "POST",
@@ -158,7 +157,7 @@ export class SsbClient {
         return data;
       },
       options,
-      cacheTtlMs: QUERY_TTL_MS,
+      cacheTtlMs: ssbProvider.cacheTtlMs.query,
     });
   }
 }

@@ -1,8 +1,9 @@
 import { z } from "zod";
 
 import { createResponse, HttpClient } from "../../core/client.js";
-import { ConfigurationError, InputValidationError } from "../../core/errors.js";
-import { providers, responseSource } from "../../core/metadata.js";
+import { InputValidationError } from "../../core/errors.js";
+import { responseSource } from "../../core/provider.js";
+import { nveProvider } from "./provider.js";
 import type { OpenDataResponse, RequestOptions } from "../../core/types.js";
 import {
   hydrologyObservationsSchema,
@@ -23,9 +24,6 @@ import type {
 
 const FORECAST_BASE_URL = "https://api01.nve.no/hydrology/forecast";
 const HYDAPI_BASE_URL = "https://hydapi.nve.no/api/v1";
-const WARNING_TTL_MS = 5 * 60 * 1_000;
-const STATION_TTL_MS = 24 * 60 * 60 * 1_000;
-const OBSERVATION_TTL_MS = 10 * 60 * 1_000;
 const isoDateSchema = z.iso.date();
 const osloDateFormatter = new Intl.DateTimeFormat("en-CA", {
   timeZone: "Europe/Oslo",
@@ -75,7 +73,7 @@ function parseWarningParameters(parameters: HazardWarningParameters): {
   const parsed = warningParametersSchema.safeParse(parameters);
   if (!parsed.success) {
     throw new InputValidationError("Invalid NVE warning parameters.", {
-      provider: "nve",
+      provider: nveProvider.id,
       cause: parsed.error,
     });
   }
@@ -83,7 +81,7 @@ function parseWarningParameters(parameters: HazardWarningParameters): {
   const endDate = parsed.data.endDate ?? startDate;
   if (endDate < startDate) {
     throw new InputValidationError("NVE warning endDate cannot precede startDate.", {
-      provider: "nve",
+      provider: nveProvider.id,
     });
   }
   return { startDate, endDate, languageCode: parsed.data.language === "en" ? 2 : 1 };
@@ -183,12 +181,10 @@ function normalizeStation(
  */
 export class NveHazardsClient {
   readonly #http: HttpClient;
-  readonly #apiKey: string | undefined;
 
   /** @internal */
-  constructor(http: HttpClient, apiKey?: string) {
+  constructor(http: HttpClient) {
     this.#http = http;
-    this.#apiKey = apiKey;
   }
 
   /** Gets public flood warnings for a bounded date interval. */
@@ -220,16 +216,15 @@ export class NveHazardsClient {
     parameters: HydrologyStationParameters = {},
     options?: RequestOptions,
   ): Promise<OpenDataResponse<HydrologyStation[]>> {
-    const apiKey = this.#requireApiKey();
     const parsed = stationParametersSchema.safeParse(parameters);
     if (!parsed.success) {
       throw new InputValidationError("Invalid NVE hydrology station parameters.", {
-        provider: "nve",
+        provider: nveProvider.id,
         cause: parsed.error,
       });
     }
     const result = await this.#http.request({
-      provider: "nve",
+      provider: nveProvider,
       url: `${HYDAPI_BASE_URL}/Stations`,
       query: {
         StationId: parsed.data.stationId,
@@ -239,17 +234,17 @@ export class NveHazardsClient {
         CountyName: parsed.data.countyName,
         Active: parsed.data.active === false ? 0 : 1,
       },
-      headers: { "X-API-Key": apiKey },
+      authenticate: true,
       schema: hydrologyStationsSchema,
       options,
-      cacheTtlMs: STATION_TTL_MS,
+      cacheTtlMs: nveProvider.cacheTtlMs.station,
     });
     const stations = (result.data.data ?? [])
       .map(normalizeStation)
       .filter((station): station is HydrologyStation => station !== undefined);
     return createResponse(
       stations,
-      responseSource(providers.nve),
+      responseSource(nveProvider),
       result.data,
       result.cached,
       options,
@@ -261,11 +256,10 @@ export class NveHazardsClient {
     parameters: HydrologyObservationParameters,
     options?: RequestOptions,
   ): Promise<OpenDataResponse<HydrologyObservation[]>> {
-    const apiKey = this.#requireApiKey();
     const parsed = observationParametersSchema.safeParse(parameters);
     if (!parsed.success) {
       throw new InputValidationError("Invalid NVE hydrology observation parameters.", {
-        provider: "nve",
+        provider: nveProvider.id,
         cause: parsed.error,
       });
     }
@@ -275,7 +269,7 @@ export class NveHazardsClient {
       parsed.data.endDate < parsed.data.startDate
     ) {
       throw new InputValidationError("NVE observation endDate cannot precede startDate.", {
-        provider: "nve",
+        provider: nveProvider.id,
       });
     }
     const referenceTime =
@@ -283,7 +277,7 @@ export class NveHazardsClient {
         ? undefined
         : `${parsed.data.startDate ?? ""}/${parsed.data.endDate ?? ""}`;
     const result = await this.#http.request({
-      provider: "nve",
+      provider: nveProvider,
       url: `${HYDAPI_BASE_URL}/Observations`,
       query: {
         StationId: parsed.data.stationId,
@@ -291,15 +285,15 @@ export class NveHazardsClient {
         ResolutionTime: parsed.data.resolutionTime,
         ReferenceTime: referenceTime,
       },
-      headers: { "X-API-Key": apiKey },
+      authenticate: true,
       schema: hydrologyObservationsSchema,
       options,
-      cacheTtlMs: OBSERVATION_TTL_MS,
+      cacheTtlMs: nveProvider.cacheTtlMs.observation,
     });
     const observations = normalizeObservations(result.data, parsed.data);
     return createResponse(
       observations,
-      responseSource(providers.nve),
+      responseSource(nveProvider),
       result.data,
       result.cached,
       options,
@@ -315,29 +309,19 @@ export class NveHazardsClient {
     const version = type === "avalanche" ? "v6.3.2" : "v1.0.10";
     const qualifier = type === "avalanche" ? "/All" : "";
     const result = await this.#http.request({
-      provider: "nve",
+      provider: nveProvider,
       url: `${FORECAST_BASE_URL}/${type}/${version}/api/Warning${qualifier}/${parsed.languageCode}/${parsed.startDate}/${parsed.endDate}`,
       schema: warningsSchema,
       options,
-      cacheTtlMs: WARNING_TTL_MS,
+      cacheTtlMs: nveProvider.cacheTtlMs.warning,
     });
     return createResponse(
       normalizeWarnings(result.data, type),
-      responseSource(providers.nve),
+      responseSource(nveProvider),
       result.data,
       result.cached,
       options,
     );
-  }
-
-  #requireApiKey(): string {
-    if (this.#apiKey === undefined) {
-      throw new ConfigurationError(
-        "NVE HydAPI station and observation requests require credentials.nve.apiKey from free HydAPI registration.",
-        { provider: "nve" },
-      );
-    }
-    return this.#apiKey;
   }
 }
 

@@ -1,12 +1,9 @@
 import { z } from "zod";
 
 import { createResponse, HttpClient } from "../../core/client.js";
-import {
-  ConfigurationError,
-  InputValidationError,
-  ResponseValidationError,
-} from "../../core/errors.js";
-import { providers, responseSource } from "../../core/metadata.js";
+import { InputValidationError, ResponseValidationError } from "../../core/errors.js";
+import { responseSource } from "../../core/provider.js";
+import { vegvesenProvider } from "./provider.js";
 import { paginateCursor, type PaginateOptions } from "../../core/paginate.js";
 import type { OpenDataResponse, RequestOptions } from "../../core/types.js";
 import {
@@ -35,8 +32,6 @@ import type {
 } from "./types.js";
 
 const BASE_URL = "https://nvdbapiles.atlas.vegvesen.no";
-const TYPE_METADATA_TTL_MS = 24 * 60 * 60 * 1_000;
-const ROAD_DATA_TTL_MS = 5 * 60 * 1_000;
 const DEFAULT_PAGE_SIZE = 100;
 
 // Current sensitive types in the public NVDB V4 data catalogue. Anonymous SDK
@@ -210,7 +205,7 @@ function isBlockedTypeId(typeId: number): boolean {
 function sanitizeRoadObject(raw: RawRoadObject, expectedTypeId: number): RawRoadObject {
   if (raw.metadata.type.id !== expectedTypeId || isBlockedTypeId(raw.metadata.type.id)) {
     throw new ResponseValidationError("NVDB returned a blocked or unexpected road-object type.", {
-      provider: "vegvesen",
+      provider: vegvesenProvider.id,
     });
   }
   return {
@@ -269,7 +264,7 @@ function assertPublicTypeId(typeId: number): void {
   if (DOCUMENTED_SENSITIVE_TYPE_IDS.has(typeId)) {
     throw new InputValidationError(
       `NVDB road-object type ${typeId} is sensitive and is not supported by this SDK.`,
-      { provider: "vegvesen" },
+      { provider: vegvesenProvider.id },
     );
   }
 }
@@ -277,34 +272,31 @@ function assertPublicTypeId(typeId: number): void {
 /** Client for anonymous public reads from Statens vegvesen's NVDB API Les V4. */
 export class VegvesenClient {
   readonly #http: HttpClient;
-  readonly #applicationName?: string;
 
   /** @internal */
-  constructor(http: HttpClient, applicationName?: string) {
+  constructor(http: HttpClient) {
     this.#http = http;
-    this.#applicationName = applicationName;
   }
 
   /** Lists public road-object types from the current NVDB data catalogue. */
   async getRoadObjectTypes(options?: RequestOptions): Promise<OpenDataResponse<RoadObjectType[]>> {
-    const headers = this.#headers();
     const result = await this.#http.request({
-      provider: "vegvesen",
+      provider: vegvesenProvider,
       url: `${BASE_URL}/datakatalog/api/v1/vegobjekttyper`,
       query: { inkluder: "minimum" },
-      headers,
+      authenticate: true,
       schema: roadObjectTypeListSchema,
       transform: (data) =>
         data
           .filter((type) => !type.sensitiv && !isBlockedTypeId(type.id))
           .map(sanitizeRoadObjectType),
       options,
-      cacheTtlMs: TYPE_METADATA_TTL_MS,
+      cacheTtlMs: vegvesenProvider.cacheTtlMs.typeMetadata,
     });
     const publicTypes = result.data;
     return createResponse(
       publicTypes.map(normalizeRoadObjectType),
-      responseSource(providers.vegvesen),
+      responseSource(vegvesenProvider),
       publicTypes,
       result.cached,
       options,
@@ -316,32 +308,31 @@ export class VegvesenClient {
     typeId: number,
     options?: RequestOptions,
   ): Promise<OpenDataResponse<RoadObjectType>> {
-    const headers = this.#headers();
     const parsedTypeId = this.#parseId(typeId, "road-object type ID");
     assertPublicTypeId(parsedTypeId);
     const result = await this.#http.request({
-      provider: "vegvesen",
+      provider: vegvesenProvider,
       url: `${BASE_URL}/datakatalog/api/v1/vegobjekttyper/${parsedTypeId}`,
       query: { inkluder: "alle" },
       resourceDescription: `road-object type ${parsedTypeId}`,
-      headers,
+      authenticate: true,
       schema: roadObjectTypeSchema,
       transform: (data) => {
         if (data.id !== parsedTypeId || data.sensitiv || isBlockedTypeId(data.id)) {
           throw new ResponseValidationError(
             "NVDB returned blocked or unexpected road-object type metadata.",
-            { provider: "vegvesen" },
+            { provider: vegvesenProvider.id },
           );
         }
         return sanitizeRoadObjectType(data);
       },
       options,
-      cacheTtlMs: TYPE_METADATA_TTL_MS,
+      cacheTtlMs: vegvesenProvider.cacheTtlMs.typeMetadata,
     });
     const publicType = result.data;
     return createResponse(
       normalizeRoadObjectType(publicType),
-      responseSource(providers.vegvesen),
+      responseSource(vegvesenProvider),
       publicType,
       result.cached,
       options,
@@ -353,17 +344,16 @@ export class VegvesenClient {
     parameters: RoadObjectSearchParameters,
     options?: RequestOptions,
   ): Promise<OpenDataResponse<RoadObjectSearchResult>> {
-    const headers = this.#headers();
     const parsed = roadObjectSearchParametersSchema.safeParse(parameters);
     if (!parsed.success) {
       throw new InputValidationError("Invalid NVDB road-object search parameters.", {
-        provider: "vegvesen",
+        provider: vegvesenProvider.id,
         cause: parsed.error,
       });
     }
     assertPublicTypeId(parsed.data.typeId);
     const result = await this.#http.request({
-      provider: "vegvesen",
+      provider: vegvesenProvider,
       url: `${BASE_URL}/vegobjekter/api/v4/vegobjekter/${parsed.data.typeId}`,
       query: {
         kommune: parsed.data.municipalityCode,
@@ -376,18 +366,18 @@ export class VegvesenClient {
         inkluderAntall: false,
         srid: 4326,
       },
-      headers,
+      authenticate: true,
       schema: roadObjectSearchResponseSchema,
       transform: (data) => ({
         ...data,
         objekter: data.objekter.map((object) => sanitizeRoadObject(object, parsed.data.typeId)),
       }),
       options,
-      cacheTtlMs: ROAD_DATA_TTL_MS,
+      cacheTtlMs: vegvesenProvider.cacheTtlMs.roadData,
     });
     return createResponse(
       normalizeRoadObjectSearch(result.data),
-      responseSource(providers.vegvesen),
+      responseSource(vegvesenProvider),
       result.data,
       result.cached,
       options,
@@ -400,37 +390,36 @@ export class VegvesenClient {
     objectId: number,
     options?: RequestOptions,
   ): Promise<OpenDataResponse<RoadObject>> {
-    const headers = this.#headers();
     const parsedTypeId = this.#parseId(typeId, "road-object type ID");
     const parsedObjectId = this.#parseId(objectId, "road-object ID");
     assertPublicTypeId(parsedTypeId);
     const result = await this.#http.request({
-      provider: "vegvesen",
+      provider: vegvesenProvider,
       url: `${BASE_URL}/vegobjekter/api/v4/vegobjekter/${parsedTypeId}/${parsedObjectId}`,
       query: {
         inkluder: ["metadata", "egenskaper", "lokasjon", "geometri"],
         srid: 4326,
       },
       resourceDescription: `road object ${parsedObjectId} of type ${parsedTypeId}`,
-      headers,
+      authenticate: true,
       schema: roadObjectSchema,
       transform: (data) => {
         if (data.id !== parsedObjectId) {
           throw new ResponseValidationError(
             "NVDB returned a different road object than requested.",
             {
-              provider: "vegvesen",
+              provider: vegvesenProvider.id,
             },
           );
         }
         return sanitizeRoadObject(data, parsedTypeId);
       },
       options,
-      cacheTtlMs: ROAD_DATA_TTL_MS,
+      cacheTtlMs: vegvesenProvider.cacheTtlMs.roadData,
     });
     return createResponse(
       normalizeRoadObject(result.data),
-      responseSource(providers.vegvesen),
+      responseSource(vegvesenProvider),
       result.data,
       result.cached,
       options,
@@ -494,17 +483,16 @@ export class VegvesenClient {
     parameters: RoadNetworkParameters = {},
     options?: RequestOptions,
   ): Promise<OpenDataResponse<RoadNetworkResult>> {
-    const headers = this.#headers();
     const parsed = roadNetworkParametersSchema.safeParse(parameters);
     if (!parsed.success) {
       throw new InputValidationError("Invalid NVDB road-network parameters.", {
-        provider: "vegvesen",
+        provider: vegvesenProvider.id,
         cause: parsed.error,
       });
     }
     const roadReferences = parsed.data.roadCategory?.map((category) => `${category}V`).join(",");
     const result = await this.#http.request({
-      provider: "vegvesen",
+      provider: vegvesenProvider,
       url: `${BASE_URL}/vegnett/api/v4/veglenkesekvenser/segmentert`,
       query: {
         kommune: parsed.data.municipalityCode,
@@ -516,35 +504,25 @@ export class VegvesenClient {
         inkluderAntall: false,
         srid: 4326,
       },
-      headers,
+      authenticate: true,
       schema: roadNetworkResponseSchema,
       options,
-      cacheTtlMs: ROAD_DATA_TTL_MS,
+      cacheTtlMs: vegvesenProvider.cacheTtlMs.roadData,
     });
     return createResponse(
       normalizeRoadNetwork(result.data),
-      responseSource(providers.vegvesen),
+      responseSource(vegvesenProvider),
       result.data,
       result.cached,
       options,
     );
   }
 
-  #headers(): { "X-Client": string } {
-    if (this.#applicationName === undefined || this.#applicationName.trim().length === 0) {
-      throw new ConfigurationError(
-        "Statens vegvesen requests require applicationName for the mandatory X-Client header.",
-        { provider: "vegvesen" },
-      );
-    }
-    return { "X-Client": this.#applicationName };
-  }
-
   #parseId(value: number, label: string): number {
     const parsed = positiveIdSchema.safeParse(value);
     if (!parsed.success) {
       throw new InputValidationError(`Invalid NVDB ${label}.`, {
-        provider: "vegvesen",
+        provider: vegvesenProvider.id,
         cause: parsed.error,
       });
     }

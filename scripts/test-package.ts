@@ -64,6 +64,7 @@ const expectedPackageFiles = [
   "examples/municipality-profile.ts",
   "examples/parliament.ts",
   "examples/roads.ts",
+  "examples/shared-cache.ts",
   "examples/statistics.ts",
   "examples/transport.ts",
   "examples/weather.ts",
@@ -97,6 +98,8 @@ const expectedRuntimeExports = [
   "normalizeRoadObject",
   "parseJsonStat",
   "parseTableMetadata",
+  "providerDescriptors",
+  "providerIds",
   "providers",
   "version",
 ].sort();
@@ -277,19 +280,35 @@ try {
     "import {\n" +
       "  InputValidationError,\n" +
       "  NorwayOpenData,\n" +
+      "  providerDescriptors,\n" +
+      "  providerIds,\n" +
       "  providers,\n" +
+      "  type CacheStore,\n" +
       "  type Company,\n" +
       "  type NorwayOpenDataConfig,\n" +
       "  type OpenDataResponse,\n" +
+      "  type ProviderId,\n" +
       "  type RequestOptions,\n" +
       '} from "norway-open-data-sdk";\n' +
-      "const config: NorwayOpenDataConfig = { retries: 0 };\n" +
+      "const store: CacheStore = {\n" +
+      "  get: () => undefined,\n" +
+      "  set: () => undefined,\n" +
+      "  clear: () => undefined,\n" +
+      "};\n" +
+      "const config: NorwayOpenDataConfig = {\n" +
+      "  retries: 0,\n" +
+      "  rateLimit: { enabled: true },\n" +
+      "  cache: { enabled: true, store },\n" +
+      "};\n" +
       "const client = new NorwayOpenData(config);\n" +
-      "client.clearCache();\n" +
+      "const cleared: Promise<void> = client.clearCache();\n" +
       "const options: RequestOptions = { includeRaw: false, bypassCache: true };\n" +
       "const response: OpenDataResponse<Company> | undefined = undefined;\n" +
-      'const electricityLicence: "Provider describes the API as open and free; no standardized licence stated" = providers.hvakosterstrommen.license;\n' +
-      "void client; void options; void response; void electricityLicence; void InputValidationError;\n",
+      "const electricityLicence: string | undefined = providers.hvakosterstrommen.license;\n" +
+      "const electricityId: ProviderId = providerDescriptors.hvakosterstrommen.id;\n" +
+      "const everyId: readonly ProviderId[] = providerIds;\n" +
+      "void client; void options; void response; void electricityLicence;\n" +
+      "void electricityId; void everyId; void cleared; void InputValidationError;\n",
     "utf8",
   );
   writeFileSync(

@@ -15,8 +15,9 @@ import {
   ResponseValidationError,
 } from "../../src/index.js";
 import { HttpClient } from "../../src/core/client.js";
+import { nveProvider } from "../../src/providers/nve/provider.js";
 import { parseRetryAfter, retryDelayMs } from "../../src/core/retry.js";
-import { jsonResponse, sequenceFetch } from "./helpers.js";
+import { jsonResponse, sequenceFetch, testProvider } from "./helpers.js";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -386,11 +387,12 @@ describe("shared HTTP behavior", () => {
       retries: 2,
       fetch,
       cache: { enabled: false, maxEntries: 10 },
+      rateLimit: { enabled: false },
       credentials: { nve: { apiKey } },
     });
     await expect(
       client.request({
-        provider: "nve",
+        provider: nveProvider,
         url: "https://hydapi.nve.no/start",
         headers: { "X-API-Key": apiKey },
         schema: z.object({ ok: z.boolean() }),
@@ -422,11 +424,12 @@ describe("shared HTTP behavior", () => {
         retries: 0,
         fetch: globalThis.fetch,
         cache: { enabled: false, maxEntries: 10 },
+        rateLimit: { enabled: false },
         credentials: { nve: { apiKey } },
       });
       await expect(
         client.request({
-          provider: "nve",
+          provider: nveProvider,
           url: `http://127.0.0.1:${sourceAddress.port}/start`,
           headers: { "X-API-Key": apiKey },
           schema: z.object({ ok: z.boolean() }),
@@ -441,6 +444,7 @@ describe("shared HTTP behavior", () => {
 
   it("honors caller cancellation without retrying", async () => {
     let calls = 0;
+    const controller = new AbortController();
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       calls += 1;
       if (calls > 1) return jsonResponse(brregCompany);
@@ -450,17 +454,19 @@ describe("shared HTTP behavior", () => {
           () => reject(new DOMException("Aborted", "AbortError")),
           { once: true },
         );
+        // Cancel only once the request is genuinely in flight, so this exercises
+        // mid-request cancellation rather than a pre-flight rejection.
+        controller.abort();
       });
     });
-    const controller = new AbortController();
     const companies = new NorwayOpenData({
       fetch: fetchMock as typeof globalThis.fetch,
       retries: 2,
       cache: { enabled: true },
     }).companies;
-    const promise = companies.get("923609016", { signal: controller.signal });
-    controller.abort();
-    await expect(promise).rejects.toMatchObject({ provider: "brreg" });
+    await expect(companies.get("923609016", { signal: controller.signal })).rejects.toMatchObject({
+      provider: "brreg",
+    });
     await expect(companies.get("923609016")).resolves.toMatchObject({ cached: false });
     await expect(companies.get("923609016")).resolves.toMatchObject({ cached: true });
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -512,11 +518,12 @@ describe("shared HTTP behavior", () => {
       retries: 0,
       fetch,
       cache: { enabled: false, maxEntries: 10 },
-      credentials: { nve: {} },
+      rateLimit: { enabled: false },
+      credentials: {},
     });
     await expect(
       client.request({
-        provider: "test",
+        provider: testProvider,
         url: "https://data.example.no/rates",
         headers: { Accept: "text/csv" },
         responseType: "text",
@@ -537,10 +544,11 @@ describe("shared HTTP behavior", () => {
       retries: 0,
       fetch,
       cache: { enabled: true, maxEntries: 10 },
-      credentials: { nve: {} },
+      rateLimit: { enabled: false },
+      credentials: {},
     });
     const textRequest = {
-      provider: "test",
+      provider: testProvider,
       url: "https://data.example.no/representation",
       headers: { Accept: "text/plain" },
       responseType: "text" as const,
@@ -548,7 +556,7 @@ describe("shared HTTP behavior", () => {
       cacheTtlMs: 60_000,
     };
     const jsonRequest = {
-      provider: "test",
+      provider: testProvider,
       url: "https://data.example.no/representation",
       schema: z.object({ representation: z.literal("json") }),
       cacheTtlMs: 60_000,

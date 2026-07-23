@@ -2,7 +2,8 @@ import { z } from "zod";
 
 import { createResponse, HttpClient } from "../../core/client.js";
 import { InputValidationError, ResponseValidationError } from "../../core/errors.js";
-import { providers, responseSource } from "../../core/metadata.js";
+import { responseSource } from "../../core/provider.js";
+import { dataNorgeProvider } from "./provider.js";
 import { paginatePages, type PaginateOptions } from "../../core/paginate.js";
 import type { OpenDataResponse, RequestOptions } from "../../core/types.js";
 import {
@@ -26,8 +27,6 @@ import type {
 const SEARCH_URL = "https://search.api.fellesdatakatalog.digdir.no/search";
 const RESOURCE_URL = "https://resource.api.fellesdatakatalog.digdir.no/v1";
 const PUBLISHER_URL = "https://organization-catalogue.fellesdatakatalog.digdir.no/organizations";
-const SEARCH_TTL_MS = 10 * 60 * 1_000;
-const RESOURCE_TTL_MS = 60 * 60 * 1_000;
 const MAX_MULTI_TYPE_WINDOW = 100;
 
 const searchInputSchema = z
@@ -232,7 +231,7 @@ function parsePublisher(turtle: string, requestedId: string): CatalogPublisher {
   ) {
     throw new ResponseValidationError(
       "Data.norge returned publisher metadata with an unexpected structure.",
-      { provider: "data-norge" },
+      { provider: dataNorgeProvider.id },
     );
   }
   const parentUri = turtleUri(turtle, "org:subOrganizationOf");
@@ -244,7 +243,7 @@ function parsePublisher(turtle: string, requestedId: string): CatalogPublisher {
       organizationPath.split("/").at(-1) !== requestedId)
   ) {
     throw new ResponseValidationError("Data.norge returned an invalid publisher path.", {
-      provider: "data-norge",
+      provider: dataNorgeProvider.id,
     });
   }
   const homepage = turtleUri(turtle, "foaf:homepage");
@@ -289,7 +288,7 @@ export class DataNorgeClient {
     const parsed = searchInputSchema.safeParse(parameters);
     if (!parsed.success) {
       throw new InputValidationError("Invalid Data.norge catalogue search.", {
-        provider: "data-norge",
+        provider: dataNorgeProvider.id,
         cause: parsed.error,
       });
     }
@@ -301,7 +300,7 @@ export class DataNorgeClient {
     if (types !== undefined && types.length > 1 && multiTypeStart >= MAX_MULTI_TYPE_WINDOW) {
       throw new InputValidationError(
         `Data.norge combined multi-type searches are limited to a ${String(MAX_MULTI_TYPE_WINDOW)}-position result window. Narrow the query or request one type for deeper provider paging.`,
-        { provider: "data-norge" },
+        { provider: dataNorgeProvider.id },
       );
     }
     const organizationPath = await this.#resolveOrganizationPath(parsed.data.publisher, options);
@@ -335,7 +334,7 @@ export class DataNorgeClient {
             totalPages: result.data.page.totalPages,
           },
         },
-        responseSource(providers.dataNorge),
+        responseSource(dataNorgeProvider),
         result.data,
         result.cached,
         options,
@@ -370,7 +369,7 @@ export class DataNorgeClient {
           totalPages: Math.ceil(totalItems / size),
         },
       },
-      responseSource(providers.dataNorge),
+      responseSource(dataNorgeProvider),
       results.map((result) => result.data),
       results.every((result) => result.cached),
       options,
@@ -421,12 +420,12 @@ export class DataNorgeClient {
     const parsed = organizationNumberSchema.safeParse(id);
     if (!parsed.success) {
       throw new InputValidationError("Invalid Data.norge publisher organization number.", {
-        provider: "data-norge",
+        provider: dataNorgeProvider.id,
         cause: parsed.error,
       });
     }
     const result = await this.#http.request({
-      provider: "data-norge",
+      provider: dataNorgeProvider,
       url: `${PUBLISHER_URL}/${parsed.data}`,
       resourceDescription: `publisher ${parsed.data}`,
       headers: { Accept: "text/turtle" },
@@ -437,11 +436,12 @@ export class DataNorgeClient {
         return data;
       },
       options,
-      cacheTtlMs: RESOURCE_TTL_MS,
+      rateLimitKey: "resource",
+      cacheTtlMs: dataNorgeProvider.cacheTtlMs.resource,
     });
     return createResponse(
       parsePublisher(result.data, parsed.data),
-      responseSource(providers.dataNorge),
+      responseSource(dataNorgeProvider),
       result.data,
       result.cached,
       options,
@@ -458,7 +458,7 @@ export class DataNorgeClient {
     if (!organizationNumber.success) {
       throw new InputValidationError(
         "Data.norge publisher must be a nine-digit organization number or full organization path.",
-        { provider: "data-norge", cause: organizationNumber.error },
+        { provider: dataNorgeProvider.id, cause: organizationNumber.error },
       );
     }
     const response = await this.getPublisher(organizationNumber.data, {
@@ -469,7 +469,7 @@ export class DataNorgeClient {
       throw new ResponseValidationError(
         "Data.norge publisher metadata omitted its organization path.",
         {
-          provider: "data-norge",
+          provider: dataNorgeProvider.id,
         },
       );
     }
@@ -482,13 +482,13 @@ export class DataNorgeClient {
     options?: RequestOptions,
   ): Promise<{ data: RawCatalogSearchResponse; cached: boolean }> {
     return this.#http.request({
-      provider: "data-norge",
+      provider: dataNorgeProvider,
       url: type === undefined ? SEARCH_URL : `${SEARCH_URL}/${searchTypePath[type]}`,
       method: "POST",
       body,
       schema: catalogSearchResponseSchema,
       options,
-      cacheTtlMs: SEARCH_TTL_MS,
+      cacheTtlMs: dataNorgeProvider.cacheTtlMs.search,
     });
   }
 
@@ -501,12 +501,12 @@ export class DataNorgeClient {
     const parsed = resourceIdSchema.safeParse(id);
     if (!parsed.success) {
       throw new InputValidationError("Invalid Data.norge resource ID.", {
-        provider: "data-norge",
+        provider: dataNorgeProvider.id,
         cause: parsed.error,
       });
     }
     const result = await this.#http.request({
-      provider: "data-norge",
+      provider: dataNorgeProvider,
       url: `${RESOURCE_URL}/${path}/${parsed.data}`,
       resourceDescription: `${type} ${parsed.data}`,
       schema: catalogResourceResponseSchema,
@@ -514,17 +514,18 @@ export class DataNorgeClient {
         if (data.id !== parsed.data) {
           throw new ResponseValidationError(
             "Data.norge returned a different resource than requested.",
-            { provider: "data-norge" },
+            { provider: dataNorgeProvider.id },
           );
         }
         return data;
       },
       options,
-      cacheTtlMs: RESOURCE_TTL_MS,
+      rateLimitKey: "resource",
+      cacheTtlMs: dataNorgeProvider.cacheTtlMs.resource,
     });
     return createResponse(
       normalizeResource(result.data, type),
-      responseSource(providers.dataNorge),
+      responseSource(dataNorgeProvider),
       result.data,
       result.cached,
       options,
