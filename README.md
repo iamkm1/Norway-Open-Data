@@ -14,7 +14,7 @@ API from Hva koster strømmen?.
 
 - 11 public-sector data sources plus 1 third-party derived API
 - 15 service namespaces
-- 55+ public methods
+- 60+ public methods
 - Runtime-validated responses
 - Cross-provider profiles that answer one question from several agencies
 - Auto-paginating async iterators for list endpoints
@@ -112,6 +112,31 @@ them to NOK using the latest Norges Bank exchange rate.
 
 See the [complete capability matrix](docs/capabilities.md) for every namespace, method, access
 requirement and known limitation.
+
+## MCP server
+
+Looking for AI-client integration? See
+[Norway Open Data MCP](https://github.com/iamkm1/Norway-Open-Data-MCP), a local stdio MCP server
+built on this SDK.
+
+```bash
+npx -y norway-open-data-mcp
+```
+
+The MCP server exposes curated, read-only tools for AI clients while this SDK continues to provide
+the underlying Norwegian public-data integrations, validation, retries, caching and typed responses.
+
+They are separate packages in separate repositories, and the dependency runs one way:
+`norway-open-data-mcp` depends on `norway-open-data-sdk`, never the reverse. If you are writing
+TypeScript or JavaScript, install this SDK and call it directly — the MCP server is not required and
+adds nothing to a normal application. Install it only when you want an AI client to reach this data
+through the Model Context Protocol.
+
+## Norway Open Data ecosystem
+
+- **Norway Open Data SDK** — typed TypeScript access to Norwegian public APIs.
+- [**Norway Open Data MCP**](https://github.com/iamkm1/Norway-Open-Data-MCP) — curated MCP tools for
+  AI clients, built on top of this SDK.
 
 ## Common examples
 
