@@ -722,7 +722,8 @@ Personal and restricted data are outside the project scope.
   inspect `roadSearch` for the exact bounds and truncation state.
 - The electricity namespace depends on a third-party derived API rather than an official
   government endpoint.
-- The optional cache is in-process only and is not shared or persistent.
+- The optional cache is in-process by default; sharing or persisting it across instances requires
+  supplying your own `CacheStore`.
 - Protected endpoints, personal data, write operations and delegated authentication are not
   supported.
 
