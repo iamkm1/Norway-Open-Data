@@ -2,6 +2,48 @@
 
 All notable user-visible changes are recorded here. The project follows semantic versioning.
 
+## 0.5.2 - 2026-07-23
+
+### Patch Changes
+
+- Fixes two defects in the shared HTTP core and documents an ESM/CommonJS limitation.
+
+  - **A public `applicationName` no longer corrupts provider responses.** Providers that identify the
+    caller through a public header — Entur's `ET-Client-Name`, NVDB's `X-Client`, MET Norway's
+    `User-Agent` — had that header's value treated as a secret and stripped out of successful payloads
+    before validation. An `applicationName` that also occurred in a provider's own data rewrote it: an
+    application called `vegvesen` turned NVDB's continuation URL into
+    `https://nvdbapiles.atlas.[REDACTED].no/…`, which then failed URL validation and made every
+    `roads.getRoadNetwork()` and `roads.getRoadNetworkAll()` call raise `ResponseValidationError`.
+    Caller identification is public by design, so it is no longer a redaction target. Genuine secrets
+    are unaffected: `contactEmail`, configured `apiKey` values, and `Authorization`, `Cookie` and
+    `X-API-Key` header values are still redacted from payloads and errors, and properties named after
+    request headers are still dropped.
+
+  - **`Retry-After` is no longer shortened to the backoff cap.** A provider asking for a 30-second
+    pause was retried after 5 seconds, because the five-second cap on the SDK's own exponential
+    backoff was also applied to the provider's explicit instruction. The two are now distinct: with no
+    `Retry-After` the SDK uses capped, jittered backoff as before; with a `Retry-After` of up to one
+    minute it waits the stated duration in full; and beyond one minute it stops retrying and raises
+    immediately, without waiting first. The existing status-to-error mapping is unchanged there —
+    `RateLimitError` for HTTP 429, the usual `ProviderError` for a retryable 5xx — and both now carry
+    `retryAfter` in seconds, which is the stable cross-status signal that a provider asked you to wait.
+    One minute is the longest sliding window any provider budget uses, so it is the longest pause the
+    SDK's own rate limiter can already impose. Cancelling the caller's `signal` still rejects a waiting
+    retry immediately. Retryable statuses, attempt counts and every other retry behaviour are
+    unchanged.
+
+    This changes timing for callers that hit HTTP 429 or a retryable 5xx carrying `Retry-After`: those
+    retries now happen later than before, or surface as an error instead of retrying. That is the
+    intended correction.
+
+  - **Mixed ESM/CommonJS error identity is now documented.** When one process loads both published
+    builds, an error from one fails `instanceof` against the other build's class, because class
+    identity is per-bundle. The README explains this and recommends branching on the stable `name`,
+    `provider`, `statusCode` and `retryAfter` fields where an error can cross that boundary. The
+    packed-package test now asserts same-build `instanceof` in both builds and verifies the documented
+    fallback.
+
 ## 0.5.1 - 2026-07-23
 
 ### Patch Changes

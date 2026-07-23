@@ -17,7 +17,13 @@ import {
   type ProviderDescriptor,
 } from "./provider.js";
 import { RateLimiter } from "./rate-limit.js";
-import { delay, parseRetryAfter, RETRYABLE_STATUS_CODES, retryDelayMs } from "./retry.js";
+import {
+  delay,
+  parseRetryAfter,
+  providerDirectedDelayMs,
+  RETRYABLE_STATUS_CODES,
+  retryDelayMs,
+} from "./retry.js";
 import type { HttpResult, QueryParameters, RequestOptions, ResolvedConfig } from "./types.js";
 import type { ProviderId } from "../providers/registry.js";
 import { version } from "../version.js";
@@ -26,6 +32,12 @@ type HttpMethod = "GET" | "POST";
 const REDIRECT_STATUS_CODES = new Set([301, 302, 303, 307, 308]);
 const MAX_REDIRECTS = 5;
 const REDACTED = "[REDACTED]";
+/**
+ * Header names removed from a provider payload when they appear as object keys.
+ *
+ * A public-data response has no reason to echo request headers back, so a
+ * property named after one is dropped rather than handed to the caller.
+ */
 const SENSITIVE_HEADER_NAMES = new Set([
   "authorization",
   "cookie",
@@ -35,6 +47,26 @@ const SENSITIVE_HEADER_NAMES = new Set([
   "user-agent",
   "x-api-key",
   "x-client",
+]);
+/**
+ * Headers whose *values* are secret, and are therefore redacted wherever they
+ * appear inside a payload or error.
+ *
+ * Caller-identification headers are deliberately absent. `X-Client`,
+ * `ET-Client-Name` and `User-Agent` carry `applicationName`, which is a public
+ * identifier a provider logs and may legitimately use in its own data. Treating
+ * it as a secret rewrote valid responses: an application named after a word in
+ * a provider's own URLs turned them into unparsable values before validation.
+ * The credentials that also travel in those headers -- `contactEmail` and any
+ * `apiKey` -- are collected from the resolved configuration instead, so nothing
+ * that is genuinely secret stops being protected.
+ */
+const SECRET_HEADER_NAMES = new Set([
+  "authorization",
+  "cookie",
+  "proxy-authorization",
+  "set-cookie",
+  "x-api-key",
 ]);
 
 /** @internal */
@@ -354,8 +386,19 @@ export class HttpClient {
         const response = await this.#fetchWithSafeRedirects(providerId, request.url, init);
         if (!response.ok) {
           const retryAfterMs = parseRetryAfter(response.headers.get("Retry-After"));
-          if (RETRYABLE_STATUS_CODES.has(response.status) && attempt < this.#config.retries) {
-            await delay(retryDelayMs(attempt, retryAfterMs), callerSignal);
+          // A stated delay is obeyed exactly. Only when the provider gave none
+          // does the SDK's own capped backoff apply, and a delay longer than the
+          // SDK will wait out stops the retry rather than resuming early.
+          const waitMs =
+            retryAfterMs === undefined
+              ? retryDelayMs(attempt)
+              : providerDirectedDelayMs(retryAfterMs);
+          if (
+            RETRYABLE_STATUS_CODES.has(response.status) &&
+            attempt < this.#config.retries &&
+            waitMs !== undefined
+          ) {
+            await delay(waitMs, callerSignal);
             continue;
           }
           if (response.status === 404) {
@@ -376,6 +419,9 @@ export class HttpClient {
           throw new ProviderError(`${providerId} returned HTTP ${response.status}.`, {
             provider: providerId,
             statusCode: response.status,
+            // Kept so a caller that stopped because the provider asked for a
+            // long pause can still see how long it asked for.
+            ...(retryAfterMs === undefined ? {} : { retryAfter: retryAfterSeconds(retryAfterMs) }),
           });
         }
 
@@ -497,7 +543,7 @@ export class HttpClient {
     for (const credential of Object.values(this.#config.credentials)) {
       values.push(credential?.apiKey);
     }
-    for (const name of SENSITIVE_HEADER_NAMES) {
+    for (const name of SECRET_HEADER_NAMES) {
       const value = headers.get(name);
       if (value !== null) values.push(value);
     }

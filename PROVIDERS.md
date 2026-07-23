@@ -47,8 +47,12 @@ resemble abuse.
 | Hva koster strømmen?  | 30/minute                          | sdk-courtesy        |
 
 These budgets bound this SDK's own traffic only. They cannot account for other clients sharing your
-IP address or API key, so a provider may still return HTTP 429; the SDK honours `Retry-After` when
-it does. Enforcement can be disabled with `rateLimit: { enabled: false }` when traffic is already
+IP address or API key, so a provider may still return HTTP 429. When it does, the SDK waits the
+stated `Retry-After` in full rather than shortening it to its own backoff cap, and never retries
+sooner than the provider permitted. A `Retry-After` longer than one minute stops the retry entirely
+and raises without waiting first — `RateLimitError` for 429, the usual `ProviderError` for a
+retryable 5xx — with `retryAfter` set on either, so the caller can reschedule instead of being
+blocked. Enforcement can be disabled with `rateLimit: { enabled: false }` when traffic is already
 bounded by your own scheduler or gateway, which makes staying inside each provider's terms your
 responsibility.
 

@@ -274,6 +274,45 @@ try {
   );
   run(process.execPath, ["internal-check.mjs"], { cwd: temporaryRoot });
 
+  // Error identity across the two published builds. `instanceof` is reliable
+  // within one build and is NOT guaranteed across both, because JavaScript class
+  // identity is per-bundle. This asserts that documented reality so it stays
+  // true deliberately, and proves the fallback the README recommends -- the
+  // stable `name` and metadata fields -- still works across the boundary.
+  writeFileSync(
+    join(temporaryRoot, "error-identity.mjs"),
+    'import { createRequire } from "node:module";\n' +
+      'import assert from "node:assert/strict";\n' +
+      "const require = createRequire(import.meta.url);\n" +
+      'const esm = await import("norway-open-data-sdk");\n' +
+      'const cjs = require("norway-open-data-sdk");\n' +
+      'const failing = { fetch: async () => new Response("{}", { status: 200 }) };\n' +
+      "const makeError = async (build) => {\n" +
+      "  try {\n" +
+      '    await new build.NorwayOpenData({ ...failing, retries: 0 }).companies.get("abc");\n' +
+      "  } catch (error) {\n" +
+      "    return error;\n" +
+      "  }\n" +
+      '  throw new Error("Expected an InputValidationError.");\n' +
+      "};\n" +
+      "const fromEsm = await makeError(esm);\n" +
+      "const fromCjs = await makeError(cjs);\n" +
+      "// Same-build instanceof must hold in both builds.\n" +
+      "assert.ok(fromEsm instanceof esm.InputValidationError);\n" +
+      "assert.ok(fromEsm instanceof esm.OpenDataError);\n" +
+      "assert.ok(fromCjs instanceof cjs.InputValidationError);\n" +
+      "assert.ok(fromCjs instanceof cjs.OpenDataError);\n" +
+      "// Mixed-build identity is not guaranteed; record which way it resolves.\n" +
+      "const mixed = fromEsm instanceof cjs.OpenDataError;\n" +
+      "// The documented fallback must work regardless of how `mixed` resolved.\n" +
+      'assert.equal(fromEsm.name, "InputValidationError");\n' +
+      'assert.equal(fromCjs.name, "InputValidationError");\n' +
+      'assert.equal(typeof fromEsm.message, "string");\n' +
+      "console.log(`error identity ok (mixed-build instanceof: ${mixed})`);\n",
+    "utf8",
+  );
+  run(process.execPath, ["error-identity.mjs"], { cwd: temporaryRoot });
+
   // The consumer itself has no development dependency on this repository.
   writeFileSync(
     join(temporaryRoot, "consumer.ts"),

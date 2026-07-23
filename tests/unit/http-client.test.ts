@@ -16,7 +16,13 @@ import {
 } from "../../src/index.js";
 import { HttpClient } from "../../src/core/client.js";
 import { nveProvider } from "../../src/providers/nve/provider.js";
-import { parseRetryAfter, retryDelayMs } from "../../src/core/retry.js";
+import {
+  MAX_PROVIDER_DIRECTED_DELAY_MS,
+  MAX_RETRY_DELAY_MS,
+  parseRetryAfter,
+  providerDirectedDelayMs,
+  retryDelayMs,
+} from "../../src/core/retry.js";
 import { jsonResponse, sequenceFetch, testProvider } from "./helpers.js";
 
 afterEach(() => {
@@ -125,18 +131,179 @@ describe("shared HTTP behavior", () => {
     expect(mock).toHaveBeenCalledTimes(2);
   });
 
-  it("waits for Retry-After and caps the retry delay at five seconds", async () => {
+  it("caps computed backoff at five seconds when the provider states nothing", () => {
+    // The cap belongs to the SDK's own exponential backoff. It is not a licence
+    // to retry earlier than a provider explicitly permitted.
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      expect(retryDelayMs(attempt)).toBeLessThanOrEqual(MAX_RETRY_DELAY_MS);
+    }
+  });
+
+  it.each([
+    [MAX_PROVIDER_DIRECTED_DELAY_MS - 1, MAX_PROVIDER_DIRECTED_DELAY_MS - 1],
+    [MAX_PROVIDER_DIRECTED_DELAY_MS, MAX_PROVIDER_DIRECTED_DELAY_MS],
+    [MAX_PROVIDER_DIRECTED_DELAY_MS + 1, undefined],
+  ])("treats a directed delay of %ims as %s", (retryAfterMs, expected) => {
+    // The ceiling is inclusive: exactly the maximum is still waited out.
+    expect(providerDirectedDelayMs(retryAfterMs)).toBe(expected);
+  });
+
+  it("throws on an over-limit delay without waiting for the ceiling first", async () => {
+    vi.useFakeTimers();
+    const { fetch, mock } = sequenceFetch(jsonResponse({}, 429, { "Retry-After": "120" }));
+    // No timer advance at all: the over-limit path must terminate immediately
+    // rather than sleeping for the ceiling, or falling back to computed backoff.
+    const error = await new NorwayOpenData({ fetch, retries: 2 }).companies
+      .get("923609016")
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(RateLimitError);
+    expect((error as RateLimitError).statusCode).toBe(429);
+    expect((error as RateLimitError).retryAfter).toBe(120);
+    expect(mock).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("waits the full Retry-After rather than shortening it to the backoff cap", async () => {
     vi.useFakeTimers();
     const { fetch, mock } = sequenceFetch(
-      jsonResponse({}, 429, { "Retry-After": "10" }),
+      jsonResponse({}, 429, { "Retry-After": "30" }),
       jsonResponse(brregCompany),
     );
     const request = new NorwayOpenData({ fetch, retries: 1 }).companies.get("923609016");
-    await vi.advanceTimersByTimeAsync(4_999);
+
+    await vi.advanceTimersByTimeAsync(29_999);
     expect(mock).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
     await expect(request).resolves.toBeDefined();
     expect(mock).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops instead of retrying early when Retry-After exceeds the directed maximum", async () => {
+    vi.useFakeTimers();
+    const { fetch, mock } = sequenceFetch(
+      jsonResponse({}, 429, { "Retry-After": "120" }),
+      jsonResponse(brregCompany),
+    );
+    const request = new NorwayOpenData({ fetch, retries: 2 }).companies.get("923609016");
+    const caught = request.catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(MAX_PROVIDER_DIRECTED_DELAY_MS * 3);
+
+    const error = await caught;
+    expect(error).toBeInstanceOf(RateLimitError);
+    // The caller is told how long the provider asked for, rather than the SDK
+    // silently retrying sooner than it permitted.
+    expect((error as RateLimitError).retryAfter).toBe(120);
+    expect(mock).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves an over-long Retry-After on a non-429 retryable status", async () => {
+    vi.useFakeTimers();
+    const { fetch, mock } = sequenceFetch(jsonResponse({}, 503, { "Retry-After": "300" }));
+    const request = new NorwayOpenData({ fetch, retries: 2 }).companies.get("923609016");
+    const caught = request.catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(MAX_PROVIDER_DIRECTED_DELAY_MS * 6);
+
+    const error = await caught;
+    expect(error).toBeInstanceOf(ProviderError);
+    expect((error as ProviderError).statusCode).toBe(503);
+    expect((error as ProviderError).retryAfter).toBe(300);
+    expect(mock).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels a provider-directed wait without ever making the later attempt", async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const { fetch, mock } = sequenceFetch(
+      jsonResponse({}, 429, { "Retry-After": "30" }),
+      jsonResponse(brregCompany),
+    );
+    const request = new NorwayOpenData({ fetch, retries: 1 }).companies.get("923609016", {
+      signal: controller.signal,
+    });
+    const caught = request.catch((error: unknown) => error);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    controller.abort();
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    const error = await caught;
+    expect(error).toBeInstanceOf(ProviderError);
+    expect((error as ProviderError).message).toMatch(/cancelled/);
+    expect(mock).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("does not let the per-attempt timeout cut short a provider-directed wait", async () => {
+    vi.useFakeTimers();
+    // The request timeout bounds one network attempt. A directed wait happens
+    // between attempts, so a timeout shorter than it must neither shorten the
+    // wait nor be reported as a timeout.
+    const { fetch, mock } = sequenceFetch(
+      jsonResponse({}, 429, { "Retry-After": "30" }),
+      jsonResponse(brregCompany),
+    );
+    const request = new NorwayOpenData({ fetch, retries: 1, timeoutMs: 1_000 }).companies.get(
+      "923609016",
+    );
+
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(mock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+
+    await expect(request).resolves.toBeDefined();
+    expect(mock).toHaveBeenCalledTimes(2);
+  });
+
+  it("classifies cancellation, timeout and rate-limit termination distinctly", async () => {
+    vi.useFakeTimers();
+    // A stalled attempt is a timeout, not a rate-limit or cancellation. The
+    // mock rejects on abort exactly as a spec-compliant fetch does.
+    const stalled = vi.fn(
+      async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            "abort",
+            () => reject(new DOMException("Aborted", "AbortError")),
+            { once: true },
+          );
+        }),
+    ) as typeof globalThis.fetch;
+    const timedOut = new NorwayOpenData({ fetch: stalled, retries: 0, timeoutMs: 1_000 }).companies
+      .get("923609016")
+      .catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(await timedOut).toBeInstanceOf(RequestTimeoutError);
+
+    // An over-long directed delay is a rate-limit termination, not a timeout.
+    const { fetch } = sequenceFetch(jsonResponse({}, 429, { "Retry-After": "120" }));
+    const limited = new NorwayOpenData({ fetch, retries: 1, timeoutMs: 1_000 }).companies
+      .get("923609016")
+      .catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(2_000);
+    const limitedError = await limited;
+    expect(limitedError).toBeInstanceOf(RateLimitError);
+    expect(limitedError).not.toBeInstanceOf(RequestTimeoutError);
+  });
+
+  it.each([
+    [0, 1],
+    [1, 2],
+    [2, 3],
+  ])("makes exactly %i retries -> %i attempts under a directed delay", async (retries, calls) => {
+    vi.useFakeTimers();
+    const { fetch, mock } = sequenceFetch(
+      ...Array.from(
+        { length: calls },
+        () => () => Promise.resolve(jsonResponse({}, 429, { "Retry-After": "1" })),
+      ),
+    );
+    const request = new NorwayOpenData({ fetch, retries }).companies.get("923609016");
+    const caught = request.catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(await caught).toBeInstanceOf(RateLimitError);
+    expect(mock).toHaveBeenCalledTimes(calls);
   });
 
   it("caches successful payloads, expires them, and supports bypass", async () => {

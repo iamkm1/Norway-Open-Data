@@ -32,7 +32,7 @@ Runs on Node.js 22+, Deno, Bun and edge runtimes such as Cloudflare Workers. Typ
 declarations are included. See [Runtime support](#runtime-support) for what a host runtime must
 provide.
 
-Version `0.5.1` is the current release. Install it with:
+Version `0.5.2` is the current release. Install it with:
 
 ```bash
 npm install norway-open-data-sdk
@@ -52,7 +52,7 @@ corepack pnpm pack
 Install the generated tarball from another project:
 
 ```bash
-npm install /path/to/Norway-Open-Data/norway-open-data-sdk-0.5.1.tgz
+npm install /path/to/Norway-Open-Data/norway-open-data-sdk-0.5.2.tgz
 ```
 
 ## Quick start
@@ -438,7 +438,56 @@ try {
 Exported errors are `OpenDataError`, `ConfigurationError`, `InputValidationError`,
 `NotFoundError`, `RateLimitError`, `ProviderError`, `RequestTimeoutError` and
 `ResponseValidationError`. Retryable provider responses, timeouts and temporary network failures
-use bounded retries and honor `Retry-After`; validation and other client errors are not retried.
+use bounded retries; validation and other client errors are not retried.
+
+### Retry timing
+
+Two separate delays apply, and the SDK never retries sooner than a provider permitted:
+
+- **No `Retry-After`.** The SDK uses its own exponential backoff with full jitter, capped at five
+  seconds per attempt.
+- **A `Retry-After` of up to one minute.** The SDK waits the stated duration in full. That cap on
+  computed backoff does not shorten it.
+- **A `Retry-After` longer than one minute.** The SDK does not retry at all and does not wait first.
+  It raises immediately, keeping the normal status-to-error mapping: `RateLimitError` for HTTP 429,
+  and the usual `ProviderError` for a retryable 5xx. Both carry `retryAfter` in seconds, so you can
+  schedule the work yourself instead of being blocked.
+
+One minute is the longest sliding window any provider budget uses, so it is the longest pause the
+SDK's own rate limiter can already impose. Cancelling the caller's `signal` rejects a waiting retry
+immediately.
+
+`retryAfter` is the stable signal here, not the error class. A 503 that asks you to wait is a
+provider outage, not rate limiting, so it stays a `ProviderError` — branch on `retryAfter` when you
+want "the provider told me how long to wait" regardless of status:
+
+```ts
+if (error instanceof OpenDataError && error.retryAfter !== undefined) {
+  scheduleRetryIn(error.retryAfter); // seconds; set for both 429 and 5xx
+}
+```
+
+Errors expose `name`, `provider`, `statusCode`, `retryAfter` and `cause`. There is no `code` or
+`retryable` property.
+
+### Errors across ESM and CommonJS builds
+
+The package ships both an ESM and a CommonJS build. JavaScript class identity is per-bundle, so if a
+single process loads **both** builds — for example your application imports the ESM build while a
+dependency `require`s the CommonJS one — an error thrown by one build will fail `instanceof` against
+the class imported from the other. This is a property of dual-published packages, not a bug you can
+configure away.
+
+Prefer one module system throughout the dependency graph, and avoid loading both builds in the same
+process. Where an error may cross that boundary, branch on stable data instead of class identity —
+every SDK error carries `name` (for example `"RateLimitError"`), and `provider`, `statusCode` and
+`retryAfter` where they apply:
+
+```ts
+if (error instanceof OpenDataError || (error as { name?: string }).name === "RateLimitError") {
+  // Works whichever build constructed the error.
+}
+```
 
 Caller cancellation also surfaces as `ProviderError`, with the abort reason attached as `cause`.
 When retry or reporting logic must distinguish a deliberate abort from a provider failure, check
