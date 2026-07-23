@@ -2,6 +2,31 @@
 
 All notable user-visible changes are recorded here. The project follows semantic versioning.
 
+## 0.4.1 - 2026-07-23
+
+### Patch Changes
+
+- Documented and verified that the package runs unchanged on Node.js 22+, Deno, Bun,
+  Cloudflare Workers and other edge hosts, and in browsers wherever the provider sends
+  permissive CORS headers. No runtime API changed and no new capability was added: the
+  SDK already used only web-standard APIs, and the previous README claim that browser
+  support was not guaranteed was simply inaccurate.
+
+  Distribution now targets ES2022 on esbuild's neutral platform rather than `node22`;
+  the ESM output is byte-identical and the CommonJS output is marginally smaller.
+  `exports` gains a trailing `default` condition so resolvers matching neither `import`
+  nor `require` still reach the ESM build, which can only widen resolution.
+
+  Portability is now enforced rather than assumed. `pnpm check:portability` scans the
+  built bundles for any Node built-in reference and exercises the request, cache,
+  validation, error and cancellation paths against an object implementing only the
+  standard `Response` surface; it runs as part of `pnpm verify`. CI additionally
+  executes the built package on real Deno and Bun runtimes on every change.
+
+  Host runtimes must supply a spec-compliant `fetch`, `structuredClone` and a full-ICU
+  `Intl` for Europe/Oslo dates and Norwegian locale casing. The README documents this
+  in a new "Runtime support" section.
+
 ## 0.4.0 - 2026-07-23
 
 ### Minor Changes

@@ -12,6 +12,9 @@ export default defineConfig({
   },
   clean: true,
   splitting: false,
-  target: "node22",
+  // Runtime-neutral syntax target: the SDK uses only web-standard APIs, so the
+  // same build runs on Node.js, Deno, Bun, browsers and edge runtimes.
+  target: "es2022",
+  platform: "neutral",
   outDir: "dist",
 });

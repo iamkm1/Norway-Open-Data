@@ -163,10 +163,13 @@ function assertPackageMap(packageJson: InstalledPackageJson, packageRoot: string
   assert.equal(packageJson.module, "./dist/index.js");
   assert.equal(packageJson.types, "./dist/index.d.ts");
   assert.deepEqual(Object.keys(packageJson.exports).sort(), [".", "./package.json"]);
+  // `default` keeps runtimes that match neither `import` nor `require` — some
+  // edge and bundler resolvers — on the ESM build.
   assert.deepEqual(packageJson.exports["."], {
     types: "./dist/index.d.ts",
     import: "./dist/index.js",
     require: "./dist/index.cjs",
+    default: "./dist/index.js",
   });
   for (const target of [
     packageJson.main,

@@ -1,6 +1,6 @@
 {
   "name": "norway-open-data-sdk",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "One TypeScript interface for Norway's open public APIs.",
   "keywords": [
     "norway",
@@ -40,7 +40,8 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.js"
     },
     "./package.json": "./package.json"
   },
@@ -84,7 +85,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "verify": "prettier --check . && eslint . && tsc --noEmit && vitest run --coverage && tsup && typedoc && tsx scripts/test-package.ts",
+    "verify": "prettier --check . && eslint . && tsc --noEmit && vitest run --coverage && tsup && typedoc && tsx scripts/check-portability.ts && tsx scripts/test-package.ts",
+    "check:portability": "tsx scripts/check-portability.ts",
     "docs": "typedoc",
     "changeset": "changeset",
     "prepublishOnly": "npm run verify",

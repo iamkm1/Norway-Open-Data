@@ -19,6 +19,7 @@ API from Hva koster strømmen?.
 - Cross-provider profiles that answer one question from several agencies
 - Auto-paginating async iterators for list endpoints
 - ESM, CommonJS and TypeScript support
+- Runs on Node.js, Deno, Bun and edge runtimes from one web-standard build
 - Deterministic offline tests plus representative opt-in live contract probes
 - Enforced statement, branch, function and line coverage gates
 
@@ -27,9 +28,11 @@ backend, database, account system or scraping layer.
 
 ## Installation
 
-Requires Node.js 22 or newer. TypeScript declarations are included.
+Runs on Node.js 22+, Deno, Bun and edge runtimes such as Cloudflare Workers. TypeScript
+declarations are included. See [Runtime support](#runtime-support) for what a host runtime must
+provide.
 
-Version `0.4.0` is the current release. Install it with:
+Version `0.4.1` is the current release. Install it with:
 
 ```bash
 npm install norway-open-data-sdk
@@ -49,7 +52,7 @@ corepack pnpm pack
 Install the generated tarball from another project:
 
 ```bash
-npm install /path/to/Norway-Open-Data/norway-open-data-sdk-0.4.0.tgz
+npm install /path/to/Norway-Open-Data/norway-open-data-sdk-0.4.1.tgz
 ```
 
 ## Quick start
@@ -349,6 +352,33 @@ required values raise `ConfigurationError` before a request is made.
 
 Every provider method accepts optional `signal`, `includeRaw` and `bypassCache` request options.
 
+## Runtime support
+
+The SDK uses only web-standard APIs, so one build runs everywhere. CI executes the built package on
+Node.js 22 and 24, Deno and Bun on every change.
+
+| Runtime                                 | Status                                                     |
+| --------------------------------------- | ---------------------------------------------------------- |
+| Node.js 22+                             | Verified in CI                                             |
+| Deno 2                                  | Verified in CI                                             |
+| Bun                                     | Verified in CI                                             |
+| Cloudflare Workers and other edge hosts | Supported; the same ESM build is used                      |
+| Browsers                                | Supported where the provider sends permissive CORS headers |
+
+A host runtime must provide:
+
+- a spec-compliant `fetch`, `Response`, `Headers` and `AbortController`
+- `structuredClone`, used by the response cache
+- a full-ICU `Intl`, used for Europe/Oslo dates and Norwegian locale casing
+
+The package imports no Node built-in and reads no `process`, `Buffer`, `__dirname` or `__filename`;
+`pnpm check:portability` enforces that against the built output on every verify run. Pass your own
+`fetch` through the `fetch` option when a runtime needs a custom implementation.
+
+Browser use is bounded by each provider's CORS policy rather than by the SDK. Providers requiring
+identification also expect it in a `User-Agent`, which browsers do not allow applications to set, so
+server-side or edge use remains the better fit for those namespaces.
+
 ## Response format
 
 Every successful operation returns `OpenDataResponse<T>`:
@@ -546,7 +576,9 @@ Personal and restricted data are outside the project scope.
 
 ## Known limitations
 
-- The SDK targets Node.js 22+; browser support is not guaranteed.
+- The SDK needs a spec-compliant `fetch` and a full-ICU `Intl`; runtimes built without full ICU
+  cannot format the Europe/Oslo values the electricity, hazard and profile paths rely on.
+- Browser use is limited by each provider's CORS policy, which the SDK cannot change.
 - Upstream API contracts and response shapes can change independently of the SDK.
 - Some providers require caller identification, a contact email or a free API key.
 - Address-profile warning matches use exact structured administrative areas but still never

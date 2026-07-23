@@ -25,8 +25,15 @@ pnpm build
 Coverage uses V8. The configured minimums are 90% for statements, lines and functions, and 65% for
 branches.
 
-The package requires Node.js 22 or newer. CI verifies the runtime and packed-package contract on
-Node.js 22 and 24.
+Development requires Node.js 22 or newer. CI verifies the runtime and packed-package contract on
+Node.js 22 and 24, and additionally executes the built package on Deno and Bun so the published
+artifact stays runtime-neutral.
+
+`pnpm check:portability` guards that neutrality locally: it scans the built bundles for any Node
+built-in reference and runs the SDK's request, cache, validation, error and cancellation paths
+against a hand-written object implementing only the standard `Response` surface.
+`scripts/cross-runtime-check.mjs` is the script the Deno and Bun jobs run and can be executed with
+any runtime.
 
 ## Live provider tests
 

@@ -49,4 +49,25 @@ export default tseslint.config(
       "@typescript-eslint/no-unsafe-member-access": "off",
     },
   },
+  {
+    // Runs on Node.js, Deno and Bun, so it deliberately probes globals that do
+    // not exist in this TypeScript project. It is verified by execution on all
+    // three runtimes in CI rather than by type-aware linting.
+    files: ["scripts/**/*.mjs"],
+    extends: [tseslint.configs.disableTypeChecked],
+    languageOptions: {
+      parserOptions: { projectService: false, project: false },
+      globals: {
+        AbortController: "readonly",
+        Bun: "readonly",
+        Deno: "readonly",
+        Response: "readonly",
+        console: "readonly",
+        process: "readonly",
+      },
+    },
+    rules: {
+      "@typescript-eslint/explicit-function-return-type": "off",
+    },
+  },
 );
