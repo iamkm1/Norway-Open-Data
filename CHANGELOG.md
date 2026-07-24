@@ -2,6 +2,30 @@
 
 All notable user-visible changes are recorded here. The project follows semantic versioning.
 
+## 0.5.3 - 2026-07-24
+
+### Patch Changes
+
+- Fixes two defects in `profiles.municipality()` population handling. No public API or type changes.
+
+  - **Incomplete SSB population years are no longer exposed as complete totals.** SSB returns one cell
+    per requested sex and age band, and a suppressed or absent observation arrives as `null`. The
+    aggregation previously skipped those `null` cells and summed the rest, so a year missing one or more
+    components was published as if it were a finished count — and any year-over-year `change` was then
+    computed against that partial figure. Completeness is now tracked per year: a year contributes a
+    total only when every one of its cells is numeric. Missing data is treated as unknown, never as
+    zero, so an incomplete year is omitted rather than under-reported, `total`/`year` come from the
+    newest complete year, and `change` is only ever calculated between two complete years. When no year
+    is complete the `population` section is omitted, matching the profile's existing degradation model.
+    Fully populated data is unaffected and produces the same totals as before.
+
+  - **Municipality input is validated before any provider request.** An empty or whitespace-only query
+    can never resolve, but it previously spent an SSB metadata request to discover that and then failed
+    with `NotFoundError`. The query is now trimmed and rejected up front with `InputValidationError`
+    before the HTTP client is invoked. A non-empty query behaves exactly as before; only the empty-query
+    path changed, and its error type moved from the later `NotFoundError` to `InputValidationError`
+    (both extend `OpenDataError`).
+
 ## 0.5.2 - 2026-07-23
 
 ### Patch Changes

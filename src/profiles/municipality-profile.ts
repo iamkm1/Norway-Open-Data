@@ -49,29 +49,48 @@ export function resolveMunicipality(
  * Sums SSB's per-sex, per-age population rows into totals for the two newest
  * years. The aggregation is computed by the SDK, not published by SSB.
  *
+ * Completeness is tracked per year: SSB returns one cell per requested
+ * sex/age/year combination, and a suppressed or absent observation arrives as
+ * `null`. A single `null` cell makes that year incomplete, and an incomplete
+ * year never yields a total -- summing only the present cells would report an
+ * unknown figure as a complete count. Missing data is therefore treated as
+ * unknown, never as zero: an incomplete year is dropped, and the newest and
+ * previous totals are taken from the newest complete years instead.
+ *
  * @internal
  */
 export function summarizePopulation(result: StatisticsResult): MunicipalityPopulation | undefined {
-  const byYear = new Map<string, number>();
+  const byYear = new Map<string, { total: number; complete: boolean }>();
   for (const row of result.rows) {
     const year = row["Tid"];
-    if (typeof year !== "string" || typeof row["value"] !== "number") continue;
-    byYear.set(year, (byYear.get(year) ?? 0) + row["value"]);
+    if (typeof year !== "string") continue;
+    const value = row["value"];
+    const entry = byYear.get(year) ?? { total: 0, complete: true };
+    if (typeof value === "number") {
+      entry.total += value;
+    } else {
+      // A null (or otherwise non-numeric) cell means at least one required
+      // component for this year is missing, so its total cannot be trusted.
+      entry.complete = false;
+    }
+    byYear.set(year, entry);
   }
-  const years = [...byYear.keys()].sort();
-  const latest = years.at(-1);
+  const completeYears = [...byYear.entries()]
+    .filter(([, entry]) => entry.complete)
+    .map(([year, entry]) => ({ year, total: entry.total }))
+    .sort((left, right) => left.year.localeCompare(right.year));
+  const latest = completeYears.at(-1);
   if (latest === undefined) return undefined;
-  const previous = years.at(-2);
-  const previousTotal = previous === undefined ? undefined : byYear.get(previous);
+  const previous = completeYears.at(-2);
   return {
-    total: byYear.get(latest) ?? 0,
-    year: latest,
-    ...(previous === undefined || previousTotal === undefined
+    total: latest.total,
+    year: latest.year,
+    ...(previous === undefined
       ? {}
       : {
-          previousTotal,
-          previousYear: previous,
-          change: (byYear.get(latest) ?? 0) - previousTotal,
+          previousTotal: previous.total,
+          previousYear: previous.year,
+          change: latest.total - previous.total,
         }),
   };
 }

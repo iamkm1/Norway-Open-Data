@@ -6,7 +6,7 @@ import {
   resolveMunicipality,
   summarizePopulation,
 } from "../../src/profiles/municipality-profile.js";
-import { NorwayOpenData, NotFoundError } from "../../src/index.js";
+import { InputValidationError, NorwayOpenData, NotFoundError } from "../../src/index.js";
 import { jsonResponse } from "./helpers.js";
 
 const REGIONS = [
@@ -59,16 +59,26 @@ const metadataCube = jsonStatCube(
 );
 
 // Row-major over Kjonn(2) x Alder(2) x Tid(2): totals 2025=100, 2026=104.
-const populationCube = jsonStatCube(
-  [
-    { code: "Region", values: [{ code: "1106", label: "Haugesund" }] },
-    { code: "Kjonn", values: [{ code: "1" }, { code: "2" }] },
-    { code: "Alder", values: [{ code: "000" }, { code: "001" }] },
-    { code: "ContentsCode", values: [{ code: "Personer1" }] },
-    { code: "Tid", values: [{ code: "2025" }, { code: "2026" }] },
-  ],
-  [10, 11, 20, 21, 30, 31, 40, 41],
-);
+const POPULATION_DIMENSIONS = [
+  { code: "Region", values: [{ code: "1106", label: "Haugesund" }] },
+  { code: "Kjonn", values: [{ code: "1" }, { code: "2" }] },
+  { code: "Alder", values: [{ code: "000" }, { code: "001" }] },
+  { code: "ContentsCode", values: [{ code: "Personer1" }] },
+  { code: "Tid", values: [{ code: "2025" }, { code: "2026" }] },
+];
+const populationCube = jsonStatCube(POPULATION_DIMENSIONS, [10, 11, 20, 21, 30, 31, 40, 41]);
+// Same cube, but one 2026 cell (index 1: Kjonn=1, Alder=000, Tid=2026) is
+// suppressed, so 2026 is incomplete while 2025 (total 100) remains complete.
+const populationCubeIncompleteLatest = jsonStatCube(POPULATION_DIMENSIONS, [
+  10,
+  null,
+  20,
+  21,
+  30,
+  31,
+  40,
+  41,
+]);
 
 const fhiDimensions = {
   dimensions: [
@@ -215,6 +225,72 @@ describe("municipality resolution helpers", () => {
     expect(summarizePopulation({ tableId: "07459", dimensions: [], rows: [] })).toBeUndefined();
   });
 
+  it("totals a year only when every cell for it is present", () => {
+    expect(
+      summarizePopulation({
+        tableId: "07459",
+        dimensions: [],
+        rows: [
+          { Tid: "2025", Kjonn: "1", value: 40 },
+          { Tid: "2025", Kjonn: "2", value: 60 },
+          { Tid: "2026", Kjonn: "1", value: 42 },
+          { Tid: "2026", Kjonn: "2", value: 62 },
+        ],
+      }),
+    ).toEqual({ total: 104, year: "2026", previousTotal: 100, previousYear: "2025", change: 4 });
+  });
+
+  it("never publishes a total for a year with a suppressed cell", () => {
+    // 2026 has one null cell. Its present cell sums to 42, but that is a partial
+    // figure: the year must not appear, and the newest complete year is reported.
+    const population = summarizePopulation({
+      tableId: "07459",
+      dimensions: [],
+      rows: [
+        { Tid: "2025", Kjonn: "1", value: 40 },
+        { Tid: "2025", Kjonn: "2", value: 60 },
+        { Tid: "2026", Kjonn: "1", value: 42 },
+        { Tid: "2026", Kjonn: "2", value: null },
+      ],
+    });
+    expect(population).toEqual({ total: 100, year: "2025" });
+    // Missing data is unknown, never zero: neither the partial 42 nor 42 + 0.
+    expect(population?.year).not.toBe("2026");
+    expect(population?.total).not.toBe(42);
+  });
+
+  it("returns undefined when every year is incomplete", () => {
+    expect(
+      summarizePopulation({
+        tableId: "07459",
+        dimensions: [],
+        rows: [
+          { Tid: "2025", Kjonn: "1", value: 40 },
+          { Tid: "2025", Kjonn: "2", value: null },
+          { Tid: "2026", Kjonn: "1", value: 42 },
+          { Tid: "2026", Kjonn: "2", value: null },
+        ],
+      }),
+    ).toBeUndefined();
+  });
+
+  it("handles a complete newest year alongside an incomplete previous year", () => {
+    // 2025 is incomplete, 2026 is complete. The newest total stands on its own,
+    // and no `change` is computed against the incomplete previous year.
+    expect(
+      summarizePopulation({
+        tableId: "07459",
+        dimensions: [],
+        rows: [
+          { Tid: "2025", Kjonn: "1", value: 40 },
+          { Tid: "2025", Kjonn: "2", value: null },
+          { Tid: "2026", Kjonn: "1", value: 42 },
+          { Tid: "2026", Kjonn: "2", value: 62 },
+        ],
+      }),
+    ).toEqual({ total: 104, year: "2026" });
+  });
+
   it("picks the newest period even when it is suppressed", () => {
     const result = pickLifeExpectancy({
       source: "nokkel",
@@ -280,6 +356,30 @@ describe("profiles.municipality", () => {
   it("resolves an exact municipality name to the same profile", async () => {
     const response = await client(defaultRoutes()).profiles.municipality("Haugesund");
     expect(response.data.municipality.code).toBe("1106");
+  });
+
+  it.each(["", "   ", "\t\n"])(
+    "rejects an empty or whitespace-only query before any request (%j)",
+    async (query) => {
+      const fetch = vi.fn(() => {
+        throw new Error("network must not be called for an invalid query");
+      }) as unknown as typeof globalThis.fetch;
+      const sdk = new NorwayOpenData({ fetch, retries: 0 });
+
+      await expect(sdk.profiles.municipality(query)).rejects.toBeInstanceOf(InputValidationError);
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not publish a population total for a year with a suppressed cell", async () => {
+    const routes = defaultRoutes().map((route): Route => {
+      return route[0] === "/tables/07459/data"
+        ? ["/tables/07459/data", populationCubeIncompleteLatest]
+        : route;
+    });
+    const response = await client(routes).profiles.municipality("1106");
+    // 2026 is incomplete, so the profile reports the newest complete year only.
+    expect(response.data.population).toEqual({ total: 100, year: "2025" });
   });
 
   it("throws NotFoundError for unknown names and county codes", async () => {

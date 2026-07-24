@@ -1,5 +1,5 @@
 import { createResponse } from "../core/client.js";
-import { NotFoundError } from "../core/errors.js";
+import { InputValidationError, NotFoundError } from "../core/errors.js";
 import { type ProviderDescriptor, responseSource } from "../core/provider.js";
 import { providers } from "../providers/registry.js";
 import { kartverketProvider } from "../providers/kartverket/provider.js";
@@ -460,6 +460,16 @@ export class ProfileClient {
         "Municipality profiles require a fully configured NorwayOpenData client.",
       );
     }
+    // Validate before any network request: an empty or whitespace-only query can
+    // never resolve, so rejecting it here avoids spending an SSB request to
+    // discover that.
+    const trimmedQuery = query.trim();
+    if (trimmedQuery.length === 0) {
+      throw new InputValidationError(
+        "Municipality profiles require a non-empty municipality code or name.",
+        { provider: ssbProvider.id },
+      );
+    }
     const forwarded: RequestOptions = {
       ...(options?.signal === undefined ? {} : { signal: options.signal }),
       ...(options?.bypassCache === undefined ? {} : { bypassCache: options.bypassCache }),
@@ -473,7 +483,7 @@ export class ProfileClient {
     const regionDimension = metadataResponse.data.dimensions.find(
       (dimension) => dimension.code === "Region",
     );
-    const resolved = resolveMunicipality(regionDimension, query);
+    const resolved = resolveMunicipality(regionDimension, trimmedQuery);
     if (resolved === undefined) {
       throw new NotFoundError(`No Norwegian municipality matched "${query}".`, {
         provider: ssbProvider.id,
