@@ -109,6 +109,12 @@ are aggregated by the SDK from SSB's per-sex, per-age rows rather than published
 expectancy preserves FHI's suppression flag for small municipalities. Each optional section degrades
 to a `provider-error` component when its provider fails.
 
+The profile has no historical date context and therefore never guesses a successor for an inactive
+code. Resolve it first with `klass.resolveMunicipalityCode()`. An application may automatically
+continue only for an `unchanged`, `renamed` or one-to-one `replaced` result with exactly one match.
+Merge, split and ambiguous results require an explicit policy, and successor statistics are never
+combined by the SDK.
+
 Automatic hazard matching checks an explicit municipality by official code, then exact
 case-insensitive, Unicode-normalized name. It checks a county only when the warning has no
 municipality list, because a county can be parent context. It never substring-matches a
@@ -149,6 +155,105 @@ console.table(population.data.rows);
 SSB currently caps one extraction at 800,000 cells and rate-limits to 30 queries per minute. The
 SDK validates explicit values but sends provider expressions such as `*`, `top(3)`, and `from(2020)`
 through unchanged.
+
+## SSB Klass
+
+`statistics` reads statistical values and tables from SSB PxWeb. `klass` reads the separate SSB
+Klass service: official classifications, dated versions, codes and mappings.
+
+Browse classifications and inspect their versions:
+
+```ts
+import { klassClassificationIds, NorwayOpenData } from "norway-open-data-sdk";
+
+const norway = new NorwayOpenData({ cache: { enabled: true } });
+
+const classifications = await norway.klass.listClassifications({
+  language: "en",
+  page: 0,
+  pageSize: 10,
+});
+
+const municipalityVersions = await norway.klass.listVersions({
+  classificationId: klassClassificationIds.municipalities, // 131
+  language: "en",
+  pageSize: 20,
+});
+console.log(classifications.data.items, municipalityVersions.data.items);
+```
+
+List a dated industry version, match occupation code patterns, and retrieve one exact code:
+
+```ts
+const industries = await norway.klass.listCodes({
+  versionId: 3218, // SIC 2025, discovered from classification 6
+  language: "en",
+  page: 0,
+  pageSize: 25,
+});
+
+const occupations = await norway.klass.searchCodes({
+  classificationId: klassClassificationIds.occupations, // 7
+  codePattern: "25*",
+  date: "2026-01-01",
+  language: "en",
+  pageSize: 10,
+});
+
+const oslo = await norway.klass.getCode({
+  classificationId: klassClassificationIds.municipalities,
+  code: "0301",
+  date: "2026-01-01",
+  language: "en",
+});
+console.log(industries.data.items, occupations.data.items, oslo.data);
+```
+
+`searchCodes()` uses Klass' official exact, wildcard and range code syntax. Klass provides no
+server-side name search, so the SDK does not label a full local download as upstream search.
+`getCode()` can alternatively take `{ versionId, code }` for an exact classification snapshot.
+Translations are available as `nb`, `nn` or `en` only where the selected resource publishes them.
+
+Resolve a historical municipality without losing merge or split branches:
+
+```ts
+const resolution = await norway.klass.resolveMunicipalityCode({
+  code: "0101",
+  sourceDate: "2019-01-01",
+  targetDate: "2020-01-01",
+  language: "en",
+});
+
+console.log(resolution.data.status); // "replaced"
+console.log(resolution.data.matches); // 3001 Halden
+console.log(resolution.data.predecessors, resolution.data.successors);
+console.log(resolution.data.changes); // dated official evidence
+console.log(resolution.source.attribution);
+```
+
+A missing `sourceDate` is accepted only when the input code itself is valid on `targetDate`;
+otherwise the status is `context_required`. Results may be `merged`, `split` or `ambiguous`, and
+every candidate is retained. A missing mapping is inconclusive. Administrative correspondence is
+not evidence that statistics remain comparable across changing boundaries.
+
+Inspect a fixed correspondence table:
+
+```ts
+const table = await norway.klass.getCorrespondenceTable({
+  correspondenceTableId: 2774, // Municipalities 2026 → Municipalities 2024
+  language: "en",
+  page: 0,
+  pageSize: 20,
+});
+
+console.log(table.data.sourceVersionId, table.data.targetVersionId);
+console.table(table.data.items);
+```
+
+Only classification list/search responses are actually paged by Klass. Version, code, change and
+correspondence payloads are downloaded and validated as provider units, then exposed as bounded SDK
+pages with `pagination.upstreamPaged === false`. The service supplies no correspondence weights.
+When caching is enabled, Klass metadata and tables use a 24-hour in-process default.
 
 ## Health statistics
 
@@ -567,6 +672,9 @@ sharing an instance:
 ```ts
 console.log(providers.ssb.rateLimit?.default);
 // { requests: 30, intervalMs: 60_000, basis: "provider-documented", note: "..." }
+
+console.log(providers["ssb-klass"].rateLimit?.default);
+// { requests: 30, intervalMs: 60_000, basis: "sdk-courtesy", note: "..." }
 ```
 
 A request that would exceed a budget waits its turn instead of failing, and that wait never counts
@@ -576,3 +684,6 @@ publishes different limits per service, so Data.norge's 10 searches/minute and 5
 lookups/second do not throttle each other. `basis` records whether the number is the provider's own
 or a conservative budget the SDK chose. Disable enforcement with `rateLimit: { enabled: false }`
 only when your traffic is already bounded elsewhere.
+
+SSB publishes the PxWeb number, but no Klass-specific numeric limit. The Klass value is a
+conservative SDK courtesy budget, not official SSB guidance.

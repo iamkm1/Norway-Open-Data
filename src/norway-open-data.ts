@@ -18,6 +18,7 @@ import { NveEnergyClient } from "./providers/nve/energy-client.js";
 import { NveHazardsClient } from "./providers/nve/hazards-client.js";
 import { NorgesBankClient } from "./providers/norges-bank/client.js";
 import { type ProviderId, providerIds } from "./providers/registry.js";
+import { KlassClient } from "./providers/ssb-klass/client.js";
 import { SsbClient } from "./providers/ssb/client.js";
 import { StortingetClient } from "./providers/stortinget/client.js";
 import { VegvesenClient } from "./providers/vegvesen/client.js";
@@ -117,6 +118,7 @@ export class NorwayOpenData {
   readonly #cache: CacheStore;
   readonly companies: BrregClient;
   readonly statistics: SsbClient;
+  readonly klass: KlassClient;
   readonly health: FhiClient;
   readonly addresses: KartverketAddressClient;
   readonly places: KartverketPlaceClient;
@@ -139,6 +141,7 @@ export class NorwayOpenData {
     const http = new HttpClient(resolved, cache);
     this.companies = new BrregClient(http);
     this.statistics = new SsbClient(http);
+    this.klass = new KlassClient(http);
     this.health = new FhiClient(http);
     this.addresses = new KartverketAddressClient(http);
     this.places = new KartverketPlaceClient(http);

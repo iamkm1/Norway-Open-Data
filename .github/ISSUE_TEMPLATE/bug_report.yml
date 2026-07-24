@@ -20,7 +20,8 @@ body:
       options:
         - Core/shared client
         - Brønnøysundregistrene
-        - SSB
+        - SSB PxWeb
+        - SSB Klass
         - Kartverket
         - Entur
         - MET Norway

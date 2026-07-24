@@ -8,13 +8,13 @@
 One typed TypeScript interface for Norwegian public data.
 
 Norway Open Data SDK provides a consistent, runtime-validated client for official Norwegian APIs
-from Brønnøysundregistrene, SSB, FHI, Kartverket, Entur, MET Norway, Data.norge, Norges Bank,
+from Brønnøysundregistrene, SSB PxWeb and SSB Klass, FHI, Kartverket, Entur, MET Norway, Data.norge, Norges Bank,
 Stortinget, Statens vegvesen and NVE. It also wraps the documented third-party public electricity
 API from Hva koster strømmen?.
 
-- 11 public-sector data sources plus 1 third-party derived API
-- 15 service namespaces
-- 60+ public methods
+- 11 public-sector organizations through 12 official API integrations, plus 1 third-party derived API
+- 16 service namespaces
+- 74 supported namespace methods
 - Runtime-validated responses
 - Cross-provider profiles that answer one question from several agencies
 - Auto-paginating async iterators for list endpoints
@@ -90,7 +90,7 @@ requires `applicationName` and `contactEmail`; NVE HydAPI requires the caller's 
 | Source                  | Namespace             | Capabilities                                                   | Access                         |
 | ----------------------- | --------------------- | -------------------------------------------------------------- | ------------------------------ |
 | Brønnøysundregistrene   | `companies`           | Organizations, search and sub-entities                         | Anonymous                      |
-| Statistics Norway / SSB | `statistics`          | PxWeb metadata and JSON-stat2 data                             | Anonymous                      |
+| Statistics Norway / SSB | `statistics`, `klass` | PxWeb statistics; Klass classifications, codes and mappings    | Anonymous                      |
 | FHI                     | `health`              | Health-register statistics with preserved suppression flags    | Anonymous                      |
 | Kartverket              | `addresses`, `places` | Addresses, place names and nearby search                       | Anonymous                      |
 | Entur                   | `transport`           | Autocomplete, departures and journeys                          | Identification required        |
@@ -105,6 +105,14 @@ requires `applicationName` and `contactEmail`; NVE HydAPI requires the caller's 
 `profiles` composes several providers into one answer: `company` combines Brønnøysundregistrene
 with a Kartverket address match, `address` combines Kartverket, MET Norway, NVE and NVDB, and
 `municipality` combines SSB, FHI, Brønnøysundregistrene and NVE.
+
+SSB has two distinct service contracts in the SDK:
+
+- `statistics` → statistical values, table metadata and JSON-stat datasets from PxWeb.
+- `klass` → official classifications, versions, codes, code changes and correspondence mappings.
+
+They belong to one public-sector organization, but use separate provider descriptors because their
+endpoints, limits, response formats and cache policies differ.
 
 Hva koster strømmen? is an independent third-party service, not a government or official data
 provider. Its documentation says the API derives EUR electricity prices from ENTSO-E and converts
@@ -159,6 +167,93 @@ const results = await norway.catalog.search({
 });
 console.log(results.data.items);
 ```
+
+### SSB Klass classifications and historical codes
+
+Klass is SSB's official system for classifications and codelists. The curated `klass` namespace
+keeps it separate from statistical table values:
+
+```ts
+import { klassClassificationIds } from "norway-open-data-sdk";
+
+const browse = await norway.klass.listClassifications({
+  language: "en",
+  page: 0,
+  pageSize: 10,
+});
+console.log(browse.data.items);
+
+// Classification 6 is Standard Industrial Classification; version 3218 is SIC 2025.
+const industries = await norway.klass.listCodes({
+  versionId: 3218,
+  language: "en",
+  page: 0,
+  pageSize: 20,
+});
+
+// Klass supports code patterns, not server-side code-name search.
+const occupations = await norway.klass.searchCodes({
+  classificationId: klassClassificationIds.occupations, // 7
+  codePattern: "25*",
+  date: "2026-01-01",
+  language: "en",
+  pageSize: 10,
+});
+
+const oslo = await norway.klass.getCode({
+  classificationId: klassClassificationIds.municipalities, // 131
+  code: "0301",
+  date: "2026-01-01",
+  language: "en",
+});
+```
+
+Classification IDs are stable exported constants. Version IDs identify dated snapshots: discover
+available versions with `listVersions()` instead of assuming that a documented version remains
+current. `getCode()` also accepts `{ versionId, code }` when an exact snapshot is required. The
+documented and tested classifications include municipalities `131`, counties `104`, industry `6`,
+occupations `7`, education/NUS `36`, and country codes `91`, `100` and `552`.
+
+Historical administrative resolution follows official code-change edges and returns every branch:
+
+```ts
+const historical = await norway.klass.resolveMunicipalityCode({
+  code: "0101",
+  sourceDate: "2019-01-01",
+  targetDate: "2020-01-01",
+  language: "en",
+});
+
+console.log(historical.data.status); // "replaced"
+console.log(historical.data.matches); // [{ code: "3001", name: "Halden", ... }]
+console.log(historical.data.predecessors, historical.data.successors);
+console.log(historical.data.changes); // dated official graph edges supporting the result
+console.log(historical.data.warnings);
+```
+
+`unchanged`, `renamed`, `replaced`, `merged`, `split`, `ambiguous`, `not_found` and
+`context_required` are explicit outcomes. A one-to-many result is never silently reduced to one
+successor. A missing mapping is inconclusive, and administrative correspondence does not prove
+that statistics are comparable across boundaries or years.
+
+Fixed correspondence tables expose metadata and an SDK-bounded page:
+
+```ts
+const table = await norway.klass.getCorrespondenceTable({
+  correspondenceTableId: 2774, // Municipalities 2026 → Municipalities 2024
+  language: "en",
+  page: 0,
+  pageSize: 20,
+});
+console.log(table.data.sourceVersionName, table.data.targetVersionName, table.data.items);
+```
+
+Klass only pages classification browsing/search upstream. Versions, codes, changes and
+correspondence maps arrive as complete provider payloads and are paged locally; those results say
+`pagination.upstreamPaged === false`. Page sizes are capped at 100. Norwegian Bokmål (`nb`),
+Norwegian Nynorsk (`nn`) and English (`en`) are supported where the selected resource publishes a
+translation. All results carry SSB Klass source attribution; optional in-process caching uses a
+24-hour provider default.
 
 ### Cross-provider company profile
 
@@ -234,6 +329,12 @@ rows — the aggregation is the SDK's, not an SSB-published figure. Life expecta
 suppression flag with `years: null` for the smallest municipalities. Every optional section degrades
 to a `provider-error` component if its provider fails, and the `hazards` safety boundary above
 applies here too.
+
+The profile resolves against the current SSB statistics region dimension and has no date parameter,
+so it does not guess what a historical municipality code means. Resolve historical input explicitly
+with `klass.resolveMunicipalityCode()` first. Continue automatically only for an `unchanged`,
+`renamed` or one-to-one `replaced` result with exactly one match. A merge, split or ambiguous result
+requires an application decision; the SDK never combines successor statistics.
 
 ### Health statistics with suppression flags
 
@@ -593,10 +694,14 @@ import { providers } from "norway-open-data-sdk";
 
 console.log(providers.ssb.rateLimit?.default);
 // { requests: 30, intervalMs: 60_000, basis: "provider-documented", note: "..." }
+
+console.log(providers["ssb-klass"].rateLimit?.default);
+// { requests: 30, intervalMs: 60_000, basis: "sdk-courtesy", note: "..." }
 ```
 
 `basis` distinguishes a limit the provider publishes from a conservative budget the SDK chose for a
-provider that publishes none.
+provider that publishes none. SSB documents the first number for PxWeb; it publishes no numeric
+Klass-specific limit, so the second is an SDK courtesy policy and must not be described as official.
 
 Budgets are named per operation class, because a provider can publish very different limits for
 different services. Data.norge allows 10 search requests per minute but 5 resource lookups per
@@ -724,6 +829,13 @@ Personal and restricted data are outside the project scope.
   government endpoint.
 - The optional cache is in-process by default; sharing or persisting it across instances requires
   supplying your own `CacheStore`.
+- Klass does not provide upstream paging for versions, codes, changes or correspondence maps. SDK
+  paging bounds returned output but cannot reduce the complete provider payload received first.
+- Klass has no official code-name search endpoint. `searchCodes()` supports the provider's exact,
+  wildcard and range code patterns only.
+- Klass correspondence may be one-to-one, many-to-one or one-to-many, supplies no weights in the
+  discovered resources, and may be absent. Absence is not proof of equivalence or non-equivalence,
+  and administrative mapping is not evidence of statistical comparability.
 - Protected endpoints, personal data, write operations and delegated authentication are not
   supported.
 

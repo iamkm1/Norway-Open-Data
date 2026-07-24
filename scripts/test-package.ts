@@ -61,6 +61,7 @@ const expectedPackageFiles = [
   "examples/energy.ts",
   "examples/hazards.ts",
   "examples/health-statistics.ts",
+  "examples/klass.ts",
   "examples/municipality-profile.ts",
   "examples/parliament.ts",
   "examples/roads.ts",
@@ -80,6 +81,7 @@ const expectedRuntimeExports = [
   "InputValidationError",
   "KartverketAddressClient",
   "KartverketPlaceClient",
+  "KlassClient",
   "MetClient",
   "NorgesBankClient",
   "NorwayOpenData",
@@ -101,6 +103,7 @@ const expectedRuntimeExports = [
   "providerDescriptors",
   "providerIds",
   "providers",
+  "klassClassificationIds",
   "version",
 ].sort();
 
@@ -224,6 +227,8 @@ try {
       "function assertSdk(value) {\n" +
       '  if (typeof value.NorwayOpenData !== "function") throw new Error("Missing ESM root export.");\n' +
       '  if (typeof new value.NorwayOpenData().clearCache !== "function") throw new Error("Missing ESM clearCache method.");\n' +
+      '  if (typeof new value.NorwayOpenData().klass?.listClassifications !== "function") throw new Error("Missing ESM Klass namespace.");\n' +
+      '  if (value.providers?.["ssb-klass"]?.access !== "open") throw new Error("Missing SSB Klass provider metadata.");\n' +
       '  if (value.providers?.hvakosterstrommen?.license !== "Provider describes the API as open and free; no standardized licence stated") throw new Error("Missing electricity licence-status metadata.");\n' +
       "  process.stdout.write(JSON.stringify(Object.keys(value).sort()));\n" +
       "}\n",
@@ -234,6 +239,8 @@ try {
     'const sdk = require("norway-open-data-sdk");\n' +
       'if (typeof sdk.NorwayOpenData !== "function") throw new Error("Missing CommonJS root export.");\n' +
       'if (typeof new sdk.NorwayOpenData().clearCache !== "function") throw new Error("Missing CommonJS clearCache method.");\n' +
+      'if (typeof new sdk.NorwayOpenData().klass?.listClassifications !== "function") throw new Error("Missing CommonJS Klass namespace.");\n' +
+      'if (sdk.providers?.["ssb-klass"]?.access !== "open") throw new Error("Missing SSB Klass provider metadata.");\n' +
       'if (sdk.providers?.hvakosterstrommen?.license !== "Provider describes the API as open and free; no standardized licence stated") throw new Error("Missing electricity licence-status metadata.");\n' +
       "process.stdout.write(JSON.stringify(Object.keys(sdk).sort()));\n",
     "utf8",
@@ -256,6 +263,7 @@ try {
       '  "norway-open-data-sdk/dist/index.js",\n' +
       '  "norway-open-data-sdk/core/client",\n' +
       '  "norway-open-data-sdk/providers/brreg",\n' +
+      '  "norway-open-data-sdk/providers/ssb-klass",\n' +
       "]) {\n" +
       "  try {\n" +
       "    await import(specifier);\n" +
@@ -318,12 +326,14 @@ try {
     join(temporaryRoot, "consumer.ts"),
     "import {\n" +
       "  InputValidationError,\n" +
+      "  klassClassificationIds,\n" +
       "  NorwayOpenData,\n" +
       "  providerDescriptors,\n" +
       "  providerIds,\n" +
       "  providers,\n" +
       "  type CacheStore,\n" +
       "  type Company,\n" +
+      "  type KlassCodeResolution,\n" +
       "  type NorwayOpenDataConfig,\n" +
       "  type OpenDataResponse,\n" +
       "  type ProviderId,\n" +
@@ -340,6 +350,9 @@ try {
       "  cache: { enabled: true, store },\n" +
       "};\n" +
       "const client = new NorwayOpenData(config);\n" +
+      "const municipalityClassification: number = klassClassificationIds.municipalities;\n" +
+      "const klassMethod = client.klass.resolveMunicipalityCode;\n" +
+      "const resolution: KlassCodeResolution | undefined = undefined;\n" +
       "const cleared: Promise<void> = client.clearCache();\n" +
       "const options: RequestOptions = { includeRaw: false, bypassCache: true };\n" +
       "const response: OpenDataResponse<Company> | undefined = undefined;\n" +
@@ -347,6 +360,7 @@ try {
       "const electricityId: ProviderId = providerDescriptors.hvakosterstrommen.id;\n" +
       "const everyId: readonly ProviderId[] = providerIds;\n" +
       "void client; void options; void response; void electricityLicence;\n" +
+      "void municipalityClassification; void klassMethod; void resolution;\n" +
       "void electricityId; void everyId; void cleared; void InputValidationError;\n",
     "utf8",
   );

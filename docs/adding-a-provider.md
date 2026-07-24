@@ -16,7 +16,8 @@ Confirm all of the following:
 - Authentication, caller identification, rate limits and traffic rules are documented.
 - The data licence, attribution wording and redistribution constraints are clear.
 - Supported fields do not expose personal, restricted or role-protected data.
-- The provider adds a distinct capability rather than duplicating an existing namespace.
+- The service integration adds a distinct capability rather than duplicating an existing
+  namespace.
 
 Record authoritative links, source classification, lineage and legal notes in `PROVIDERS.md`
 before opening the public API.
@@ -38,8 +39,13 @@ document how callers should interpret them.
 
 ## The descriptor
 
-`provider.ts` is the single declaration of everything the SDK core needs. Nothing about a provider
-is special-cased anywhere else, so this file plus one registry line is the whole integration.
+`provider.ts` is the single declaration of everything the SDK core needs for one independently
+governed service integration. Nothing about a provider is special-cased anywhere else, so this file
+plus one registry line is the whole integration. One organization may have multiple descriptors
+when its services have independent contracts, base URLs, schemas or operating policies. For
+example, Statistics Norway remains one organization while PxWeb and Klass use the separate `ssb`
+and `ssb-klass` descriptors. Keep organization and integration counts distinct in project
+documentation.
 
 ```ts
 import { defineAuth, type ProviderDescriptor } from "../../core/provider.js";
@@ -74,8 +80,9 @@ export const exampleProvider = {
 Field notes:
 
 - **`id`** is the one spelling used everywhere: registry key, error messages, response `source.id`
-  and the `credentials` configuration key. Use the provider's own short name, hyphenated, not a
-  camelCase variant. The registry refuses to compile if a key and an `id` disagree.
+  and the `credentials` configuration key. It identifies the service integration, so add a stable
+  service suffix when an organization has independently governed APIs. Use a short, hyphenated
+  name, not a camelCase variant. The registry refuses to compile if a key and an `id` disagree.
 - **`auth`** is only for providers that require identification. Always wrap it in `defineAuth`:
   that makes `requires` the sole inference site, so `headers` is type-checked against exactly the
   values the provider asked for and reading an undeclared value is a compile error. Without the
@@ -104,6 +111,8 @@ Field notes:
 - Add JSDoc for public methods, parameters, return types and non-obvious limitations.
 - Add a runnable example and update `docs/capabilities.md`.
 - Update `PROVIDERS.md` with rate limits, stability risks and unsupported restricted access.
+- If project counts change, report public-sector organizations separately from official service
+  integrations and use the same interpretation in every overview.
 
 ## Tests and privacy review
 

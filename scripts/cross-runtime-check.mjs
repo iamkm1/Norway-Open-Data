@@ -54,6 +54,12 @@ const norway = new NorwayOpenData({
   },
 });
 
+if (typeof norway.klass?.listClassifications === "function") {
+  ok("Klass namespace", "available");
+} else {
+  bad("Klass namespace", "missing");
+}
+
 try {
   const first = await norway.companies.get("923609016");
   if (first.data.name === "EKSEMPEL TEKNOLOGI AS" && first.source.id === "brreg") {

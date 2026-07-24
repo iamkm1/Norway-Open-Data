@@ -68,6 +68,17 @@ await check("SSB statistics.query", async () => {
   return `${response.data.rows.length} row(s); latest value=${String(row?.value ?? "null")}`;
 });
 
+await check("SSB Klass klass.getCode", async () => {
+  const response = await norway.klass.getCode({
+    classificationId: 131,
+    code: "0301",
+    date: "2026-01-01",
+    language: "en",
+  });
+  requireResult(response.data.code === "0301", "Klass returned an unexpected municipality code.");
+  return `${response.data.code} ${response.data.name}`;
+});
+
 await check("FHI health.query", async () => {
   const response = await norway.health.query({
     source: "daar",

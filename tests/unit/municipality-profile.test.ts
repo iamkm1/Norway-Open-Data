@@ -351,6 +351,18 @@ describe("profiles.municipality", () => {
       .map((call) => String(call[0]))
       .filter((url) => url.includes("/tables/07459/metadata"));
     expect(metadataRequests).toHaveLength(1);
+    expect(mock.mock.calls.some((call) => String(call[0]).includes("/api/klass/"))).toBe(false);
+  });
+
+  it("keeps historical resolution explicit when the profile has no date context", async () => {
+    const { fetch, mock } = routedFetch(defaultRoutes());
+    const sdk = new NorwayOpenData({ fetch, retries: 0 });
+
+    await expect(sdk.profiles.municipality("0101")).rejects.toBeInstanceOf(NotFoundError);
+
+    expect(mock).toHaveBeenCalledTimes(1);
+    expect(String(mock.mock.calls[0]?.[0])).toContain("/tables/07459/metadata");
+    expect(mock.mock.calls.some((call) => String(call[0]).includes("/api/klass/"))).toBe(false);
   });
 
   it("resolves an exact municipality name to the same profile", async () => {

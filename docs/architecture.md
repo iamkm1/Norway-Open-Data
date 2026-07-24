@@ -5,6 +5,11 @@ directly. It also supports the documented third-party Hva koster strømmen? elec
 derives EUR price data from ENTSO-E and converts it to NOK using a Norges Bank exchange rate. The
 SDK has no hosted backend, database, account system, scraper, or data warehouse.
 
+The public surface has 74 methods across 16 namespaces, backed by 12 official service integrations
+from 11 public-sector organizations plus one third-party integration. Organization and integration
+counts are intentionally separate: one organization can operate independently governed services
+with different API contracts.
+
 ## Public facade
 
 `NorwayOpenData` constructs one client per public namespace. All clients share a single HTTP
@@ -12,7 +17,7 @@ client and optional in-memory cache:
 
 ```text
 NorwayOpenData
-├─ companies / statistics / addresses / places
+├─ companies / statistics / klass / addresses / places
 ├─ transport / weather / profiles
 ├─ catalog / currency / parliament / roads
 └─ energy / hazards / electricity
@@ -42,6 +47,12 @@ Each adapter is kept under `src/providers/<provider>/` and normally contains:
 See [Adding a provider](adding-a-provider.md) for adapter structure, validation, privacy, testing,
 documentation and review requirements.
 
+SSB is one organization represented by two service adapters: `ssb` for the PxWeb statistics API
+and `ssb-klass` for the Klass classification API. Their independently governed contracts,
+endpoints, response schemas, cache policies and request budgets stay separate. Klass validates
+every consumed response strictly and reports malformed successful responses as
+`ResponseValidationError`.
+
 ## Cross-provider profiles
 
 `profiles.company()` composes Brønnøysundregistrene and Kartverket when a deterministic address
@@ -70,6 +81,12 @@ requested page size and whether NVDB advertised another page. An empty warning m
 all-clear, and road candidates are not a proximity guarantee. Safety users must query the complete
 official Varsom/NVE services directly and follow their current guidance.
 
+`profiles.municipality()` does not automatically rewrite historical municipality codes. Callers
+resolve administrative codes explicitly with `klass.resolveMunicipalityCode()` or
+`klass.resolveCountyCode()`, inspect every official match and warning, and then decide whether a
+profile lookup is appropriate. This avoids silently choosing among merges, splits and ambiguous
+correspondences or implying statistical comparability across administrative boundaries.
+
 ## Auto-pagination
 
 Five list methods expose bounded async generators: `companies.searchAll()`,
@@ -81,6 +98,13 @@ integer from 1 to 100 and defaults to 100 so a provider contract change cannot c
 request loop. Cursor-based walks retain every requested marker and raise
 `ResponseValidationError` before requesting an already-seen marker, including an immediate repeat
 or a longer cycle.
+
+Klass uses explicit page requests rather than another async generator. Classification list and
+metadata-search endpoints are paged by Klass itself. Version lists, codes, code changes and
+correspondence payloads are unpaged upstream, so the adapter validates the complete provider
+payload and then applies bounded SDK-local paging with a maximum page size of 100. Response
+pagination metadata identifies whether `upstreamPaged` is true. A fixed correspondence table has no
+separate item endpoint, so callers cannot stream its entries from Klass.
 
 ## Formats
 
@@ -98,12 +122,15 @@ preserves provider-native end timestamps.
 
 ## Provider descriptors
 
-Each provider declares itself once, in `src/providers/<provider>/provider.ts`, as a
-`ProviderDescriptor`: legal metadata, how a caller identifies itself, how often the provider may be
-called, and how long each class of response stays fresh. `src/providers/registry.ts` collects the
-descriptors and derives the `ProviderId` union from its own keys, with a signature that refuses to
-compile when a registry key and a descriptor `id` disagree. One spelling of an identifier therefore
-reaches error messages, response `source.id`, cache keys and the `credentials` configuration.
+Each independently governed service integration declares itself once, in
+`src/providers/<provider>/provider.ts`, as a `ProviderDescriptor`: legal metadata, how a caller
+identifies itself, how often the service may be called, and how long each class of response stays
+fresh. An organization may therefore have more than one descriptor when it operates APIs with
+independent contracts. SSB uses `ssb` for PxWeb and `ssb-klass` for Klass while remaining one
+public-sector organization. `src/providers/registry.ts` collects the descriptors and derives the
+`ProviderId` union from its own keys, with a signature that refuses to compile when a registry key
+and a descriptor `id` disagree. One spelling of an identifier therefore reaches error messages,
+response `source.id`, cache keys and the `credentials` configuration.
 
 The core reads descriptors and never special-cases a provider. Requests carry the descriptor itself
 rather than a provider name, so a typo is a type error rather than a misleading error message.
@@ -127,6 +154,10 @@ processes and then owns expiry and eviction. Reads and writes are awaited either
 `NorwayOpenData.clearCache()` resolves once the backing store has cleared, without exposing
 internal keys or values.
 
+All Klass operation classes recommend a 24-hour TTL because classification metadata and historical
+tables change slowly. This remains optional, in-process caching by default; enabling it does not add
+persistent storage.
+
 ## Request budgets
 
 Every descriptor may declare a `rateLimit`. Enforcement is on by default: one sliding-window
@@ -139,6 +170,11 @@ spent waiting its turn, and a caller's `signal` rejects a waiting request immedi
 
 `basis` records whether a number is `provider-documented` or an `sdk-courtesy` budget chosen for a
 provider that publishes none.
+
+Budgets are scoped to service descriptors, not organizations. SSB PxWeb retains its documented
+budget, while SSB publishes no numeric Klass rate limit. The `ssb-klass` descriptor therefore uses
+an explicit SDK-courtesy budget of 30 requests per minute; it is not presented as official SSB
+guidance.
 
 ## Identification and credentials
 

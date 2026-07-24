@@ -12,6 +12,7 @@ import { kartverketProvider } from "./kartverket/provider.js";
 import { metProvider } from "./met/provider.js";
 import { norgesBankProvider } from "./norges-bank/provider.js";
 import { nveProvider } from "./nve/provider.js";
+import { ssbKlassProvider } from "./ssb-klass/provider.js";
 import { ssbProvider } from "./ssb/provider.js";
 import { stortingetProvider } from "./stortinget/provider.js";
 import { vegvesenProvider } from "./vegvesen/provider.js";
@@ -42,6 +43,7 @@ export const providerDescriptors = registry({
   "norges-bank": norgesBankProvider,
   nve: nveProvider,
   ssb: ssbProvider,
+  "ssb-klass": ssbKlassProvider,
   stortinget: stortingetProvider,
   vegvesen: vegvesenProvider,
 });

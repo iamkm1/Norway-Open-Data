@@ -4,7 +4,7 @@
 > sponsored by, or endorsed by Norwegian public authorities or by the third-party service Hva
 > koster strømmen?. Data remains subject to each source's terms and licence.**
 
-Last contract and documentation verification: **2026-07-21**
+Last contract and documentation verification: **2026-07-25**
 
 The MIT licence applies only to this SDK's source code. It does not automatically apply to data
 returned by public providers. Users are responsible for following current provider terms,
@@ -31,20 +31,26 @@ cited from the sections below; `sdk-courtesy` numbers are conservative budgets t
 providers that publish none, so that ordinary use stays comfortable while a runaway loop cannot
 resemble abuse.
 
-| Provider              | Budget                             | Basis               |
-| --------------------- | ---------------------------------- | ------------------- |
-| Brønnøysundregistrene | 60/minute                          | sdk-courtesy        |
-| Statistics Norway     | 30/minute                          | provider-documented |
-| FHI                   | 30/minute                          | sdk-courtesy        |
-| Kartverket            | 60/minute                          | sdk-courtesy        |
-| Entur                 | 60/minute                          | sdk-courtesy        |
-| MET Norway            | 60/minute                          | sdk-courtesy        |
-| Data.norge            | 10/minute search; 5/second lookups | provider-documented |
-| Norges Bank           | 60/minute                          | sdk-courtesy        |
-| Stortinget            | 100/minute                         | provider-documented |
-| Statens vegvesen      | 60/minute                          | sdk-courtesy        |
-| NVE                   | 30/minute                          | sdk-courtesy        |
-| Hva koster strømmen?  | 30/minute                          | sdk-courtesy        |
+| Provider integration      | Budget                             | Basis               |
+| ------------------------- | ---------------------------------- | ------------------- |
+| Brønnøysundregistrene     | 60/minute                          | sdk-courtesy        |
+| Statistics Norway — PxWeb | 30/minute                          | provider-documented |
+| Statistics Norway — Klass | 30/minute                          | sdk-courtesy        |
+| FHI                       | 30/minute                          | sdk-courtesy        |
+| Kartverket                | 60/minute                          | sdk-courtesy        |
+| Entur                     | 60/minute                          | sdk-courtesy        |
+| MET Norway                | 60/minute                          | sdk-courtesy        |
+| Data.norge                | 10/minute search; 5/second lookups | provider-documented |
+| Norges Bank               | 60/minute                          | sdk-courtesy        |
+| Stortinget                | 100/minute                         | provider-documented |
+| Statens vegvesen          | 60/minute                          | sdk-courtesy        |
+| NVE                       | 30/minute                          | sdk-courtesy        |
+| Hva koster strømmen?      | 30/minute                          | sdk-courtesy        |
+
+Statistics Norway is one public-sector organization with two independently governed API
+integrations. PxWeb and Klass therefore have separate SDK request budgets and cache policies. The
+30-per-minute Klass budget is an SDK courtesy limit: SSB publishes no numeric Klass API limit, and
+the SDK does not present that number as official guidance.
 
 These budgets bound this SDK's own traffic only. They cannot account for other clients sharing your
 IP address or API key, so a provider may still return HTTP 429. When it does, the SDK waits the
@@ -75,6 +81,13 @@ responsibility.
 
 ## Statistics Norway (SSB)
 
+Statistics Norway is one organization. The SDK exposes two distinct services because they have
+different base URLs, contracts, request guidance, cache policies, and public purposes:
+`statistics` reads statistical tables through PxWeb, while `klass` reads the classifications,
+versions, codes, and mappings used to describe data.
+
+### PxWeb API v2
+
 - **Supported methods:** `statistics.getTableMetadata()`, `statistics.query()`,
   `statistics.queryRaw()`
 - **Official homepage:** https://www.ssb.no/en/
@@ -89,6 +102,70 @@ responsibility.
 - **Contract note:** The current adapter uses the v2 paths
   `/api/pxwebapi/v2/tables/{id}/metadata` and `/data`. POST selection objects use
   `variableCode`/`valueCodes`. Table value codes can change and must be discovered from metadata.
+
+### Klass API v1
+
+- **Supported methods (14):** `klass.listClassifications()`, `klass.searchClassifications()`,
+  `klass.getClassification()`, `klass.listVersions()`, `klass.getVersion()`,
+  `klass.listCodes()`, `klass.getCode()`, `klass.searchCodes()`,
+  `klass.listCorrespondenceTables()`, `klass.getCorrespondenceTable()`,
+  `klass.getCorrespondence()`, `klass.listCodeChanges()`,
+  `klass.resolveMunicipalityCode()`, `klass.resolveCountyCode()`
+- **Official homepage:** https://www.ssb.no/en/klass/
+- **API guide:** https://data.ssb.no/api/klass/v1/api-guide.html
+- **Base URL:** `https://data.ssb.no/api/klass/v1`
+- **Access:** Open anonymous reads; no API key or caller-identification header is required.
+- **Licence:** Creative Commons Attribution 4.0 International (CC BY 4.0).
+- **Attribution:** Attribute Statistics Norway (SSB), link to `ssb.no` and CC BY 4.0, and
+  indicate changes.
+- **Languages:** `nb`, `nn`, and `en`; omitting `language` uses Klass' `nb` default. Translation
+  availability varies by classification and version, and requesting an unpublished language can
+  produce empty translated names. Classification full-text search returns language-specific hits,
+  so one classification can appear more than once when several published languages match.
+- **Endpoints:** The curated adapter uses `GET /classifications`,
+  `/classifications/search`, `/classifications/{classificationId}`,
+  `/versions/{versionId}`, `/classifications/{classificationId}/codesAt`,
+  `/classifications/{classificationId}/codes`,
+  `/correspondencetables/{correspondenceTableId}`,
+  `/classifications/{sourceClassificationId}/correspondsAt`,
+  `/classifications/{sourceClassificationId}/corresponds`, and
+  `/classifications/{classificationId}/changes`. It does not mirror unrelated upstream
+  operations.
+- **Dates and ranges:** Dated code, change, correspondence, and resolution parameters use ISO
+  `YYYY-MM-DD`; the classification-list `changedSince` filter uses an offset ISO date-time. A dated
+  operation observes one date. Code and correspondence ranges use inclusive `from` and exclusive
+  `to`; an omitted `to` means an indefinite range. The `/changes` endpoint differs: live contract
+  probes return events only when they occur strictly after `from` and strictly before `to`, so
+  include a day on each side when an event on a boundary is required. Future versions are excluded
+  unless `includeFuture` is requested.
+- **Paging:** Classification listing and classification search use Klass' real zero-based
+  pagination. Version metadata, codes, code changes, correspondence-table summaries, and
+  correspondence items are not paged by Klass. Those methods return a bounded SDK-local page
+  (20 items by default, at most 100) and set `pagination.upstreamPaged` to `false`, but the complete
+  provider payload still has to be downloaded and validated first. Fixed correspondence tables
+  have no provider item endpoint.
+- **Code search:** `searchCodes()` supports only Klass' official `selectCodes` code-pattern syntax
+  (exact codes, wildcards, and ranges). Klass provides no code-name search endpoint. Use
+  `searchClassifications()` only for classification metadata, not for names inside a code list.
+- **Correspondence semantics:** Fixed, dated, and ranged correspondence preserves every official
+  source-to-target edge. Klass correspondence items do not publish weights, so the SDK does not
+  invent them. Missing correspondence is not proof that areas are equivalent or unrelated.
+  Municipality and county helpers preserve merges, splits, multiple predecessors, multiple
+  successors, ambiguity, and missing date context rather than selecting one code silently.
+  Administrative correspondence does not establish statistical comparability across dates or
+  boundaries.
+- **Validation and errors:** Every public parameter object and every consumed response object is
+  strictly runtime-validated. Invalid caller input fails before network access. Unexpected
+  successful payloads raise `ResponseValidationError`; upstream HTTP failures retain the shared
+  provider, status, timeout, cancellation, retry, and rate-limit behavior. An exact code miss is
+  normalized to `NotFoundError` only after Klass returns a validated empty result.
+- **Caching and traffic:** When the optional SDK cache is enabled, Klass classifications,
+  versions, codes, changes, and correspondence use a 24-hour provider default TTL in the
+  in-process cache. Klass publishes no numeric API rate limit; the SDK separately enforces a
+  conservative courtesy budget of 30 requests/minute.
+- **Profile boundary:** `profiles.municipality()` does not automatically call Klass or rewrite a
+  historical code. Resolve historical municipality codes explicitly and continue to a current
+  profile only when the application accepts an unambiguous result.
 
 ## Norwegian Institute of Public Health (FHI)
 

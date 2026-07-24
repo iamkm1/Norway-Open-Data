@@ -108,6 +108,8 @@ const norway = new NorwayOpenData({
   },
 });
 
+results.push(["klass-namespace", typeof norway.klass?.listClassifications === "function"]);
+
 // Request, normalization and response envelope.
 const first = await norway.companies.get("923609016");
 results.push(["request", first.data.name === "EKSEMPEL TEKNOLOGI AS" && first.cached === false]);

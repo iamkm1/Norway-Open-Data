@@ -8,6 +8,7 @@ describe("configuration", () => {
     const sdk = new NorwayOpenData({ fetch: async () => new Response("{}") });
     expect(sdk.companies).toBeDefined();
     expect(sdk.statistics).toBeDefined();
+    expect(sdk.klass).toBeDefined();
     expect(sdk.addresses).toBeDefined();
     expect(sdk.places).toBeDefined();
     expect(sdk.transport).toBeDefined();

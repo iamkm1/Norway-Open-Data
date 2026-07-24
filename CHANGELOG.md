@@ -2,6 +2,33 @@
 
 All notable user-visible changes are recorded here. The project follows semantic versioning.
 
+## 0.6.0 - Unreleased
+
+### Minor Changes
+
+- Adds the top-level `sdk.klass` namespace for Statistics Norway's anonymous SSB Klass API.
+
+  - Browse and search classifications, inspect dated versions, list version/date/range code lists,
+    retrieve exact codes, and use the provider's official code-pattern syntax.
+  - List correspondence-table metadata and page through fixed, dated or ranged correspondence.
+    Because Klass does not page these upstream resources, the SDK labels locally bounded pages with
+    `pagination.upstreamPaged: false` instead of implying network-level pagination.
+  - Resolve historical municipality and county codes through official change graphs. Results retain
+    merges, splits, multiple predecessors and successors, mixed-step ambiguity, missing context and
+    no-match outcomes; no branch is silently selected.
+  - Exports strict runtime-validated types and stable classification IDs for municipalities,
+    counties, industry, occupations, education and three country-code systems.
+  - Registers `ssb-klass` as a separate service integration from SSB PxWeb while counting Statistics
+    Norway as one organization. Klass uses anonymous CC BY 4.0 access, a 24-hour optional in-process
+    cache policy and a conservative SDK courtesy request budget.
+  - Keeps `profiles.municipality()` behavior backward-compatible. Its current-region lookup has no
+    historical date context, so applications resolve historical codes explicitly through `klass`
+    and continue only when their own policy accepts the returned relationship.
+
+  SSB Klass does not provide code-name search, upstream paging for code or correspondence payloads,
+  or mapping weights in the discovered resources. Missing correspondence is inconclusive, and an
+  administrative mapping must not be interpreted as statistical comparability.
+
 ## 0.5.3 - 2026-07-24
 
 ### Patch Changes

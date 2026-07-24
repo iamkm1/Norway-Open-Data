@@ -67,6 +67,12 @@ methods, but the suite does not claim exhaustive coverage of every method, param
 upstream response variant. Detail lookups are chained from list calls rather than hard-coded IDs
 where practical. Keep requests bounded and do not add load or rate-limit bypasses.
 
+SSB Klass also has a separate bounded anonymous live suite in `tests/live/klass.live.test.ts`. It
+runs serially with conservative pacing and performs only a few read-only calls: classification
+discovery, one code-list check and one known historical administrative correspondence. It needs no
+credentials, remains excluded from ordinary deterministic CI and must never be expanded into a
+rate-limit probe.
+
 ## Scheduled live monitoring
 
 For authorized repository maintainers, `.github/workflows/live.yml` runs
