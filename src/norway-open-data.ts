@@ -6,10 +6,13 @@ import { ConfigurationError } from "./core/errors.js";
 import { missingAuthFields, type ProviderDescriptor } from "./core/provider.js";
 import type { NorwayOpenDataConfig, ProviderCredentials, ResolvedConfig } from "./core/types.js";
 import { ProfileClient } from "./profiles/client.js";
+import { AisClient } from "./providers/barentswatch-ais/client.js";
+import { MarineClient } from "./providers/barentswatch/client.js";
 import { BrregClient } from "./providers/brreg/client.js";
 import { DataNorgeClient } from "./providers/data-norge/client.js";
 import { EnturClient } from "./providers/entur/client.js";
 import { FhiClient } from "./providers/fhi/client.js";
+import { FisheriesClient } from "./providers/fiskeridir/client.js";
 import { ElectricityClient } from "./providers/hvakosterstrommen/client.js";
 import { KartverketAddressClient } from "./providers/kartverket/address-client.js";
 import { KartverketPlaceClient } from "./providers/kartverket/place-client.js";
@@ -30,7 +33,13 @@ const secretSchema = z
   .max(500)
   .refine((value) => !/[\r\n]/.test(value));
 
-const providerCredentialSchema = z.object({ apiKey: secretSchema.optional() });
+const providerCredentialSchema = z
+  .object({
+    apiKey: secretSchema.optional(),
+    clientId: secretSchema.optional(),
+    clientSecret: secretSchema.optional(),
+  })
+  .strict();
 
 /**
  * Credentials are validated per registered provider id, so a new provider needs
@@ -132,6 +141,12 @@ export class NorwayOpenData {
   readonly parliament: StortingetClient;
   readonly roads: VegvesenClient;
   readonly electricity: ElectricityClient;
+  /** Vessel positions, tracks and live AIS streams from BarentsWatch. */
+  readonly ais: AisClient;
+  /** Wave and sea-current point forecasts from BarentsWatch. */
+  readonly marine: MarineClient;
+  /** Fishing-vessel and aquaculture registers from Fiskeridirektoratet. */
+  readonly fisheries: FisheriesClient;
 
   /** Creates an SDK client with safe request defaults. */
   constructor(config: NorwayOpenDataConfig = {}) {
@@ -154,6 +169,9 @@ export class NorwayOpenData {
     this.parliament = new StortingetClient(http);
     this.roads = new VegvesenClient(http);
     this.electricity = new ElectricityClient(http);
+    this.ais = new AisClient(http);
+    this.marine = new MarineClient(http);
+    this.fisheries = new FisheriesClient(http);
     // Constructed last: cross-provider profiles depend on the clients above.
     this.profiles = new ProfileClient(this.companies, this.addresses, {
       weather: this.weather,
@@ -161,6 +179,9 @@ export class NorwayOpenData {
       roads: this.roads,
       statistics: this.statistics,
       health: this.health,
+      ais: this.ais,
+      fisheries: this.fisheries,
+      places: this.places,
       canAuthenticate: (provider: ProviderDescriptor) =>
         missingAuthFields(provider, availableAuthValues(resolved, provider.id as ProviderId))
           .length === 0,

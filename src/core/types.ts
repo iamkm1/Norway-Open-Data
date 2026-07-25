@@ -59,13 +59,26 @@ export type RateLimitConfig = {
 export type ProviderCredential = {
   /** Provider-issued key, sent only to that provider's hosts. */
   apiKey?: string;
+  /**
+   * OAuth2 client id, for a provider using the client-credentials grant. Sent
+   * only to that provider's own token endpoint.
+   */
+  clientId?: string;
+  /** OAuth2 client secret, sent only to that provider's own token endpoint. */
+  clientSecret?: string;
 };
 
 /**
  * Optional provider credentials, keyed by provider id.
  *
  * Anonymous methods never require these. Only providers whose descriptor
- * declares an `apiKey` requirement read this configuration.
+ * declares an `apiKey` requirement or a client-credentials grant read this
+ * configuration, and each provider reads only its own entry.
+ *
+ * A provider id is the credential scope. Two APIs run by the same organization
+ * that issue their own separate clients -- as BarentsWatch does for AIS and for
+ * its other services -- have separate descriptors and therefore need separate
+ * entries here; a secret registered for one is never sent to the other.
  */
 export type ProviderCredentials = Partial<Record<ProviderId, ProviderCredential>>;
 

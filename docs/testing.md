@@ -61,11 +61,36 @@ email. The NVE HydAPI cases are skipped unless `NVE_HYDAPI_KEY` is set; every ot
 anonymously or with caller identification only.
 
 Live checks are representative contract probes across the supported public-sector source adapters,
-the third-party electricity endpoint and both `profiles` compositions. Every public
+the third-party electricity endpoint and every `profiles` composition. Every public
 auto-paginating iterator has a one-item, one-page probe. Individual cases may call several related
 methods, but the suite does not claim exhaustive coverage of every method, parameter combination or
 upstream response variant. Detail lookups are chained from list calls rather than hard-coded IDs
 where practical. Keep requests bounded and do not add load or rate-limit bypasses.
+
+### Maritime live probes
+
+`tests/live/maritime.live.test.ts` covers BarentsWatch and Fiskeridirektoratet. Its environment
+variables are provider-scoped, because BarentsWatch issues two separate client kinds:
+
+| Variable                         | Enables                                   |
+| -------------------------------- | ----------------------------------------- |
+| `BARENTSWATCH_AIS_CLIENT_ID`     | `norway.ais` and `profiles.vessel` probes |
+| `BARENTSWATCH_AIS_CLIENT_SECRET` | `norway.ais` and `profiles.vessel` probes |
+| `BARENTSWATCH_CLIENT_ID`         | `norway.marine` probes                    |
+| `BARENTSWATCH_CLIENT_SECRET`     | `norway.marine` probes                    |
+
+Both Fiskeridirektoratet registers are open, so those probes always run when live tests are enabled
+and need no configuration.
+
+The AIS probes are deliberately conservative. The streaming probe takes exactly one message and
+stops on a 25-second abort deadline, so a quiet moment on the feed is not reported as a failure; a
+live feed only produces a message when a vessel actually transmits. The area-search probe uses a box
+well inside the provider's 500-square-kilometre limit. Probes that depend on a vessel being present
+return early rather than asserting when the snapshot is empty.
+
+One live probe checks a privacy guarantee rather than a contract: it reads a wide page of the vessel
+register and asserts that no natural person's name, postal code or town appears in the normalized
+output or in the raw payload.
 
 SSB Klass also has a separate bounded anonymous live suite in `tests/live/klass.live.test.ts`. It
 runs serially with conservative pacing and performs only a few read-only calls: classification
@@ -81,11 +106,18 @@ never runs on pull requests, so forks cannot trigger outbound calls or read repo
 
 Configure once in repository settings:
 
-| Name                                | Kind     | Purpose                                   |
-| ----------------------------------- | -------- | ----------------------------------------- |
-| `NORWAY_OPEN_DATA_APPLICATION_NAME` | Variable | Caller identity for Entur, MET and NVDB   |
-| `NORWAY_OPEN_DATA_CONTACT_EMAIL`    | Secret   | Monitored contact address required by MET |
-| `NVE_HYDAPI_KEY`                    | Secret   | Optional; enables the two HydAPI checks   |
+| Name                                | Kind     | Purpose                                             |
+| ----------------------------------- | -------- | --------------------------------------------------- |
+| `NORWAY_OPEN_DATA_APPLICATION_NAME` | Variable | Caller identity for Entur, MET and NVDB             |
+| `NORWAY_OPEN_DATA_CONTACT_EMAIL`    | Secret   | Monitored contact address required by MET           |
+| `NVE_HYDAPI_KEY`                    | Secret   | Optional; enables the two HydAPI checks             |
+| `BARENTSWATCH_AIS_CLIENT_ID`        | Secret   | Optional; enables the AIS and vessel-profile checks |
+| `BARENTSWATCH_AIS_CLIENT_SECRET`    | Secret   | Optional; enables the AIS and vessel-profile checks |
+| `BARENTSWATCH_CLIENT_ID`            | Secret   | Optional; enables the marine-forecast checks        |
+| `BARENTSWATCH_CLIENT_SECRET`        | Secret   | Optional; enables the marine-forecast checks        |
+
+A BarentsWatch client id contains the registering account's address, so it is stored as a secret
+rather than a variable even though it is not a bearer credential on its own.
 
 A failure can indicate an upstream contract change, temporary provider/network trouble or an SDK
 regression. Inspect the provider response and failing path before adjusting a schema.

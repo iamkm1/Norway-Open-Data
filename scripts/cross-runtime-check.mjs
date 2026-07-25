@@ -9,7 +9,14 @@
  * Requests go to a locally constructed fetch, so the check is deterministic and
  * makes no network calls. One live call is included only when RUN_LIVE=true.
  */
-import { NorwayOpenData, InputValidationError, NotFoundError, version } from "../dist/index.js";
+import {
+  NorwayOpenData,
+  InputValidationError,
+  NotFoundError,
+  ProviderError,
+  boundingBoxToPolygon,
+  version,
+} from "../dist/index.js";
 
 const runtime =
   typeof Deno !== "undefined"
@@ -120,6 +127,91 @@ try {
   }
 } catch (error) {
   bad("full-ICU Intl (Europe/Oslo + nb-NO)", error.message);
+}
+
+// The geographic helpers are pure, so this only has to hold on every runtime.
+try {
+  const ring = boundingBoxToPolygon({ south: 58.8, west: 4.5, north: 60, east: 6.5 })
+    .coordinates[0];
+  const closed = ring.length === 5 && ring[0][0] === ring[4][0] && ring[0][1] === ring[4][1];
+  if (closed && ring[0][0] === 4.5 && ring[0][1] === 58.8) {
+    ok("bounding box to GeoJSON ring", "closed, longitude-first");
+  } else {
+    bad("bounding box to GeoJSON ring", JSON.stringify(ring));
+  }
+} catch (error) {
+  bad("bounding box to GeoJSON ring", error.message);
+}
+
+// Streaming uses ReadableStream, TextDecoder and AbortSignal only. Running it here
+// proves the streaming path needs no Node-specific stream API.
+const streamingSdk = new NorwayOpenData({
+  retries: 0,
+  rateLimit: { enabled: false },
+  credentials: {
+    "barentswatch-ais": {
+      clientId: "runtime@example.test:check",
+      clientSecret: "runtime-check-secret",
+    },
+  },
+  fetch: async (input) => {
+    const url = String(input);
+    if (url.includes("connect/token")) {
+      return json({ access_token: "runtime-check-token", token_type: "Bearer", expires_in: 3600 });
+    }
+    const records = [
+      '{"type":"Position","messageType":1,"mmsi":257111020,"msgtime":"2026-07-24T10:00:00+00:00","latitude":59.4,"longitude":5.2}\n',
+      '{"type":"Position","messageType":1,"mmsi":257111021,"msgtime":"2026-07-24T10:00:05+00:00","latitude":59.5,',
+      '"longitude":5.3}\n',
+    ];
+    const encoder = new TextEncoder();
+    let index = 0;
+    return new Response(
+      new ReadableStream({
+        pull(controller) {
+          if (index >= records.length) {
+            controller.close();
+            return;
+          }
+          controller.enqueue(encoder.encode(records[index++]));
+        },
+      }),
+      { status: 200, headers: { "Content-Type": "application/x-ndjson" } },
+    );
+  },
+});
+
+try {
+  const seen = [];
+  for await (const position of streamingSdk.ais.streamPositions({
+    boundingBox: { south: 58.8, west: 4.5, north: 60, east: 6.5 },
+  })) {
+    seen.push(position.mmsi);
+  }
+  // The second record is split across two chunks, so this also proves reassembly.
+  if (seen.length === 2 && seen[0] === "257111020" && seen[1] === "257111021") {
+    ok("NDJSON streaming (ReadableStream + TextDecoder)", seen.join(", "));
+  } else {
+    bad("NDJSON streaming (ReadableStream + TextDecoder)", JSON.stringify(seen));
+  }
+} catch (error) {
+  bad("NDJSON streaming (ReadableStream + TextDecoder)", error.message);
+}
+
+try {
+  const controller = new AbortController();
+  const stream = streamingSdk.ais.streamPositions({
+    boundingBox: { south: 58.8, west: 4.5, north: 60, east: 6.5 },
+    signal: controller.signal,
+  });
+  for await (const position of stream) {
+    void position;
+    controller.abort();
+  }
+  bad("stream cancellation", "aborted stream did not reject");
+} catch (error) {
+  if (error instanceof ProviderError) ok("stream cancellation", "aborted stream rejected");
+  else bad("stream cancellation", `unexpected ${error.constructor.name}`);
 }
 
 const live =

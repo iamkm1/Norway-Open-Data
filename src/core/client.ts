@@ -9,9 +9,12 @@ import {
   RequestTimeoutError,
   ResponseValidationError,
 } from "./errors.js";
+import { parseNdjson } from "./ndjson.js";
+import { OAuth2TokenStore } from "./oauth.js";
 import {
   type AvailableAuthValues,
   missingAuthFields,
+  missingAuthMessage,
   type ProviderAuthField,
   type ProviderAuthValues,
   type ProviderDescriptor,
@@ -100,6 +103,34 @@ export type HttpRequest<T> = {
   transform?: (data: T) => T;
 };
 
+/**
+ * A long-lived newline-delimited JSON response.
+ *
+ * Deliberately narrower than {@link HttpRequest}: a stream is never cached, never
+ * retried and never has a whole-response timeout, so those options are absent
+ * rather than silently ignored.
+ *
+ * @internal
+ */
+export type StreamRequest<T> = {
+  provider: ProviderDescriptor;
+  url: string;
+  method?: HttpMethod;
+  query?: QueryParameters;
+  body?: unknown;
+  headers?: HeadersInit;
+  /** Validates every record in the stream independently. */
+  schema: z.ZodType<T>;
+  /** Only `signal` applies; caching and raw payloads have no meaning here. */
+  options?: Pick<RequestOptions, "signal">;
+  authenticate?: boolean;
+  rateLimitKey?: string;
+  /** Describes the stream in errors, e.g. `AIS position stream`. */
+  description?: string;
+  /** Overrides the maximum characters buffered for one record. */
+  maxRecordSize?: number;
+};
+
 function addQuery(url: string, query?: QueryParameters): string {
   if (query === undefined) return url;
   const parsed = new URL(url);
@@ -170,12 +201,49 @@ export function availableAuthValues(
   config: Pick<ResolvedConfig, "applicationName" | "contactEmail" | "credentials">,
   providerId: ProviderId,
 ): AvailableAuthValues {
-  const apiKey = config.credentials[providerId]?.apiKey;
+  const credential = config.credentials[providerId];
   return {
     ...(config.applicationName === undefined ? {} : { applicationName: config.applicationName }),
     ...(config.contactEmail === undefined ? {} : { contactEmail: config.contactEmail }),
-    ...(apiKey === undefined ? {} : { apiKey }),
+    ...(credential?.apiKey === undefined ? {} : { apiKey: credential.apiKey }),
+    ...(credential?.clientId === undefined ? {} : { clientId: credential.clientId }),
+    ...(credential?.clientSecret === undefined ? {} : { clientSecret: credential.clientSecret }),
   };
+}
+
+/**
+ * Maps a provider's failed HTTP status onto an SDK error.
+ *
+ * Shared by the request and stream paths so a 404 from a streaming endpoint is
+ * the same `NotFoundError` a caller already handles for everything else.
+ */
+function providerResponseError(details: {
+  provider: string;
+  status: number;
+  retryAfterMs?: number;
+  resourceDescription?: string;
+  notFoundHint?: string;
+}): Error {
+  const { provider, status, retryAfterMs } = details;
+  if (status === 404) {
+    const subject = `${provider} ${details.resourceDescription ?? "resource"}`;
+    const hint = details.notFoundHint === undefined ? "" : ` ${details.notFoundHint}`;
+    return new NotFoundError(`${subject} was not found.${hint}`, { provider, statusCode: 404 });
+  }
+  if (status === 429) {
+    return new RateLimitError(`${provider} rate limit was exceeded.`, {
+      provider,
+      statusCode: 429,
+      retryAfter: retryAfterSeconds(retryAfterMs),
+    });
+  }
+  return new ProviderError(`${provider} returned HTTP ${status}.`, {
+    provider,
+    statusCode: status,
+    // Kept so a caller that stopped because the provider asked for a long pause
+    // can still see how long it asked for.
+    ...(retryAfterMs === undefined ? {} : { retryAfter: retryAfterSeconds(retryAfterMs) }),
+  });
 }
 
 function cancellationError(
@@ -202,16 +270,28 @@ export class HttpClient {
   readonly #config: ResolvedConfig;
   readonly #cache: CacheStore;
   readonly #limiters = new Map<string, RateLimiter>();
+  /**
+   * Bearer tokens for providers using the client-credentials grant.
+   *
+   * Scoped to this client instance and held only in memory, so tokens are never
+   * written to the response cache and never outlive the process.
+   */
+  readonly #tokens: OAuth2TokenStore;
 
   constructor(config: ResolvedConfig, cache?: CacheStore) {
     this.#config = config;
     this.#cache = cache ?? config.cache.store ?? new MemoryCache(config.cache.maxEntries);
+    this.#tokens = new OAuth2TokenStore({
+      fetch: config.fetch,
+      timeoutMs: config.timeoutMs,
+    });
   }
 
   /** Executes a validated JSON GET or POST request. */
   async request<T>(request: HttpRequest<T>): Promise<HttpResult<T>> {
     const providerId = request.provider.id;
-    const authHeaders = request.authenticate === true ? this.#authHeaders(request.provider) : {};
+    const authHeaders =
+      request.authenticate === true ? this.#identificationHeaders(request.provider) : {};
     const headers = new Headers(request.headers);
     for (const [name, value] of Object.entries(authHeaders)) headers.set(name, value);
 
@@ -283,9 +363,161 @@ export class HttpClient {
     });
   }
 
+  /**
+   * Opens a newline-delimited JSON stream and yields validated records.
+   *
+   * The returned generator performs no work until it is iterated, so creating one
+   * sends no request. The connection is established with the configured timeout,
+   * which is then cleared: a live feed is expected to stay open indefinitely, and
+   * applying a response timeout to it would sever a healthy stream.
+   *
+   * A stream is never retried and never reconnected. When the provider closes it,
+   * iteration ends; whether reopening is safe depends on whether the caller can
+   * tolerate the gap, which only the caller knows.
+   */
+  async *stream<T>(request: StreamRequest<T>): AsyncGenerator<T, void, undefined> {
+    const providerId = request.provider.id;
+    const callerSignal = request.options?.signal;
+    const headers = new Headers(request.headers);
+    for (const [name, value] of Object.entries(
+      request.authenticate === true ? this.#identificationHeaders(request.provider) : {},
+    )) {
+      headers.set(name, value);
+    }
+    if (!headers.has("Accept")) headers.set("Accept", "application/json");
+    const secrets = this.#sensitiveValues(headers);
+    if (isSignalAborted(callerSignal)) {
+      throw cancellationError(providerId, callerSignal?.reason, secrets);
+    }
+
+    const limiter = this.#limiter(request.provider, request.rateLimitKey);
+    if (limiter !== undefined) {
+      try {
+        await limiter.acquire(callerSignal);
+      } catch (error) {
+        if (isSignalAborted(callerSignal)) throw cancellationError(providerId, error, secrets);
+        throw error;
+      }
+    }
+
+    if (request.authenticate === true) {
+      const token = await this.#bearerToken(request.provider, callerSignal);
+      if (token !== undefined) {
+        headers.set("Authorization", `Bearer ${token}`);
+        secrets.push(token);
+      }
+    }
+
+    const method = request.method ?? "GET";
+    const url = addQuery(request.url, request.query);
+    const controller = new AbortController();
+    const onCallerAbort = (): void => controller.abort(callerSignal?.reason);
+    callerSignal?.addEventListener("abort", onCallerAbort, { once: true });
+    if (isSignalAborted(callerSignal)) onCallerAbort();
+    let connectTimedOut = false;
+    const connectTimeout = setTimeout(() => {
+      connectTimedOut = true;
+      controller.abort();
+    }, this.#config.timeoutMs);
+
+    let response: Response;
+    try {
+      const init: RequestInit = { method, headers, signal: controller.signal };
+      if (request.body !== undefined) {
+        headers.set("Content-Type", "application/json");
+        init.body = JSON.stringify(request.body);
+      }
+      response = await this.#fetchWithSafeRedirects(providerId, url, init);
+    } catch (error) {
+      if (isSignalAborted(callerSignal)) throw cancellationError(providerId, error, secrets);
+      if (connectTimedOut) {
+        throw new RequestTimeoutError(
+          `${providerId} stream did not respond within ${this.#config.timeoutMs}ms.`,
+          { provider: providerId, cause: sanitizedCause(error, secrets) },
+        );
+      }
+      if (error instanceof ProviderError) throw error;
+      throw new ProviderError(`${providerId} stream failed to open.`, {
+        provider: providerId,
+        cause: sanitizedCause(error, secrets),
+      });
+    } finally {
+      // Cleared as soon as headers arrive, so the timeout bounds connecting
+      // rather than the lifetime of the stream.
+      clearTimeout(connectTimeout);
+    }
+
+    try {
+      if (!response.ok) {
+        // A rejected token may simply have been revoked upstream; drop it so the
+        // next call acquires a fresh one instead of replaying a dead credential.
+        if (response.status === 401) this.#tokens.forget(providerId);
+        throw providerResponseError({
+          provider: providerId,
+          status: response.status,
+          retryAfterMs: parseRetryAfter(response.headers.get("Retry-After")),
+          resourceDescription: request.description ?? "stream",
+        });
+      }
+      const body = response.body;
+      if (body === null) {
+        throw new ProviderError(`${providerId} stream response had no body.`, {
+          provider: providerId,
+          statusCode: response.status,
+        });
+      }
+      yield* parseNdjson(body, {
+        schema: request.schema,
+        provider: providerId,
+        ...(callerSignal === undefined ? {} : { signal: callerSignal }),
+        ...(request.maxRecordSize === undefined ? {} : { maxRecordSize: request.maxRecordSize }),
+        ...(request.description === undefined ? {} : { description: request.description }),
+      });
+    } finally {
+      callerSignal?.removeEventListener("abort", onCallerAbort);
+    }
+  }
+
   /** Removes every response this client may have cached. */
   async clearCache(): Promise<void> {
     await this.#cache.clear();
+  }
+
+  /**
+   * Fails before any network access when a provider's declared configuration is
+   * missing, so the caller sees the provider's own instructions rather than an
+   * HTTP 401.
+   */
+  #requireConfigured(provider: ProviderDescriptor): AvailableAuthValues {
+    const available = availableAuthValues(this.#config, provider.id as ProviderId);
+    if (missingAuthFields(provider, available).length > 0) {
+      throw new ConfigurationError(missingAuthMessage(provider), { provider: provider.id });
+    }
+    return available;
+  }
+
+  /**
+   * Acquires this provider's bearer token, or returns undefined for a provider
+   * that does not use the client-credentials grant.
+   */
+  async #bearerToken(
+    provider: ProviderDescriptor,
+    signal: AbortSignal | undefined,
+  ): Promise<string | undefined> {
+    const oauth = provider.oauth;
+    if (oauth === undefined) return undefined;
+    const available = this.#requireConfigured(provider);
+    // Both were just proven present and non-empty by #requireConfigured.
+    return this.#tokens.token(
+      {
+        provider: provider.id,
+        tokenUrl: oauth.tokenUrl,
+        scope: oauth.scope,
+        clientId: available.clientId ?? "",
+        clientSecret: available.clientSecret ?? "",
+      },
+      signal,
+    );
   }
 
   /**
@@ -294,13 +526,10 @@ export class HttpClient {
    * Throws before any network access when a declared requirement is missing, so
    * the caller sees the provider's own instructions rather than an HTTP 401.
    */
-  #authHeaders(provider: ProviderDescriptor): Record<string, string> {
+  #identificationHeaders(provider: ProviderDescriptor): Record<string, string> {
+    const available = this.#requireConfigured(provider);
     const auth = provider.auth;
     if (auth === undefined) return {};
-    const available = availableAuthValues(this.#config, provider.id as ProviderId);
-    if (missingAuthFields(provider, available).length > 0) {
-      throw new ConfigurationError(auth.missing, { provider: provider.id });
-    }
     // Supply exactly the fields the provider declared, so a descriptor cannot
     // read a value it never required. Each was just proven present and non-empty.
     const declared: AvailableAuthValues = {};
@@ -373,6 +602,15 @@ export class HttpClient {
       try {
         const headers = new Headers(request.headers);
         if (!headers.has("Accept")) headers.set("Accept", "application/json");
+        // Resolved per attempt, so a retry after a refresh carries the new token
+        // rather than replaying the one that had expired.
+        if (request.authenticate === true) {
+          const token = await this.#bearerToken(request.provider, callerSignal);
+          if (token !== undefined) {
+            headers.set("Authorization", `Bearer ${token}`);
+            if (!secrets.includes(token)) secrets.push(token);
+          }
+        }
         const init: RequestInit = {
           method: request.method,
           headers,
@@ -386,6 +624,10 @@ export class HttpClient {
         const response = await this.#fetchWithSafeRedirects(providerId, request.url, init);
         if (!response.ok) {
           const retryAfterMs = parseRetryAfter(response.headers.get("Retry-After"));
+          // A rejected token may have been revoked upstream; drop it so a retry
+          // or a later call acquires a fresh one rather than replaying a dead
+          // credential until the process restarts.
+          if (response.status === 401) this.#tokens.forget(providerId);
           // A stated delay is obeyed exactly. Only when the provider gave none
           // does the SDK's own capped backoff apply, and a delay longer than the
           // SDK will wait out stops the retry rather than resuming early.
@@ -401,33 +643,29 @@ export class HttpClient {
             await delay(waitMs, callerSignal);
             continue;
           }
-          if (response.status === 404) {
-            const subject = `${providerId} ${request.resourceDescription ?? "resource"}`;
-            const hint = request.notFoundHint === undefined ? "" : ` ${request.notFoundHint}`;
-            throw new NotFoundError(`${subject} was not found.${hint}`, {
-              provider: providerId,
-              statusCode: 404,
-            });
-          }
-          if (response.status === 429) {
-            throw new RateLimitError(`${providerId} rate limit was exceeded.`, {
-              provider: providerId,
-              statusCode: 429,
-              retryAfter: retryAfterSeconds(retryAfterMs),
-            });
-          }
-          throw new ProviderError(`${providerId} returned HTTP ${response.status}.`, {
+          throw providerResponseError({
             provider: providerId,
-            statusCode: response.status,
-            // Kept so a caller that stopped because the provider asked for a
-            // long pause can still see how long it asked for.
-            ...(retryAfterMs === undefined ? {} : { retryAfter: retryAfterSeconds(retryAfterMs) }),
+            status: response.status,
+            ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
+            ...(request.resourceDescription === undefined
+              ? {}
+              : { resourceDescription: request.resourceDescription }),
+            ...(request.notFoundHint === undefined ? {} : { notFoundHint: request.notFoundHint }),
           });
         }
 
         let payload: unknown;
         try {
-          payload = request.responseType === "text" ? await response.text() : await response.json();
+          // HTTP 204 carries no body, so parsing one would fail. It is handed to
+          // the schema as `null`, letting a provider that answers "no data here"
+          // with an empty response be modelled as a nullable result instead of
+          // being reported as an unreadable payload.
+          payload =
+            response.status === 204
+              ? null
+              : request.responseType === "text"
+                ? await response.text()
+                : await response.json();
         } catch (cause) {
           if (isSignalAborted(callerSignal) || timeoutExpired) throw cause;
           throw new ResponseValidationError(
@@ -542,6 +780,11 @@ export class HttpClient {
     const values: (string | undefined)[] = [this.#config.contactEmail];
     for (const credential of Object.values(this.#config.credentials)) {
       values.push(credential?.apiKey);
+      values.push(credential?.clientSecret);
+      // A client id is not a bearer credential on its own, but BarentsWatch
+      // formats it as `account@example.com:clientname`, so it carries the
+      // caller's own address and is redacted for the same reason contactEmail is.
+      values.push(credential?.clientId);
     }
     for (const name of SECRET_HEADER_NAMES) {
       const value = headers.get(name);

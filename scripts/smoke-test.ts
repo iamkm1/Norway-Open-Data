@@ -183,6 +183,34 @@ await check("NVE energy.getReservoirStatistics", async () => {
   )}`;
 });
 
+await check("Fiskeridirektoratet fisheries.searchVessels", async () => {
+  const response = await norway.fisheries.searchVessels({ municipalityCode: "1106", pageSize: 3 });
+  const first = response.data.items[0];
+  requireResult(first !== undefined, "The vessel register returned no vessels.");
+  requireResult(
+    response.data.items.every((vessel) => vessel.municipalityCode === "1106"),
+    "The vessel register ignored the municipality filter.",
+  );
+  // The privacy guarantee is part of the contract, so the smoke test asserts it.
+  requireResult(
+    response.data.items
+      .flatMap((vessel) => vessel.owners ?? [])
+      .every((owner) => owner.entityType === "company" || Object.keys(owner).length === 1),
+    "A private owner's details reached SDK output.",
+  );
+  return `${String(response.data.items.length)} vessel(s); ${first.name ?? "unnamed"} (${first.registrationMark ?? "no mark"})`;
+});
+
+await check("Fiskeridirektoratet fisheries.searchAquacultureSites", async () => {
+  const response = await norway.fisheries.searchAquacultureSites({
+    municipalityCode: "1149",
+    limit: 3,
+  });
+  const first = response.data.items[0];
+  requireResult(first !== undefined, "The aquaculture register returned no sites.");
+  return `${String(response.data.items.length)} site(s); ${first.siteNumber} ${first.name ?? "unnamed"}`;
+});
+
 await check("Hva koster strømmen electricity.getPrices", async () => {
   const response = await norway.electricity.getPrices({ area: "NO1" });
   const first = response.data[0];

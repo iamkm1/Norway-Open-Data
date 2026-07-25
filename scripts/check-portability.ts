@@ -68,7 +68,7 @@ console.log(`  ok: full-ICU Intl available (Europe/Oslo -> ${osloDate})`);
 
 const probe = `
 const sdkUrl = ${JSON.stringify(pathToFileURL(esmPath).href)};
-const { NorwayOpenData, NotFoundError, InputValidationError } = await import(sdkUrl);
+const { NorwayOpenData, NotFoundError, InputValidationError, boundingBoxToPolygon } = await import(sdkUrl);
 
 // A minimal object matching only the parts of the Response contract the SDK
 // uses. Running against this rather than Node's Response proves the SDK relies
@@ -147,6 +147,64 @@ try {
   abortOk = true;
 }
 results.push(["cancellation", abortOk]);
+
+// Streaming needs one more part of the Response contract than the object above
+// models: a \`body\` that is a web ReadableStream. Everything else it uses --
+// TextDecoder, AbortSignal, async generators -- is language- or platform-standard,
+// so exercising it here proves the streaming path needs no Node stream module.
+const ndjson = (lines) => {
+  const encoder = new TextEncoder();
+  let index = 0;
+  return {
+    ok: true,
+    status: 200,
+    headers: { get: () => null },
+    body: new ReadableStream({
+      pull(controller) {
+        if (index >= lines.length) {
+          controller.close();
+          return;
+        }
+        controller.enqueue(encoder.encode(lines[index++]));
+      },
+    }),
+  };
+};
+
+const streaming = new NorwayOpenData({
+  retries: 0,
+  rateLimit: { enabled: false },
+  credentials: {
+    "barentswatch-ais": {
+      clientId: "portability@example.test:probe",
+      clientSecret: "portability-probe-secret",
+    },
+  },
+  fetch: async (input) => {
+    const url = String(input);
+    if (url.includes("connect/token")) {
+      return json({ access_token: "portability-token", token_type: "Bearer", expires_in: 3600 });
+    }
+    return ndjson([
+      '{"type":"Position","messageType":1,"mmsi":257111020,"msgtime":"2026-07-24T10:00:00+00:00","latitude":59.4,',
+      '"longitude":5.2}\\n',
+      '{"type":"Position","messageType":1,"mmsi":257111021,"msgtime":"2026-07-24T10:00:05+00:00"}\\n',
+    ]);
+  },
+});
+
+const streamed = [];
+for await (const position of streaming.ais.streamPositions({
+  boundingBox: { south: 58.8, west: 4.5, north: 60, east: 6.5 },
+})) {
+  streamed.push(position.mmsi);
+}
+// Two records, the first split across two chunks.
+results.push(["streaming", streamed.length === 2 && streamed[0] === "257111020"]);
+
+// Pure geographic helpers, which must behave identically everywhere.
+const ring = boundingBoxToPolygon({ south: 58.8, west: 4.5, north: 60, east: 6.5 }).coordinates[0];
+results.push(["geo", ring.length === 5 && ring[0][0] === 4.5 && ring[0][1] === 58.8]);
 
 const failed = results.filter(([, ok]) => !ok).map(([name]) => name);
 if (failed.length > 0) {

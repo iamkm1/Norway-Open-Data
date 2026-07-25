@@ -17,6 +17,8 @@ Access labels in this document have precise meanings:
 - **Identification required:** no secret is required, but the provider requires a meaningful
   application identifier in a request header.
 - **Free registration required:** a self-service credential is required for the named methods.
+- **OAuth2 client credentials required:** a self-registered client id and secret are required, and
+  the SDK exchanges them for a short-lived bearer token at the provider's own token endpoint.
 - **Restricted access not supported:** endpoints or fields that require roles, delegated authority,
   private agreements, or access to sensitive/personal data are outside this SDK.
 
@@ -31,21 +33,30 @@ cited from the sections below; `sdk-courtesy` numbers are conservative budgets t
 providers that publish none, so that ordinary use stays comfortable while a runaway loop cannot
 resemble abuse.
 
-| Provider integration      | Budget                             | Basis               |
-| ------------------------- | ---------------------------------- | ------------------- |
-| Brønnøysundregistrene     | 60/minute                          | sdk-courtesy        |
-| Statistics Norway — PxWeb | 30/minute                          | provider-documented |
-| Statistics Norway — Klass | 30/minute                          | sdk-courtesy        |
-| FHI                       | 30/minute                          | sdk-courtesy        |
-| Kartverket                | 60/minute                          | sdk-courtesy        |
-| Entur                     | 60/minute                          | sdk-courtesy        |
-| MET Norway                | 60/minute                          | sdk-courtesy        |
-| Data.norge                | 10/minute search; 5/second lookups | provider-documented |
-| Norges Bank               | 60/minute                          | sdk-courtesy        |
-| Stortinget                | 100/minute                         | provider-documented |
-| Statens vegvesen          | 60/minute                          | sdk-courtesy        |
-| NVE                       | 30/minute                          | sdk-courtesy        |
-| Hva koster strømmen?      | 30/minute                          | sdk-courtesy        |
+| Provider integration              | Budget                             | Basis               |
+| --------------------------------- | ---------------------------------- | ------------------- |
+| Brønnøysundregistrene             | 60/minute                          | sdk-courtesy        |
+| Statistics Norway — PxWeb         | 30/minute                          | provider-documented |
+| Statistics Norway — Klass         | 30/minute                          | sdk-courtesy        |
+| FHI                               | 30/minute                          | sdk-courtesy        |
+| Kartverket                        | 60/minute                          | sdk-courtesy        |
+| Entur                             | 60/minute                          | sdk-courtesy        |
+| MET Norway                        | 60/minute                          | sdk-courtesy        |
+| Data.norge                        | 10/minute search; 5/second lookups | provider-documented |
+| Norges Bank                       | 60/minute                          | sdk-courtesy        |
+| Stortinget                        | 100/minute                         | provider-documented |
+| Statens vegvesen                  | 60/minute                          | sdk-courtesy        |
+| NVE                               | 30/minute                          | sdk-courtesy        |
+| BarentsWatch AIS                  | 60/minute; 5 stream opens/minute   | sdk-courtesy        |
+| BarentsWatch platform             | 60/minute                          | sdk-courtesy        |
+| Fiskeridirektoratet — vessels     | 60/minute                          | sdk-courtesy        |
+| Fiskeridirektoratet — aquaculture | 60/minute                          | sdk-courtesy        |
+| Hva koster strømmen?              | 30/minute                          | sdk-courtesy        |
+
+BarentsWatch AIS declares a second, much tighter budget for opening streams. A streaming connection
+is meant to be opened once and held for as long as the caller iterates it, so five opens per minute
+leaves normal use untouched while bounding an accidental reconnect loop — the failure mode most
+likely to resemble an attack. Ordinary requests use the 60-per-minute budget.
 
 Statistics Norway is one public-sector organization with two independently governed API
 integrations. PxWeb and Klass therefore have separate SDK request budgets and cache policies. The
@@ -446,6 +457,155 @@ versions, codes, and mappings used to describe data.
 - **Restricted access not supported:** The SDK has no Regobs write/login flow and exposes no
   protected observations, user submissions, or personal data. The free HydAPI key is the only NVE
   credential accepted.
+
+## BarentsWatch — AIS
+
+- **Supported methods:** `ais.getTrackLast24Hours()`, `ais.getTrack()`, `ais.getMmsiInArea()`,
+  `ais.searchVessels()`, `ais.getLatestPositions()`, `ais.getVesselSnapshots()`,
+  `ais.getVesselSnapshot()`, `ais.getCoverageArea()`, `ais.streamPositions()`,
+  `ais.streamMessages()`, and the AIS components of `profiles.vessel()`
+- **Classification:** Official Norwegian public-sector service. BarentsWatch is a national
+  programme; the AIS data itself is supplied by the Norwegian Coastal Administration (Kystverket).
+- **Provider homepage:** https://www.barentswatch.no/
+- **API documentation:** https://developer.barentswatch.no/docs/AIS/live-ais-api/
+- **OpenAPI documents:** https://live.ais.barentswatch.no/live/openapi/ais/openapi.json and
+  https://historic.ais.barentswatch.no/open/openapi/ais/openapi.json
+- **Endpoints:** `https://live.ais.barentswatch.no/live` for current positions and the streaming
+  feeds; `https://historic.ais.barentswatch.no/open` for tracks, area search and name search.
+- **Access:** OAuth2 client credentials required. Register an **AIS-client** at
+  https://www.barentswatch.no/minside/ and configure it as `credentials["barentswatch-ais"]`.
+  Tokens are requested from `https://id.barentswatch.no/connect/token` with
+  `grant_type=client_credentials` and `scope=ais`. BarentsWatch documents two distinct client kinds
+  — AIS-client and API-client — and a secret registered for one is not accepted by the other, which
+  is why this SDK declares the AIS service and the rest of the platform as separate providers with
+  separate credentials.
+- **Licence:** Norwegian Licence for Open Government Data (NLOD), as stated in the API's own OpenAPI
+  document.
+- **Attribution:** Credit both BarentsWatch and the Norwegian Coastal Administration (Kystverket) as
+  the data source.
+- **Known limits:** Coverage is the Norwegian economic zone plus the fisheries protection zone around
+  Svalbard and the protection zone around Jan Mayen. Fishing vessels under 15 m and leisure or
+  sailing vessels under 45 m are excluded from the open feed. No data older than 14 days is retained;
+  the provider directs requests for older data to https://kystdatahuset.no/. Consequently an empty
+  track, an absent snapshot, or a `no-recent-data` vessel profile means only that BarentsWatch had
+  nothing to publish — it is never evidence that an MMSI is unassigned or that a vessel does not
+  exist. A transponder may also be switched off, and reception is not uniform across the area.
+  `ais.getCoverageArea()` returns the published area so a caller can distinguish absence of data from
+  absence of coverage. `ais.getMmsiInArea()` is capped upstream at a seven-day window and 500 square
+  kilometres; the SDK rejects an oversized window before requesting, while an oversized area is
+  refused upstream because the SDK cannot reproduce the provider's own area measure reliably enough to
+  refuse a request the provider would have accepted. Streams are not retried, not cached and not
+  reconnected automatically in this SDK version, and the configured timeout bounds establishing the
+  connection rather than the lifetime of a healthy feed. The provider states that further AIS message
+  types may be added, so `ais.streamMessages()` surfaces an unrecognized type as `kind: "unknown"`
+  with its common fields rather than failing a running stream. Message labels are matched
+  case-insensitively, because the live service sends `Staticdata` where the documentation writes
+  `StaticData`; the numeric AIS message type is used as a second fallback. The `stream` field
+  carries the provider's own receiver-network vocabulary (`terra` and `offshore` were observed
+  live) and is passed through verbatim rather than normalized. Every field each documented message
+  shape declares is validated and surfaced, including all 36 fields of the met/hydro binary
+  broadcast, because a streamed message has no accompanying raw payload from which a dropped field
+  could be recovered. BarentsWatch publishes no units for the met/hydro payload and its OpenAPI
+  carries no field descriptions, so those values are passed through exactly as received with no
+  conversion and no unit asserted by this SDK; the payload is the IMO met/hydro binary message
+  (SN.1/Circ.289). Its enumerated fields (`airPressureTendency`, `waterLevelTrend`, `seaState`,
+  `precipitationType`, `ice`) are kept as the provider's own labels rather than pinned to a fixed
+  set, so a newly published member arrives intact instead of failing the stream.
+- **Restricted access not supported:** The SDK exposes no protected AIS products, no vessel-tracking
+  services beyond the documented open feed, and no server-sent-events endpoints.
+
+## BarentsWatch — marine forecasts
+
+- **Supported methods:** `marine.getWaveForecast()`, `marine.getWaveForecastSeries()`,
+  `marine.getSeaCurrent()`
+- **Classification:** Official Norwegian public-sector service.
+- **Provider homepage:** https://www.barentswatch.no/
+- **API documentation:** https://developer.barentswatch.no/docs/appreg/
+- **OpenAPI document:** https://www.barentswatch.no/bwapi/openapi/waveforecast/openapi.json
+- **Endpoint:** `https://www.barentswatch.no/bwapi`
+- **Access:** OAuth2 client credentials required. Register an **API-client** at
+  https://www.barentswatch.no/minside/ and configure it as `credentials.barentswatch`. Tokens use
+  `scope=api`. An AIS-client secret is not accepted here; see the AIS section above.
+- **Licence:** NLOD, as stated in the API's own OpenAPI document.
+- **Attribution:** Credit BarentsWatch, and the forecast's upstream model provider where the response
+  identifies one.
+- **Known limits:** Forecasts come from numerical models covering the Norwegian coast, not the whole
+  ocean. A coordinate outside every model area is answered with HTTP 204, which the SDK surfaces as
+  `undefined` rather than an error so that "no model covers this point" stays distinguishable from a
+  provider failure. The forecast series expresses the same thing in two different ways, both
+  confirmed against the live service: HTTP 204 with no body, and HTTP 200 with one entry per model
+  time whose every wave value is null. `marine.getWaveForecastSeries()` returns an empty array for
+  both, dropping entries that carry no measurement at all, so an uncovered coordinate does not
+  arrive looking like a covered one with dozens of readings; `{ includeRaw: true }` still exposes
+  the provider's untouched payload. Unlike every wave field, a sea current's `speed` and
+  `direction` are declared non-nullable upstream and are therefore always present on a returned
+  forecast. The returned coordinate is the centre of the model grid cell that answered and may
+  be some distance from the requested point. Models are rerun on a schedule measured in hours, so
+  polling faster than the SDK's 30-minute cache lifetime gains nothing. Fields the provider documents
+  as debugging-only (`source`, `fileSource`) are validated but not surfaced. Isolines, fairway
+  forecasts, custom routes, Moskstraumen current products and the WMS layers are not wrapped.
+- **Restricted access not supported:** No fairway upload, route-file parsing or write operations.
+
+## Fiskeridirektoratet (Norwegian Directorate of Fisheries)
+
+Two independently governed registers, declared as separate SDK providers because their base URLs,
+paging models and contact teams differ, and exposed through one `fisheries` namespace because a
+caller thinks of them as one agency. Their records stay separate types; a fishing vessel and an
+aquaculture site are not forced into a shared model.
+
+### Vessel register (Fartøyregisteret / Merkeregisteret)
+
+- **Supported methods:** `fisheries.searchVessels()`, `fisheries.searchVesselsAll()`,
+  `fisheries.getVessel()`, and the register component of `profiles.vessel()`
+- **Classification:** Official Norwegian public-sector service.
+- **Provider homepage:** https://www.fiskeridir.no/english
+- **OpenAPI document:** https://api.fiskeridir.no/vessel-api/api/openapi.json
+- **Endpoint:** `https://api.fiskeridir.no/vessel-api/api/v1/vessels`
+- **Access:** Open anonymous. The register's own OpenAPI document describes it as
+  "et åpent API for uthenting av fartøy- og eieropplysninger".
+- **Licence:** Fiskeridirektoratet's data licence, published under NLOD terms
+  (https://www.fiskeridir.no/Tall-og-analyse/Lisens-for-bruk-av-Fiskeridirektoratets-data).
+- **Attribution:** Credit the Norwegian Directorate of Fisheries (Fiskeridirektoratet).
+- **Personal data:** The register publishes an owner's name, postal code and town for private
+  individuals as well as companies. This SDK surfaces those fields only for `company` owners. A
+  private owner is represented as `{ entityType: "person" }`, which preserves the ownership structure
+  and owner count without redistributing a named natural person. The suppression happens during
+  response validation, so it applies equally to `{ includeRaw: true }` and to cached values, and an
+  owner entity type the SDK does not recognize is withheld by default. Callers who genuinely need the
+  natural-person fields should read them from Fiskeridirektoratet directly under that agency's own
+  terms.
+- **Known limits:** The register lists active vessels only. `registrationMark` and `radioCallSign`
+  are exact-match filters upstream: the register accepts a mark as `R 0062H` or `R-62-H` but not
+  `R0062H`, so the SDK rewrites a compact mark into an accepted form and passes anything already
+  containing a space or hyphen through untouched. The register reports its total count only in an
+  `x-totalcount` response header, which this SDK does not read, so `pagination.hasMore` is derived
+  from whether a page came back full and iteration stops at the first short page. `per_page` is
+  capped upstream at 200.
+- **Restricted access not supported:** No quota, catch-note, landing or licence-holder data requiring
+  role-based access.
+
+### Public aquaculture register (Akvakulturregisteret)
+
+- **Supported methods:** `fisheries.searchAquacultureSites()`,
+  `fisheries.searchAquacultureSitesAll()`, `fisheries.getAquacultureSite()`
+- **Classification:** Official Norwegian public-sector service.
+- **Provider homepage:** https://www.fiskeridir.no/english
+- **API documentation:** https://api.fiskeridir.no/pub-aqua/api/swagger-ui/index.html
+- **OpenAPI document:** https://api.fiskeridir.no/pub-aqua/api/api-docs
+- **Endpoint:** `https://api.fiskeridir.no/pub-aqua/api/v1/sites`
+- **Access:** Open anonymous.
+- **Licence:** Fiskeridirektoratet's data licence, published under NLOD terms.
+- **Attribution:** Credit the Norwegian Directorate of Fisheries (Fiskeridirektoratet).
+- **Known limits:** The register pages by an inclusive offset range (`range=0-9`) and reports no
+  total, so `pagination.hasMore` is derived from whether a page came back full. `capacity` is
+  expressed in the unit named by `capacityUnitType` — `TN` for tonnes of maximum allowed biomass,
+  other codes for other licence kinds — and is therefore not comparable across sites without checking
+  the unit. `productionAreaStatus` is the traffic-light status published in Norwegian (`GRØNN`,
+  `GUL`, `RØD`). The register documents `speciesType` and `speciesTypeValue` as retired and always
+  null, so the SDK reads neither and uses `speciesTypes` instead. Licence, decision, lien, transfer,
+  capacity-history, border-geometry, area and bulk-dump endpoints are not wrapped in this version.
+- **Restricted access not supported:** No application submission, no aquaculture-application portal
+  endpoints requiring registration, and no bulk XLSX or legacy CSV dumps.
 
 ## Hva koster strømmen? (third-party derived API)
 

@@ -9,15 +9,17 @@ One typed TypeScript interface for Norwegian public data.
 
 Norway Open Data SDK provides a consistent, runtime-validated client for official Norwegian APIs
 from Brønnøysundregistrene, SSB PxWeb and SSB Klass, FHI, Kartverket, Entur, MET Norway, Data.norge, Norges Bank,
-Stortinget, Statens vegvesen and NVE. It also wraps the documented third-party public electricity
-API from Hva koster strømmen?.
+Stortinget, Statens vegvesen, NVE, BarentsWatch and Fiskeridirektoratet. It also wraps the
+documented third-party public electricity API from Hva koster strømmen?.
 
-- 11 public-sector organizations through 12 official API integrations, plus 1 third-party derived API
-- 16 service namespaces
-- 74 supported namespace methods
+- 13 public-sector organizations through 16 official API integrations, plus 1 third-party derived API
+- 19 service namespaces
+- 95 supported namespace methods
 - Runtime-validated responses
 - Cross-provider profiles that answer one question from several agencies
 - Auto-paginating async iterators for list endpoints
+- Live AIS position streaming as a plain `AsyncIterable`, with cancellation
+- Reusable OAuth2 client-credentials support with single-flight token refresh
 - ESM, CommonJS and TypeScript support
 - Runs on Node.js, Deno, Bun and edge runtimes from one web-standard build
 - Deterministic offline tests plus representative opt-in live contract probes
@@ -32,7 +34,7 @@ Runs on Node.js 22+, Deno, Bun and edge runtimes such as Cloudflare Workers. Typ
 declarations are included. See [Runtime support](#runtime-support) for what a host runtime must
 provide.
 
-Version `0.6.0` is the current release. Install it with:
+Version `0.7.0` is the current release. Install it with:
 
 ```bash
 npm install norway-open-data-sdk
@@ -52,7 +54,7 @@ corepack pnpm pack
 Install the generated tarball from another project:
 
 ```bash
-npm install /path/to/Norway-Open-Data/norway-open-data-sdk-0.6.0.tgz
+npm install /path/to/Norway-Open-Data/norway-open-data-sdk-0.7.0.tgz
 ```
 
 ## Quick start
@@ -100,11 +102,31 @@ requires `applicationName` and `contactEmail`; NVE HydAPI requires the caller's 
 | Stortinget              | `parliament`          | Representatives, parties, cases, votes, questions and meetings | Anonymous                      |
 | Statens vegvesen / NVDB | `roads`               | Road metadata, objects and network segments                    | Identification required        |
 | NVE                     | `energy`, `hazards`   | Energy data, warnings and hydrology                            | Anonymous; API key for HydAPI  |
+| BarentsWatch AIS        | `ais`                 | Vessel positions, tracks, area search and live AIS streaming   | OAuth2 AIS-client              |
+| BarentsWatch            | `marine`              | Wave and sea-current point forecasts                           | OAuth2 API-client              |
+| Fiskeridirektoratet     | `fisheries`           | Fishing-vessel register and public aquaculture register        | Anonymous                      |
 | Hva koster strømmen?    | `electricity`         | Hourly spot prices for all five bidding zones                  | Anonymous third-party API      |
 
 `profiles` composes several providers into one answer: `company` combines Brønnøysundregistrene
-with a Kartverket address match, `address` combines Kartverket, MET Norway, NVE and NVDB, and
-`municipality` combines SSB, FHI, Brønnøysundregistrene and NVE.
+with a Kartverket address match, `address` combines Kartverket, MET Norway, NVE and NVDB,
+`municipality` combines SSB, FHI, Brønnøysundregistrene and NVE, and `vessel` combines BarentsWatch
+AIS with the Fiskeridirektoratet vessel register, MET Norway and Kartverket.
+
+BarentsWatch has two distinct service contracts in the SDK, and they need **separate credentials**.
+BarentsWatch issues two kinds of self-registered client, and neither one's secret works for the
+other service:
+
+- `ais` → an **AIS-client**, whose tokens carry the `ais` scope, configured under
+  `credentials["barentswatch-ais"]`.
+- `marine` → an **API-client**, whose tokens carry the `api` scope, configured under
+  `credentials.barentswatch`.
+
+Register each at [BarentsWatch MyPage](https://www.barentswatch.no/minside/).
+
+Fiskeridirektoratet likewise has two independent registers behind one namespace. Both are open and
+need no credentials, but they are separate services with separate contracts and paging models, so
+they keep separate provider descriptors (`fiskeridir-vessels` and `fiskeridir-aqua`) and separate
+record types. A fishing vessel and an aquaculture site are not forced into a shared model.
 
 SSB has two distinct service contracts in the SDK:
 
@@ -405,7 +427,166 @@ to 100. NVDB iterators treat continuation markers as opaque and throw `ResponseV
 before requesting an already-seen marker when a provider repeats a cursor or returns a cycle.
 
 Available on `companies.searchAll`, `catalog.searchAll`, `parliament.searchCasesAll`,
-`roads.searchRoadObjectsAll` and `roads.getRoadNetworkAll`.
+`roads.searchRoadObjectsAll`, `roads.getRoadNetworkAll`, `fisheries.searchVesselsAll` and
+`fisheries.searchAquacultureSitesAll`.
+
+Neither Fiskeridirektoratet register reports a total count in its response body, so their iterators
+stop at the first page that comes back short or empty rather than at a known last page.
+
+### AIS vessel positions and tracks
+
+```ts
+const norway = new NorwayOpenData({
+  credentials: {
+    "barentswatch-ais": {
+      clientId: process.env.BARENTSWATCH_AIS_CLIENT_ID!,
+      clientSecret: process.env.BARENTSWATCH_AIS_CLIENT_SECRET!,
+    },
+  },
+});
+
+// Every position BarentsWatch recorded for one vessel in the last 24 hours.
+const track = await norway.ais.getTrackLast24Hours("257111020");
+console.log(track.data.points.length, track.data.from, track.data.to);
+
+// Position and identity together, in one request.
+const vessel = await norway.ais.getVesselSnapshot("257111020");
+console.log(vessel.data?.name, vessel.data?.callSign);
+
+// A point-in-time snapshot of everything transmitting in a window.
+const snapshot = await norway.ais.getLatestPositions({
+  boundingBox: { south: 58.8, west: 4.5, north: 60.0, east: 6.5 },
+});
+```
+
+An empty track or an absent snapshot is a normal answer, not an error, and it is **not** evidence
+that a vessel does not exist. See [AIS coverage limitations](#ais-coverage-limitations).
+
+`ais.getCoverageArea()` returns the sea area BarentsWatch actually publishes, so you can tell "no
+data for this vessel" apart from "this location is outside the feed".
+
+### Live AIS streaming and cancellation
+
+`ais.streamPositions()` returns an `AsyncIterable`, so a live feed is an ordinary `for await` loop.
+The connection opens on the first iteration, not when the iterator is created.
+
+```ts
+const controller = new AbortController();
+
+for await (const position of norway.ais.streamPositions({
+  boundingBox: { south: 58.8, west: 4.5, north: 60.0, east: 6.5 },
+  signal: controller.signal,
+})) {
+  console.log(position.mmsi, position.latitude, position.longitude);
+}
+```
+
+Three ways to stop, all of which close the connection:
+
+```ts
+// 1. Leave the loop. `break`, `return` and `throw` all release the stream.
+for await (const position of norway.ais.streamPositions({ boundingBox })) {
+  if (position.mmsi === target) break;
+}
+
+// 2. Abort the signal, from anywhere. The loop then throws ProviderError.
+setTimeout(() => controller.abort(), 60_000);
+
+// 3. Stop the iterator explicitly, when you are not using `for await`.
+const stream = norway.ais.streamPositions({ boundingBox });
+await stream.next();
+await stream.return(undefined);
+```
+
+`streamMessages()` yields every selected AIS message kind rather than positions only, as a union
+discriminated by `kind`:
+
+```ts
+for await (const message of norway.ais.streamMessages({
+  includeStatic: true,
+  includeWeather: true,
+  signal: controller.signal,
+})) {
+  if (message.kind === "static") console.log(message.name, message.callSign);
+  if (message.kind === "weather") console.log(message.significantWaveHeight);
+}
+```
+
+Streaming behaviour worth knowing before you rely on it:
+
+- **There is no automatic reconnection.** When the provider closes the stream, the loop ends
+  normally. Whether reopening is safe depends on whether your application can tolerate the gap, so
+  that decision is left to you.
+- Every record is validated independently. An invalid or schema-breaking record raises
+  `ResponseValidationError` and stops the stream; records are never silently skipped.
+- Backpressure is preserved. A chunk is read only when you ask for the next record, so a slow
+  consumer slows the transport rather than filling memory.
+- `downsample: true` asks the provider for at most one message per vessel per minute, which reduces
+  volume substantially in busy areas.
+
+### Fishing vessels and aquaculture sites
+
+```ts
+const norway = new NorwayOpenData(); // Both registers are open.
+
+const vessels = await norway.fisheries.searchVessels({ municipalityCode: "1106" });
+const vessel = await norway.fisheries.getVessel({ registrationMark: "R-123-H" });
+
+const sites = await norway.fisheries.searchAquacultureSites({ countyCode: "11" });
+const site = await norway.fisheries.getAquacultureSite("10029");
+```
+
+`getVessel` accepts the register's own `id`, a `registrationMark`, or a `radioCallSign`. The last two
+are searches upstream, so they raise `NotFoundError` both when nothing matches and when more than one
+vessel does — an ambiguous mark never silently resolves to whichever record came first.
+
+A registration mark is accepted in the register's own spelling (`R 0062H`) or the hyphenated form
+(`R-62-H`). An aquaculture site's `capacity` is only meaningful alongside `capacityUnitType`; `TN`
+means tonnes of maximum allowed biomass.
+
+Owner details are published in full for company owners. For a private individual the entry is kept as
+`{ entityType: "person" }` so the ownership structure and owner count stay visible, but the name,
+postal code and town are not carried into SDK output — including `{ includeRaw: true }`. See
+[privacy considerations](#privacy-considerations).
+
+### Cross-provider vessel profile
+
+```ts
+const profile = await norway.profiles.vessel({ mmsi: "257111020" });
+
+console.log(profile.data.ais.status); // "available" | "no-recent-data"
+console.log(profile.data.ais.identity?.callSign);
+console.log(profile.data.registration?.name); // Fiskeridirektoratet, when it matches
+console.log(profile.data.nearestPlace?.name); // Kartverket
+console.log(profile.data.weather?.temperature); // MET Norway, when identified
+```
+
+The profile asks BarentsWatch for the vessel's latest AIS position and identity and for its recorded
+track, then uses the radio call sign AIS reported to look the vessel up in the fishing-vessel
+register, and adds conditions and the nearest official place name at that position.
+
+The call sign is the join key because it is the one identifier both sources publish: AIS is keyed by
+MMSI, which the register does not hold, and the register is keyed by its own id and registration
+mark, which AIS does not transmit. When AIS reports no call sign the register lookup is skipped
+rather than attempted by name, which is not unique and would produce confident wrong matches.
+
+Every section reports why it is present or absent, so absence is never ambiguous:
+
+| `components[].reason` | Meaning                                                                   |
+| --------------------- | ------------------------------------------------------------------------- |
+| `not-covered`         | The provider answered and publishes nothing for this subject              |
+| `not-found`           | The provider was searched and holds no matching record                    |
+| `not-applicable`      | A prerequisite from an earlier component was absent, so nothing was asked |
+| `not-configured`      | The provider needs credentials this client does not have                  |
+| `missing-coordinate`  | No position was available, so location-based sections could not run       |
+| `provider-error`      | The provider was asked and failed; `error` carries a sanitized summary    |
+
+A partial profile is the normal outcome. One provider failing degrades its own section and leaves
+every successful section intact. `ais.status` of `no-recent-data` never means the MMSI is unassigned.
+
+Because AIS is the only source that can resolve an MMSI at all, `profiles.vessel` raises
+`ConfigurationError` without BarentsWatch AIS credentials rather than returning a profile whose every
+section failed.
 
 ### Request cancellation
 
@@ -447,8 +628,6 @@ an optional `unit` multiplier for currencies quoted per 100 units.
 ```ts
 import { NorwayOpenData } from "norway-open-data-sdk";
 
-const nveApiKey = process.env.NVE_HYDAPI_KEY;
-
 const norway = new NorwayOpenData({
   applicationName: "my-company-my-application",
   contactEmail: "developer@example.no",
@@ -456,29 +635,79 @@ const norway = new NorwayOpenData({
   retries: 2,
   cache: { enabled: true, maxEntries: 250 },
   fetch: globalThis.fetch,
-  ...(nveApiKey === undefined ? {} : { credentials: { nve: { apiKey: nveApiKey } } }),
+  credentials: {
+    nve: { apiKey: process.env.NVE_HYDAPI_KEY! },
+    "barentswatch-ais": {
+      clientId: process.env.BARENTSWATCH_AIS_CLIENT_ID!,
+      clientSecret: process.env.BARENTSWATCH_AIS_CLIENT_SECRET!,
+    },
+    barentswatch: {
+      clientId: process.env.BARENTSWATCH_CLIENT_ID!,
+      clientSecret: process.env.BARENTSWATCH_CLIENT_SECRET!,
+    },
+  },
 });
 ```
 
-| Option                   | Default            | Purpose                                              |
-| ------------------------ | ------------------ | ---------------------------------------------------- |
-| `applicationName`        | None               | Caller identity required by Entur, MET and NVDB      |
-| `contactEmail`           | None               | Contact address required by MET                      |
-| `timeoutMs`              | `10_000`           | Per-attempt timeout in milliseconds                  |
-| `retries`                | `2`                | Retry attempts after the initial request; range 0–10 |
-| `fetch`                  | `globalThis.fetch` | Custom Fetch-compatible implementation               |
-| `cache.enabled`          | `false`            | Enables the response cache                           |
-| `cache.ttlMs`            | Provider default   | Overrides provider-specific TTLs                     |
-| `cache.maxEntries`       | `100`              | Maximum entries for the built-in in-memory cache     |
-| `cache.store`            | In-memory          | Custom `CacheStore` for sharing across instances     |
-| `rateLimit.enabled`      | `true`             | Enforces each provider's declared request budget     |
-| `credentials.nve.apiKey` | None               | Free NVE HydAPI key for stations and observations    |
+| Option                                         | Default            | Purpose                                              |
+| ---------------------------------------------- | ------------------ | ---------------------------------------------------- |
+| `applicationName`                              | None               | Caller identity required by Entur, MET and NVDB      |
+| `contactEmail`                                 | None               | Contact address required by MET                      |
+| `timeoutMs`                                    | `10_000`           | Per-attempt timeout in milliseconds                  |
+| `retries`                                      | `2`                | Retry attempts after the initial request; range 0–10 |
+| `fetch`                                        | `globalThis.fetch` | Custom Fetch-compatible implementation               |
+| `cache.enabled`                                | `false`            | Enables the response cache                           |
+| `cache.ttlMs`                                  | Provider default   | Overrides provider-specific TTLs                     |
+| `cache.maxEntries`                             | `100`              | Maximum entries for the built-in in-memory cache     |
+| `cache.store`                                  | In-memory          | Custom `CacheStore` for sharing across instances     |
+| `rateLimit.enabled`                            | `true`             | Enforces each provider's declared request budget     |
+| `credentials.nve.apiKey`                       | None               | Free NVE HydAPI key for stations and observations    |
+| `credentials["barentswatch-ais"].clientId`     | None               | BarentsWatch **AIS-client** id, for the `ais` scope  |
+| `credentials["barentswatch-ais"].clientSecret` | None               | BarentsWatch AIS-client secret                       |
+| `credentials.barentswatch.clientId`            | None               | BarentsWatch **API-client** id, for the `api` scope  |
+| `credentials.barentswatch.clientSecret`        | None               | BarentsWatch API-client secret                       |
 
 When required by the selected service, each application must provide its own identity, contact
 address and credentials. The SDK contains no shared email, API key or fallback identity. Missing
 required values raise `ConfigurationError` before a request is made.
 
 Every provider method accepts optional `signal`, `includeRaw` and `bypassCache` request options.
+
+### Environment variables
+
+The SDK reads no environment variables itself; these are the names used consistently by the examples,
+the live probes and the documentation.
+
+| Variable                            | Used by                           | Required for                         |
+| ----------------------------------- | --------------------------------- | ------------------------------------ |
+| `NORWAY_OPEN_DATA_APPLICATION_NAME` | `applicationName`                 | Entur, MET Norway, NVDB              |
+| `NORWAY_OPEN_DATA_CONTACT_EMAIL`    | `contactEmail`                    | MET Norway                           |
+| `NVE_HYDAPI_KEY`                    | `credentials.nve.apiKey`          | NVE HydAPI stations and observations |
+| `BARENTSWATCH_AIS_CLIENT_ID`        | `credentials["barentswatch-ais"]` | `norway.ais`, `profiles.vessel`      |
+| `BARENTSWATCH_AIS_CLIENT_SECRET`    | `credentials["barentswatch-ais"]` | `norway.ais`, `profiles.vessel`      |
+| `BARENTSWATCH_CLIENT_ID`            | `credentials.barentswatch`        | `norway.marine`                      |
+| `BARENTSWATCH_CLIENT_SECRET`        | `credentials.barentswatch`        | `norway.marine`                      |
+| `RUN_LIVE_TESTS`                    | Test runner                       | Enabling the opt-in live probes      |
+
+### OAuth2 credentials
+
+Providers that use the OAuth2 client-credentials grant are configured with a `clientId` and
+`clientSecret` under their own provider id. The SDK then handles the tokens:
+
+- A token is acquired on the first request that needs it, never at construction time.
+- Tokens are cached in memory per SDK instance and reused across requests.
+- A token is refreshed **before** its stated expiry, with a minute of headroom for clock skew, so a
+  caller does not see an avoidable HTTP 401.
+- Concurrent requests share one token request rather than each starting their own.
+- A token the provider rejects with HTTP 401 is discarded, so the next call acquires a fresh one
+  instead of replaying a revoked credential.
+- One caller aborting its request does not cancel a token request the other callers are waiting on.
+- Credentials are provider-scoped: a secret configured for one provider is only ever sent to that
+  provider's own token endpoint.
+
+Tokens are never written to the response cache or to any persistent store, and there is no hosted
+proxy or token broker. Client secrets, client ids and access tokens are redacted from errors and are
+never written to the console; the SDK logs nothing.
 
 ## Runtime support
 
@@ -838,5 +1067,65 @@ Personal and restricted data are outside the project scope.
   and administrative mapping is not evidence of statistical comparability.
 - Protected endpoints, personal data, write operations and delegated authentication are not
   supported.
+
+### AIS coverage limitations
+
+AIS coverage is neither global nor complete, and an absent vessel is the most likely way to draw a
+wrong conclusion from this namespace. BarentsWatch publishes:
+
+- **Geographically**, the Norwegian economic zone plus the fisheries protection zone around Svalbard
+  and the protection zone around Jan Mayen. Nothing outside it.
+- **By vessel**, with fishing vessels under 15 m and leisure or sailing vessels under 45 m excluded
+  from the open feed.
+- **In time**, retaining 14 days. `ais.getTrack` over an older window returns nothing rather than
+  failing, and full historical archives are out of scope; the provider directs those requests to
+  [kystdatahuset.no](https://kystdatahuset.no/).
+
+So an empty track, an absent snapshot or a vessel profile reporting `no-recent-data` means only that
+BarentsWatch had nothing to publish. It is never evidence that an MMSI is unassigned, that a vessel
+does not exist, or that it was not at sea. A transponder can also be switched off, and reception is
+not uniform across the area. Call `ais.getCoverageArea()` to get the published area as GeoJSON when
+you need to distinguish "no data for this vessel" from "outside the feed".
+
+`ais.getMmsiInArea` is additionally capped by the provider at a seven-day window and an area of 500
+square kilometres. The SDK rejects an oversized window before the request; an oversized area is
+refused upstream, because the SDK cannot reproduce the provider's own area measure reliably enough to
+refuse a request the provider would have accepted.
+
+### Streaming limitations
+
+- **No automatic reconnection in 0.7.0.** When the provider closes a stream, iteration ends normally
+  and the SDK does not reopen it. Reconnecting silently would hide a gap in coverage from an
+  application that may not be able to tolerate one.
+- A stream is never retried and never cached. `retries` and `cache` do not apply to it.
+- The configured `timeoutMs` bounds establishing the connection only, never the lifetime of a healthy
+  feed.
+- Server-sent events are not wrapped; the SDK uses the provider's newline-delimited JSON endpoints.
+
+### Privacy considerations
+
+- The Fiskeridirektoratet vessel register publishes an owner's name, postal code and town for private
+  individuals as well as companies. This SDK surfaces those fields only for company owners. A private
+  owner is represented as `{ entityType: "person" }`, which keeps the ownership structure and owner
+  count visible without redistributing a named natural person. The suppression happens during
+  response validation, so it also applies to `{ includeRaw: true }` and to anything written to the
+  cache. An owner entity type the SDK does not recognize is withheld by default.
+- `profiles.vessel` carries the same restriction, and additionally never includes owner data the
+  register would not publish.
+- AIS positions describe vessels, not people, but a vessel track can identify a small crew's movements
+  in practice. Treat AIS data you retain as operational data with real-world consequences.
+- Client secrets, client ids, API keys and bearer tokens are redacted from errors, are never included
+  in responses or raw payloads, and are never logged.
+
+### Vessel-profile limitations
+
+- The profile is partial by design. Any section other than `mmsi` and `ais` may be absent, and
+  `components[].reason` always states which kind of absence it is.
+- The AIS-to-register join is by radio call sign, the only identifier both sources publish. Without a
+  call sign from AIS the register is not consulted at all.
+- A call sign matching more than one registered vessel yields no `registration`, because the register
+  cannot say which vessel it is and choosing one would invent certainty.
+- The `weather` section needs `applicationName` and `contactEmail` for MET Norway; without them it is
+  omitted as `not-configured`.
 
 See [PROVIDERS.md](PROVIDERS.md) for provider-specific limits, licences and caveats.

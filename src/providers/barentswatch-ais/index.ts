@@ -1,0 +1,27 @@
+export { AisClient, draughtMetres } from "./client.js";
+export { barentswatchAisProvider } from "./provider.js";
+export type {
+  AisAidToNavigation,
+  AisAreaSearchParameters,
+  AisCoverageArea,
+  AisFilter,
+  AisLatestPositionsParameters,
+  AisMessage,
+  AisMessageBase,
+  AisMessageSelection,
+  AisMessageStreamParameters,
+  AisPosition,
+  AisPositionStreamParameters,
+  AisSafetyMessage,
+  AisStaticData,
+  AisTrack,
+  AisTrackParameters,
+  AisTrackPoint,
+  AisUnknownMessage,
+  AisVesselMatch,
+  AisVesselSearchParameters,
+  AisVesselSnapshot,
+  AisVesselSnapshotParameters,
+  AisWeatherReport,
+  Mmsi,
+} from "./types.js";

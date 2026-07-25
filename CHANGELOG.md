@@ -2,6 +2,107 @@
 
 All notable user-visible changes are recorded here. The project follows semantic versioning.
 
+## 0.7.0 — 2026-07-26
+
+### Minor Changes
+
+- **Maritime Norway.** Adds three namespaces, two new public-sector organizations and four official
+  API integrations, plus the transport infrastructure they needed.
+
+  **`sdk.ais` — BarentsWatch AIS.** Vessel positions and identity, recorded tracks, area search,
+  name search, the published coverage area, and live AIS streaming.
+
+  - `getTrackLast24Hours()` and `getTrack()` return recorded position reports for one vessel.
+  - `getVesselSnapshot()` and `getVesselSnapshots()` merge each vessel's latest position with its
+    latest static data, so name, call sign, IMO number and dimensions arrive in one request.
+  - `getLatestPositions()` returns a point-in-time snapshot; `getMmsiInArea()` lists the MMSIs seen
+    in a window of space and time; `searchVessels()` searches recent AIS static data by name.
+  - `getCoverageArea()` returns the sea area BarentsWatch actually publishes, so a caller can tell
+    "no data for this vessel" apart from "outside the feed".
+  - `streamPositions()` and `streamMessages()` return an `AsyncIterable`, so a live feed is an
+    ordinary `for await` loop. The connection opens on the first iteration, and leaving the loop or
+    aborting the signal closes it. `streamMessages()` yields a union discriminated by `kind`.
+  - Every field each documented message shape declares is validated and surfaced, including all 36
+    fields of the met/hydro binary broadcast and the receiver-network label carried by every
+    message. A streamed message has no accompanying raw payload, so a field dropped in
+    normalization would be unrecoverable. BarentsWatch publishes no units for the met/hydro
+    payload, so those values are passed through unconverted and no unit is asserted for them.
+  - Message labels are matched case-insensitively. The live service sends `Staticdata` where the
+    provider's documentation writes `StaticData`, and the numeric AIS message type remains a second
+    fallback, so a static-data message is never surfaced as `kind: "unknown"`.
+
+  **`sdk.marine` — BarentsWatch wave and current forecasts.** `getWaveForecast()`,
+  `getWaveForecastSeries()` and `getSeaCurrent()`. A coordinate outside every model area resolves to
+  `undefined` rather than raising, so "no model covers this point" stays distinguishable from a
+  provider failure. The series endpoint expresses that same absence in two ways — HTTP 204, and
+  HTTP 200 with one value-free entry per model time — and both are surfaced as an empty array, so
+  an uncovered coordinate does not arrive looking like a covered one with dozens of readings.
+  `{ includeRaw: true }` still exposes the provider's untouched payload.
+
+  **`sdk.fisheries` — Fiskeridirektoratet.** The fishing-vessel register and the public aquaculture
+  register, both open and needing no credentials: `searchVessels()`, `searchVesselsAll()`,
+  `getVessel()`, `searchAquacultureSites()`, `searchAquacultureSitesAll()` and
+  `getAquacultureSite()`. `getVessel()` accepts a register id, a registration mark or a radio call
+  sign, and raises `NotFoundError` both when nothing matches and when more than one vessel does.
+
+  **`profiles.vessel()` — a cross-provider vessel profile.** Composes BarentsWatch AIS with the
+  Fiskeridirektoratet vessel register, MET Norway and Kartverket, joined on the radio call sign,
+  which is the one identifier AIS and the register both publish. Every section reports why it is
+  present or absent, and two new `ProfileOmissionReason` values distinguish the cases that mattered:
+  `not-found` (the provider was searched and holds no matching record) and `not-covered` (the
+  provider answered and publishes nothing for this subject). An `ais.status` of `no-recent-data`
+  never means the MMSI is unassigned.
+
+  **Reusable OAuth2 client-credentials support** in the transport layer, declared per provider and
+  configured as `credentials.<provider>.clientId` and `clientSecret`. Tokens are acquired on first
+  use, cached in memory per SDK instance, refreshed before their stated expiry with a minute of
+  headroom for clock skew, and shared by concurrent requests through a single in-flight request. A
+  token the provider rejects with HTTP 401 is discarded rather than replayed, and one caller aborting
+  does not cancel a token request the others are waiting on. Tokens are never written to the response
+  cache or any persistent store, there is no hosted proxy, and secrets, client ids and tokens are
+  redacted from errors and never logged.
+
+  **A web-standard NDJSON stream parser** returning `AsyncIterable<T>`, built on `ReadableStream`,
+  `TextDecoder` and `AbortSignal` with no Node stream dependency. Records split across chunks are
+  reassembled, several records in one chunk are all emitted, blank lines and `\\r\\n` endings are
+  handled, a final record without a trailing newline is emitted, every record is validated
+  independently, a configurable maximum buffered-record size bounds a stream that never sends a
+  newline, and the reader is released when iteration stops early. Backpressure is preserved: a chunk
+  is read only when the consumer asks for the next record.
+
+  **Shared geographic primitives.** `Coordinates` and `BoundingBox`, with their Zod schemas and a
+  `boundingBoxToPolygon()` helper, exported from the package root. Latitude and longitude ranges are
+  enforced, non-finite values are rejected, `north` must exceed `south`, and a box crossing the
+  antimeridian is refused with an explicit message rather than silently returning nothing — no
+  provider in this SDK publishes data there.
+
+  **`ProviderCredential` gains `clientId` and `clientSecret`**, and `ProviderAuthField` gains the
+  matching members. These are additive; existing `apiKey` configuration is unchanged.
+
+  **BarentsWatch needs two separate credentials.** BarentsWatch issues two kinds of self-registered
+  client and a secret registered for one is not accepted by the other, so `ais` and `marine` are
+  declared as separate providers: `credentials["barentswatch-ais"]` (an AIS-client, `ais` scope) and
+  `credentials.barentswatch` (an API-client, `api` scope).
+
+  Limitations documented rather than papered over: AIS coverage excludes fishing vessels under 15 m
+  and leisure vessels under 45 m, is limited to Norwegian waters, and retains 14 days, so an absent
+  vessel is never an absent vessel; streams are not reconnected automatically in this release; the
+  Fiskeridirektoratet registers report their totals only in a response header the SDK does not read,
+  so paging stops at the first short page.
+
+### Patch Changes
+
+- HTTP 204 responses are now handed to a provider's runtime schema as `null` instead of being
+  reported as an unreadable payload. This lets a provider that answers "no data for this point" with
+  an empty response be modelled as a nullable result. No existing provider returned 204, so no
+  existing behaviour changes.
+
+- The vessel register's owner data is filtered during response validation: a private individual's
+  name, postal code and town are not carried into SDK output, including `{ includeRaw: true }` and
+  cached values, while the owner entry itself is kept as `{ entityType: "person" }` so the ownership
+  structure and owner count stay visible. An owner entity type the SDK does not recognize is
+  withheld by default.
+
 ## 0.6.0 - 2026-07-25
 
 ### Minor Changes

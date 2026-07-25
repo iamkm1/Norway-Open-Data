@@ -1,6 +1,6 @@
 {
   "name": "norway-open-data-sdk",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "One TypeScript interface for Norway's open public APIs.",
   "keywords": [
     "norway",
@@ -21,6 +21,12 @@
     "stortinget",
     "nvdb",
     "nve",
+    "barentswatch",
+    "ais",
+    "maritime",
+    "vessel-tracking",
+    "fiskeridir",
+    "aquaculture",
     "typescript",
     "sdk"
   ],
