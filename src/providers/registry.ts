@@ -3,10 +3,14 @@ import {
   type ProviderMetadata,
   providerMetadata,
 } from "../core/provider.js";
+import { barentswatchAisProvider } from "./barentswatch-ais/provider.js";
+import { barentswatchProvider } from "./barentswatch/provider.js";
 import { brregProvider } from "./brreg/provider.js";
 import { dataNorgeProvider } from "./data-norge/provider.js";
 import { enturProvider } from "./entur/provider.js";
 import { fhiProvider } from "./fhi/provider.js";
+import { fiskeridirAquaProvider } from "./fiskeridir/aqua-provider.js";
+import { fiskeridirVesselsProvider } from "./fiskeridir/vessels-provider.js";
 import { hvakosterstrommenProvider } from "./hvakosterstrommen/provider.js";
 import { kartverketProvider } from "./kartverket/provider.js";
 import { metProvider } from "./met/provider.js";
@@ -33,10 +37,14 @@ function registry<const T extends Record<string, ProviderDescriptor>>(
 
 /** Every provider the SDK supports, keyed by provider id. */
 export const providerDescriptors = registry({
+  barentswatch: barentswatchProvider,
+  "barentswatch-ais": barentswatchAisProvider,
   brreg: brregProvider,
   "data-norge": dataNorgeProvider,
   entur: enturProvider,
   fhi: fhiProvider,
+  "fiskeridir-aqua": fiskeridirAquaProvider,
+  "fiskeridir-vessels": fiskeridirVesselsProvider,
   hvakosterstrommen: hvakosterstrommenProvider,
   kartverket: kartverketProvider,
   met: metProvider,

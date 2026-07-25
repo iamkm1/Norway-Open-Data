@@ -96,6 +96,85 @@ Field notes:
 - **`cacheTtlMs`** names each operation class. Clients reference `exampleProvider.cacheTtlMs.search`
   rather than repeating raw millisecond literals, so the freshness policy is reviewable in one
   place.
+- **`oauth`** is for a provider that issues bearer tokens from a client id and secret. Wrap it in
+  `defineOAuth` and give it the provider's own `tokenUrl`, the `scope` its data endpoints need, and a
+  `missing` message naming the configuration keys. The core then handles acquisition, caching,
+  refresh, single-flight and abort; a provider client only sets `authenticate: true`. See
+  "Client-credentials providers" below.
+
+## Client-credentials providers
+
+A provider using the OAuth2 client-credentials grant declares `oauth` instead of (or alongside)
+`auth`:
+
+```ts
+export const exampleProvider = {
+  id: "example",
+  // ...
+  access: "registration-required",
+  authentication: "OAuth2 client credentials with the `data` scope.",
+  oauth: defineOAuth({
+    tokenUrl: "https://id.example.no/connect/token",
+    scope: "data",
+    missing:
+      "Example requests require credentials.example.clientId and clientSecret from a client registered at https://example.no/mypage.",
+  }),
+  cacheTtlMs: { search: 10 * 60 * 1_000 },
+} as const satisfies ProviderDescriptor;
+```
+
+Nothing else in the provider needs to know about tokens. The core acquires one on the first request
+that needs it, caches it in memory for the SDK instance, refreshes it before its stated expiry, shares
+one in-flight request between concurrent callers, discards a token the provider rejects with HTTP 401,
+and adds the secret, the client id and the token to the values redacted from errors. Tokens never
+reach the response cache or any persistent store.
+
+`missingAuthFields()` covers `oauth` as well as `auth`, so a cross-provider profile can still skip a
+component the caller cannot authenticate instead of failing the whole composition.
+
+**One organization, two client kinds.** If a provider issues separate credentials for separate
+services, declare separate descriptors. BarentsWatch is the worked example: an AIS-client's secret is
+not accepted by the platform API and vice versa, so `barentswatch-ais` and `barentswatch` are distinct
+providers with distinct scopes, credential keys and token caches. Sharing one descriptor would send a
+secret to a service that cannot accept it and report the failure as a provider error rather than a
+configuration mistake.
+
+## Streaming providers
+
+A provider with a newline-delimited JSON feed uses `HttpClient.stream()` and exposes it as an async
+generator, so the caller writes an ordinary `for await` loop:
+
+```ts
+async *streamThings(parameters: ThingStreamParameters = {}): AsyncGenerator<Thing, void, undefined> {
+  const records = this.#http.stream({
+    provider: exampleProvider,
+    url: STREAM_URL,
+    schema: thingSchema,
+    rateLimitKey: "stream",
+    description: "thing stream",
+    ...(parameters.signal === undefined ? {} : { options: { signal: parameters.signal } }),
+  });
+  for await (const record of records) yield normalizeThing(record);
+}
+```
+
+`stream()` deliberately accepts fewer options than `request()`: a stream is never cached, never
+retried and has no whole-response timeout, so those options are absent rather than silently ignored.
+The configured timeout bounds establishing the connection only.
+
+Give a streaming provider a second, tighter `rateLimit` budget named `stream`. A connection is opened
+once and held, so the budget exists to bound an accidental reconnect loop rather than normal use.
+
+Do not add automatic reconnection. Reopening a closed feed hides a gap in coverage from an application
+that may not be able to tolerate one, and only the caller knows whether it can.
+
+## Geographic parameters
+
+Use `Coordinates` and `BoundingBox` from `src/core/geo.ts` rather than declaring `latitude`/`longitude`
+pairs per provider, and validate with `parseCoordinates()` or `parseBoundingBox()` so an out-of-range
+value is rejected with the same message everywhere. `boundingBoxToPolygon()` converts a box into the
+closed GeoJSON ring several providers expect, in `[longitude, latitude]` order — a conversion that is
+easy to get wrong per call site and silently queries the wrong hemisphere when it is.
 
 ## Integration checklist
 
@@ -122,6 +201,16 @@ Field notes:
 - The shared registry tests already assert descriptor invariants; a provider that declares an
   incoherent budget, an empty cache policy or an unhelpful `missing` message fails without any
   new test being written.
+- **Add a probe to `tests/unit/provider-conformance.test.ts`.** That suite holds every namespace to
+  the same contract — envelope shape, attribution, runtime validation, cancellation, error mapping,
+  credential containment, fetch injection, cache and retry behaviour, and doing no work at
+  construction — so a new provider inherits roughly twenty tests from one table entry. The suite fails
+  if a registered provider has no probe, so this is enforced rather than remembered.
+- Strip personal data in the **schema**, not the client. The HTTP client validates before caching and
+  hands the schema's output to callers as the `{ includeRaw: true }` payload, so a `.transform()` on
+  the schema keeps suppressed fields out of the response, the raw payload and the cache in one place;
+  doing it in the client leaves them in the other two. Prefer withholding by default for a value the
+  provider may add later.
 - Add a low-volume, opt-in live check and built-package smoke coverage where practical.
 - Review `{ includeRaw: true }` separately. Raw output must be validated and must not restore fields
   intentionally excluded for privacy or access-control reasons.

@@ -1,6 +1,8 @@
 import type { OpenDataSource } from "../core/provider.js";
+import type { AisTrack, AisTrackPoint, Mmsi } from "../providers/barentswatch-ais/types.js";
 import type { Company } from "../providers/brreg/types.js";
-import type { NorwegianAddress } from "../providers/kartverket/types.js";
+import type { FishingVessel } from "../providers/fiskeridir/types.js";
+import type { NorwegianAddress, PlaceName } from "../providers/kartverket/types.js";
 import type { WeatherTimeseriesEntry } from "../providers/met/types.js";
 import type { HazardWarning } from "../providers/nve/types.js";
 import type { RoadNetworkSegment } from "../providers/vegvesen/types.js";
@@ -17,7 +19,11 @@ export type ProfileComponentOperation =
   | "hazards.getFloodWarnings"
   | "hazards.getAvalancheWarnings"
   | "hazards.getLandslideWarnings"
-  | "roads.getRoadNetwork";
+  | "roads.getRoadNetwork"
+  | "ais.getVesselSnapshot"
+  | "ais.getTrackLast24Hours"
+  | "fisheries.searchVessels"
+  | "places.nearby";
 
 /** Logical profile section populated by a component operation. */
 export type ProfileComponentSection =
@@ -29,15 +35,34 @@ export type ProfileComponentSection =
   | "companies"
   | "weather"
   | "hazards"
-  | "roads";
+  | "roads"
+  | "ais"
+  | "registration"
+  | "place";
 
 /**
- * Why an optional profile component is missing. `provider-error` means the
- * operation was attempted but its provider failed at request time; the other
- * reasons mean the operation was deliberately never requested.
+ * Why an optional profile component is missing.
+ *
+ * `provider-error` means the operation was attempted but its provider failed at
+ * request time. `not-found` and `not-covered` mean the provider answered
+ * successfully and had nothing: the first that the identifier matched no record,
+ * the second that the subject falls outside what the provider publishes at all.
+ * The remaining reasons mean the operation was deliberately never requested --
+ * `not-configured` because the provider needs credentials this client does not
+ * have, and `not-applicable` because a prerequisite from an earlier component was
+ * absent.
+ *
+ * New reasons may be added in a minor release. Treat an unrecognized value as
+ * "absent for a reason this code does not model" rather than switching
+ * exhaustively on it.
  */
 export type ProfileOmissionReason =
-  "not-configured" | "missing-coordinate" | "not-applicable" | "provider-error";
+  | "not-configured"
+  | "missing-coordinate"
+  | "not-applicable"
+  | "provider-error"
+  | "not-found"
+  | "not-covered";
 
 /** Per-operation provenance and availability for a composed profile. */
 export type ProfileComponent =
@@ -173,6 +198,74 @@ export type AddressProfile = {
   roads?: RoadNetworkSegment[];
   /** Search bounds and truncation information for `roads`. */
   roadSearch?: AddressRoadSearch;
+  /** Provenance and availability for every component operation. */
+  components?: ProfileComponent[];
+};
+
+/** Identifies the vessel a {@link VesselProfile} is about. */
+export type VesselProfileParameters = {
+  /** Maritime Mobile Service Identity, 1-9 digits. */
+  mmsi: Mmsi;
+};
+
+/**
+ * What AIS could say about a vessel.
+ *
+ * `status` is the important field. `available` means BarentsWatch returned at
+ * least one position in the last 24 hours. `no-recent-data` means it returned
+ * none, which is the normal answer for a vessel below the published size
+ * thresholds, outside the covered sea area, with its transponder off, or simply
+ * moored somewhere the receivers do not reach. It is never evidence that the MMSI
+ * is unassigned or the vessel does not exist.
+ */
+export type VesselAisSummary = {
+  status: "available" | "no-recent-data";
+  /**
+   * Most recent recorded point, by message time.
+   *
+   * Kept in the provider's own track shape rather than converted to an AIS
+   * position report, because the historic endpoint merges position and identity
+   * fields and transmits no AIS message type.
+   */
+  latestPosition?: AisTrackPoint;
+  /** Every position the provider held for the window, in its own order. */
+  track?: AisTrack;
+  /** Identity from the vessel's latest AIS static broadcast, when one was received. */
+  identity?: {
+    name?: string;
+    callSign?: string;
+    imoNumber?: string;
+    /** Raw AIS ship-type code; not normalized to text. */
+    shipType?: number;
+  };
+};
+
+/**
+ * One vessel answered from several providers at once.
+ *
+ * Every section other than `mmsi` and `ais` is optional and degrades on its own:
+ * a provider that fails, is not configured, or has no matching record leaves a
+ * component entry explaining which of those happened and does not affect the
+ * sections that succeeded.
+ */
+export type VesselProfile = {
+  /** The MMSI that was asked for. */
+  mmsi: Mmsi;
+  /** What AIS could say, including when it could say nothing. */
+  ais: VesselAisSummary;
+  /**
+   * The matching entry in the Norwegian fishing-vessel register, when the vessel
+   * is a registered fishing vessel and AIS supplied a call sign to match on.
+   *
+   * Most vessels are not fishing vessels, so absence here is ordinary. Owner
+   * details for natural persons are not included; see
+   * {@link FishingVesselOwner}.
+   */
+  registration?: FishingVessel;
+  /** Conditions at the latest AIS position. Omitted without MET identification. */
+  weather?: WeatherTimeseriesEntry;
+  /** Nearest official place name to the latest AIS position. */
+  nearestPlace?: PlaceName;
   /** Provenance and availability for every component operation. */
   components?: ProfileComponent[];
 };

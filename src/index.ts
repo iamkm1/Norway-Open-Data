@@ -28,6 +28,10 @@ export type {
 } from "./core/provider.js";
 export type { ProviderId } from "./providers/registry.js";
 export type { PaginateOptions } from "./core/paginate.js";
+export { boundingBoxToPolygon, boundingBoxSchema, coordinatesSchema } from "./core/geo.js";
+export type { BoundingBox, Coordinates, GeoJsonPolygon, GeoJsonRing } from "./core/geo.js";
+export { DEFAULT_MAX_RECORD_SIZE } from "./core/ndjson.js";
+export type { ProviderOAuth } from "./core/oauth.js";
 export type {
   CacheConfig,
   NorwayOpenDataConfig,
@@ -51,7 +55,61 @@ export type {
   ProfileComponentOperation,
   ProfileComponentSection,
   ProfileOmissionReason,
+  VesselAisSummary,
+  VesselProfile,
+  VesselProfileParameters,
 } from "./profiles/types.js";
+
+export { AisClient, draughtMetres } from "./providers/barentswatch-ais/index.js";
+export type {
+  AisAidToNavigation,
+  AisAreaSearchParameters,
+  AisCoverageArea,
+  AisFilter,
+  AisLatestPositionsParameters,
+  AisMessage,
+  AisMessageBase,
+  AisMessageSelection,
+  AisMessageStreamParameters,
+  AisPosition,
+  AisPositionStreamParameters,
+  AisSafetyMessage,
+  AisStaticData,
+  AisTrack,
+  AisTrackParameters,
+  AisTrackPoint,
+  AisUnknownMessage,
+  AisVesselMatch,
+  AisVesselSearchParameters,
+  AisVesselSnapshot,
+  AisVesselSnapshotParameters,
+  AisWeatherReport,
+  Mmsi,
+} from "./providers/barentswatch-ais/index.js";
+
+export { MarineClient } from "./providers/barentswatch/index.js";
+export type {
+  MarineForecastParameters,
+  SeaCurrentForecast,
+  WaveForecast,
+} from "./providers/barentswatch/index.js";
+
+export { FisheriesClient, normalizeRegistrationMark } from "./providers/fiskeridir/index.js";
+export type {
+  AquacultureSite,
+  AquacultureSiteLicence,
+  AquacultureSitePagination,
+  AquacultureSitePlacement,
+  AquacultureSiteSearchParameters,
+  AquacultureSiteSearchResult,
+  FisheriesVesselLookup,
+  FisheriesVesselPagination,
+  FisheriesVesselSearchParameters,
+  FisheriesVesselSearchResult,
+  FisheriesVesselSortField,
+  FishingVessel,
+  FishingVesselOwner,
+} from "./providers/fiskeridir/index.js";
 
 export { BrregClient } from "./providers/brreg/client.js";
 export type {

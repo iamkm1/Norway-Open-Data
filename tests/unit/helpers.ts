@@ -50,6 +50,103 @@ export function jsonResponse(
   });
 }
 
+/**
+ * Wraps chunks in a `ReadableStream`, as a streaming `fetch` body would arrive.
+ *
+ * Chunks are handed out one per `read()` so a test controls exactly where the
+ * boundaries fall. A string chunk is encoded as UTF-8; pass a `Uint8Array` to
+ * split a multi-byte character deliberately.
+ */
+export function chunkedStream(
+  chunks: readonly (string | Uint8Array)[],
+): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  let index = 0;
+  return new ReadableStream<Uint8Array>({
+    pull(controller) {
+      const next = chunks[index++];
+      if (next === undefined) {
+        controller.close();
+        return;
+      }
+      controller.enqueue(typeof next === "string" ? encoder.encode(next) : next);
+    },
+  });
+}
+
+/**
+ * A `ReadableStream` that yields the given chunks and then errors.
+ *
+ * Models an upstream failure part-way through a live feed, which a stream must
+ * surface rather than treat as a clean end.
+ */
+export function failingStream(
+  chunks: readonly string[],
+  failure: Error,
+): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  let index = 0;
+  return new ReadableStream<Uint8Array>({
+    pull(controller) {
+      const next = chunks[index++];
+      if (next === undefined) {
+        controller.error(failure);
+        return;
+      }
+      controller.enqueue(encoder.encode(next));
+    },
+  });
+}
+
+/**
+ * A stream that reports whether its underlying source was cancelled.
+ *
+ * The parser releases the connection through the reader, which does not call
+ * `ReadableStream.prototype.cancel`, so a spy on that method proves nothing. The
+ * source's own `cancel` callback is the actual signal that the connection was
+ * released.
+ */
+export function observableStream(chunks: readonly string[]): {
+  body: ReadableStream<Uint8Array>;
+  cancelled: () => boolean;
+} {
+  const encoder = new TextEncoder();
+  let index = 0;
+  let wasCancelled = false;
+  const body = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      const next = chunks[index++];
+      if (next === undefined) {
+        controller.close();
+        return;
+      }
+      controller.enqueue(encoder.encode(next));
+    },
+    cancel() {
+      wasCancelled = true;
+    },
+  });
+  return { body, cancelled: () => wasCancelled };
+}
+
+/** Creates a streaming NDJSON response for fetch mocks. */
+export function ndjsonResponse(chunks: readonly (string | Uint8Array)[], status = 200): Response {
+  return new Response(chunkedStream(chunks), {
+    status,
+    headers: { "Content-Type": "application/x-ndjson" },
+  });
+}
+
+/** Collects an async iterable into an array, optionally stopping early. */
+export async function collect<T>(source: AsyncIterable<T>, limit = Infinity): Promise<T[]> {
+  const items: T[] = [];
+  for await (const item of source) {
+    items.push(item);
+    if (items.length >= limit) break;
+  }
+  return items;
+}
+
 /** Creates a fetch mock that returns responses in order. */
 export function sequenceFetch(...responses: Array<Response | (() => Promise<Response>)>): {
   fetch: typeof globalThis.fetch;

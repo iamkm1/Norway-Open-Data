@@ -1,15 +1,19 @@
 import { createResponse } from "../core/client.js";
-import { InputValidationError, NotFoundError } from "../core/errors.js";
-import { type ProviderDescriptor, responseSource } from "../core/provider.js";
+import { ConfigurationError, InputValidationError, NotFoundError } from "../core/errors.js";
+import { missingAuthMessage, type ProviderDescriptor, responseSource } from "../core/provider.js";
 import { providers } from "../providers/registry.js";
+import { barentswatchAisProvider } from "../providers/barentswatch-ais/provider.js";
 import { kartverketProvider } from "../providers/kartverket/provider.js";
 import { metProvider } from "../providers/met/provider.js";
 import { ssbProvider } from "../providers/ssb/provider.js";
 import { vegvesenProvider } from "../providers/vegvesen/provider.js";
 import type { OpenDataResponse, RequestOptions } from "../core/types.js";
+import type { AisClient } from "../providers/barentswatch-ais/client.js";
 import type { BrregClient } from "../providers/brreg/client.js";
 import type { FhiClient } from "../providers/fhi/client.js";
+import type { FisheriesClient } from "../providers/fiskeridir/client.js";
 import type { KartverketAddressClient } from "../providers/kartverket/address-client.js";
+import type { KartverketPlaceClient } from "../providers/kartverket/place-client.js";
 import type { MetClient } from "../providers/met/client.js";
 import type { NveHazardsClient } from "../providers/nve/hazards-client.js";
 import type { SsbClient } from "../providers/ssb/client.js";
@@ -37,7 +41,11 @@ import type {
   ProfileComponentOperation,
   ProfileComponentSection,
   ProfileOmissionReason,
+  VesselAisSummary,
+  VesselProfile,
+  VesselProfileParameters,
 } from "./types.js";
+import { joinCallSign, latestTrackPoint, trackName } from "./vessel-profile.js";
 
 const PROJECT_URL = "https://github.com/iamkm1/Norway-Open-Data";
 const FLOOD_WARNING_ATTRIBUTION = "Varsler fra Flomvarslingen i Norge og www.varsom.no";
@@ -81,6 +89,22 @@ function addressProfileSource(
       ...(includeRoads ? [{ id: "vegvesen", name: "Statens vegvesen" }] : []),
     ],
     "cross-provider-address-profile",
+  );
+}
+
+function vesselProfileSource(
+  includeFisheries: boolean,
+  includeWeather: boolean,
+  includeKartverket: boolean,
+): ProfileSource {
+  return profileSource(
+    [
+      { id: "barentswatch-ais", name: "BarentsWatch AIS" },
+      ...(includeFisheries ? [{ id: "fiskeridir-vessels", name: "Fiskeridirektoratet" }] : []),
+      ...(includeWeather ? [{ id: "met", name: "MET Norway" }] : []),
+      ...(includeKartverket ? [{ id: "kartverket", name: "Kartverket" }] : []),
+    ],
+    "cross-provider-vessel-profile",
   );
 }
 
@@ -216,6 +240,9 @@ export type ProfileDependencies = {
   roads: VegvesenClient;
   statistics: SsbClient;
   health: FhiClient;
+  ais: AisClient;
+  fisheries: FisheriesClient;
+  places: KartverketPlaceClient;
   /**
    * Reports whether the current configuration satisfies a provider's declared
    * identification requirements, so a component can be skipped as
@@ -677,6 +704,237 @@ export class ProfileClient {
         (flood?.cached ?? true) &&
         (avalanche?.cached ?? true) &&
         (landslide?.cached ?? true),
+      options,
+    );
+  }
+
+  /**
+   * Answers one vessel from several providers at once.
+   *
+   * Asks BarentsWatch for the vessel's latest AIS position and identity and for its
+   * recorded track, then uses the radio call sign AIS reported to look the vessel up
+   * in the Norwegian fishing-vessel register, and adds conditions and the nearest
+   * official place name at the position.
+   *
+   * What absence means here matters, so the profile distinguishes it rather than
+   * collapsing everything into "missing":
+   *
+   * - `ais.status` of `no-recent-data` means BarentsWatch had no position in its
+   *   window. It never means the MMSI is unassigned or the vessel does not exist:
+   *   the feed excludes fishing vessels under 15 m and leisure vessels under 45 m,
+   *   covers only Norwegian waters, and retains 14 days.
+   * - A `registration` component omitted as `not-found` means the register was
+   *   searched by call sign and holds no such vessel, which is the ordinary case
+   *   for any vessel that is not a Norwegian fishing vessel.
+   * - Omitted as `not-applicable` means AIS reported no call sign, so there was
+   *   nothing to match on. Matching by name instead would produce confident wrong
+   *   answers, so it is not attempted.
+   * - Omitted as `not-configured` means the provider needs credentials this client
+   *   does not have.
+   * - Omitted as `provider-error` means the provider was asked and failed.
+   *
+   * A caller without BarentsWatch AIS credentials gets a
+   * {@link ConfigurationError}, because AIS is the only
+   * source that can resolve an MMSI at all and there is no profile without it.
+   */
+  async vessel(
+    parameters: VesselProfileParameters,
+    options?: RequestOptions,
+  ): Promise<OpenDataResponse<VesselProfile>> {
+    const dependencies = this.#dependencies;
+    if (dependencies === undefined) {
+      throw new NotFoundError("Vessel profiles require a fully configured NorwayOpenData client.");
+    }
+    const mmsi = parameters.mmsi.trim();
+    if (!/^\d{1,9}$/.test(mmsi)) {
+      throw new InputValidationError(
+        `Invalid MMSI "${parameters.mmsi}". An MMSI must be 1-9 digits.`,
+        { provider: barentswatchAisProvider.id },
+      );
+    }
+    // Checked before any request. Every other source in this profile is reached
+    // through what AIS reports, so without AIS credentials there is no profile to
+    // degrade -- the caller gets the provider's own instructions instead of a
+    // response whose every section is a failure.
+    if (!dependencies.canAuthenticate(barentswatchAisProvider)) {
+      throw new ConfigurationError(missingAuthMessage(barentswatchAisProvider), {
+        provider: barentswatchAisProvider.id,
+      });
+    }
+    const forwarded: RequestOptions = {
+      ...(options?.signal === undefined ? {} : { signal: options.signal }),
+      ...(options?.bypassCache === undefined ? {} : { bypassCache: options.bypassCache }),
+      includeRaw: options?.includeRaw === true,
+    };
+    const signal = forwarded.signal;
+
+    // Requested together: the snapshot carries identity, the track carries movement,
+    // and neither can substitute for the other.
+    const [snapshotResult, trackResult] = await Promise.all([
+      attempt(dependencies.ais.getVesselSnapshot(mmsi, forwarded), signal),
+      attempt(dependencies.ais.getTrackLast24Hours(mmsi, forwarded), signal),
+    ]);
+    const snapshot = succeeded(snapshotResult);
+    const track = succeeded(trackResult);
+
+    const trackData = track?.data;
+    const latest = trackData === undefined ? undefined : latestTrackPoint(trackData);
+    const identity = {
+      ...(snapshot?.data?.name === undefined
+        ? trackData === undefined || trackName(trackData) === undefined
+          ? {}
+          : { name: trackName(trackData) }
+        : { name: snapshot.data.name }),
+      ...(snapshot?.data?.callSign === undefined ? {} : { callSign: snapshot.data.callSign }),
+      ...(snapshot?.data?.imoNumber === undefined ? {} : { imoNumber: snapshot.data.imoNumber }),
+      ...(snapshot?.data?.shipType === undefined ? {} : { shipType: snapshot.data.shipType }),
+    };
+    const hasAis = snapshot?.data !== undefined || latest !== undefined;
+    const ais: VesselAisSummary = {
+      status: hasAis ? "available" : "no-recent-data",
+      ...(latest === undefined ? {} : { latestPosition: latest }),
+      ...(trackData === undefined ? {} : { track: trackData }),
+      ...(Object.keys(identity).length === 0 ? {} : { identity }),
+    };
+
+    // The register holds no MMSI, so the call sign AIS reported is the only join
+    // key. Absent it, the lookup is skipped rather than guessed at by name.
+    const callSign = joinCallSign([snapshot?.data?.callSign]);
+    const position =
+      snapshot?.data?.latitude !== undefined && snapshot.data.longitude !== undefined
+        ? { latitude: snapshot.data.latitude, longitude: snapshot.data.longitude }
+        : latest?.latitude !== undefined && latest.longitude !== undefined
+          ? { latitude: latest.latitude, longitude: latest.longitude }
+          : undefined;
+
+    const registrationPromise =
+      callSign === undefined
+        ? undefined
+        : dependencies.fisheries.searchVessels({ radioCallSign: callSign, pageSize: 2 }, forwarded);
+    const weatherPromise =
+      position !== undefined && dependencies.canAuthenticate(metProvider)
+        ? dependencies.weather.current(position, forwarded)
+        : undefined;
+    const placePromise =
+      position === undefined
+        ? undefined
+        : dependencies.places.nearby({ ...position, radiusMeters: 20_000, limit: 1 }, forwarded);
+
+    const [registrationResult, weatherResult, placeResult] = await Promise.all([
+      registrationPromise === undefined ? undefined : attempt(registrationPromise, signal),
+      weatherPromise === undefined ? undefined : attempt(weatherPromise, signal),
+      placePromise === undefined ? undefined : attempt(placePromise, signal),
+    ]);
+    const registration = succeeded(registrationResult);
+    const weather = succeeded(weatherResult);
+    const place = succeeded(placeResult);
+    // Exactly one match is a match. Several vessels sharing a call sign means the
+    // register cannot say which one this is, and picking the first would invent
+    // certainty the data does not support.
+    const registeredVessel =
+      registration?.data.items.length === 1 ? registration.data.items[0] : undefined;
+    const nearestPlace = place?.data.items[0];
+
+    const components: ProfileComponent[] = [
+      snapshotResult !== undefined && "failure" in snapshotResult
+        ? failedComponent(
+            "ais.getVesselSnapshot",
+            "ais",
+            providers["barentswatch-ais"],
+            snapshotResult.failure,
+          )
+        : snapshot?.data === undefined
+          ? omittedComponent(
+              "ais.getVesselSnapshot",
+              "ais",
+              providers["barentswatch-ais"],
+              "not-covered",
+            )
+          : availableComponent("ais.getVesselSnapshot", "ais", snapshot),
+      trackResult !== undefined && "failure" in trackResult
+        ? failedComponent(
+            "ais.getTrackLast24Hours",
+            "ais",
+            providers["barentswatch-ais"],
+            trackResult.failure,
+          )
+        : track === undefined || track.data.points.length === 0
+          ? omittedComponent(
+              "ais.getTrackLast24Hours",
+              "ais",
+              providers["barentswatch-ais"],
+              "not-covered",
+            )
+          : availableComponent("ais.getTrackLast24Hours", "ais", track),
+      registrationResult !== undefined && "failure" in registrationResult
+        ? failedComponent(
+            "fisheries.searchVessels",
+            "registration",
+            providers["fiskeridir-vessels"],
+            registrationResult.failure,
+          )
+        : registration === undefined
+          ? omittedComponent(
+              "fisheries.searchVessels",
+              "registration",
+              providers["fiskeridir-vessels"],
+              "not-applicable",
+            )
+          : registeredVessel === undefined
+            ? omittedComponent(
+                "fisheries.searchVessels",
+                "registration",
+                providers["fiskeridir-vessels"],
+                "not-found",
+              )
+            : availableComponent("fisheries.searchVessels", "registration", registration),
+      weatherResult !== undefined && "failure" in weatherResult
+        ? failedComponent("weather.current", "weather", providers.met, weatherResult.failure)
+        : weather === undefined
+          ? omittedComponent(
+              "weather.current",
+              "weather",
+              providers.met,
+              position === undefined ? "missing-coordinate" : "not-configured",
+            )
+          : availableComponent("weather.current", "weather", weather),
+      placeResult !== undefined && "failure" in placeResult
+        ? failedComponent("places.nearby", "place", providers.kartverket, placeResult.failure)
+        : place === undefined
+          ? omittedComponent("places.nearby", "place", providers.kartverket, "missing-coordinate")
+          : nearestPlace === undefined
+            ? omittedComponent("places.nearby", "place", providers.kartverket, "not-found")
+            : availableComponent("places.nearby", "place", place),
+    ];
+
+    const profile: VesselProfile = {
+      mmsi,
+      ais,
+      ...(registeredVessel === undefined ? {} : { registration: registeredVessel }),
+      ...(weather?.data === undefined ? {} : { weather: weather.data }),
+      ...(nearestPlace === undefined ? {} : { nearestPlace }),
+      components,
+    };
+
+    return createResponse(
+      profile,
+      vesselProfileSource(
+        registeredVessel !== undefined,
+        weather !== undefined,
+        nearestPlace !== undefined,
+      ),
+      {
+        ...(snapshot === undefined ? {} : { vesselSnapshot: snapshot.raw }),
+        ...(track === undefined ? {} : { track: track.raw }),
+        ...(registration === undefined ? {} : { registrationSearch: registration.raw }),
+        ...(weather === undefined ? {} : { weather: weather.raw }),
+        ...(place === undefined ? {} : { nearbyPlaces: place.raw }),
+      },
+      (snapshot?.cached ?? true) &&
+        (track?.cached ?? true) &&
+        (registration?.cached ?? true) &&
+        (weather?.cached ?? true) &&
+        (place?.cached ?? true),
       options,
     );
   }

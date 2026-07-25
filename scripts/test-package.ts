@@ -53,35 +53,42 @@ const expectedPackageFiles = [
   "docs/testing.md",
   "examples/address-profile.ts",
   "examples/address.ts",
+  "examples/ais.ts",
   "examples/catalog.ts",
   "examples/company-profile.ts",
   "examples/company.ts",
   "examples/currency.ts",
   "examples/electricity.ts",
   "examples/energy.ts",
+  "examples/fisheries.ts",
   "examples/hazards.ts",
   "examples/health-statistics.ts",
   "examples/klass.ts",
+  "examples/marine.ts",
   "examples/municipality-profile.ts",
   "examples/parliament.ts",
   "examples/roads.ts",
   "examples/shared-cache.ts",
   "examples/statistics.ts",
   "examples/transport.ts",
+  "examples/vessel-profile.ts",
   "examples/weather.ts",
   "package.json",
 ].sort();
 const expectedRuntimeExports = [
+  "AisClient",
   "BrregClient",
   "ConfigurationError",
   "DataNorgeClient",
   "ElectricityClient",
   "EnturClient",
   "FhiClient",
+  "FisheriesClient",
   "InputValidationError",
   "KartverketAddressClient",
   "KartverketPlaceClient",
   "KlassClient",
+  "MarineClient",
   "MetClient",
   "NorgesBankClient",
   "NorwayOpenData",
@@ -97,6 +104,12 @@ const expectedRuntimeExports = [
   "SsbClient",
   "StortingetClient",
   "VegvesenClient",
+  "boundingBoxSchema",
+  "boundingBoxToPolygon",
+  "coordinatesSchema",
+  "DEFAULT_MAX_RECORD_SIZE",
+  "draughtMetres",
+  "normalizeRegistrationMark",
   "normalizeRoadObject",
   "parseJsonStat",
   "parseTableMetadata",
@@ -331,13 +344,24 @@ try {
       "  providerDescriptors,\n" +
       "  providerIds,\n" +
       "  providers,\n" +
+      "  boundingBoxToPolygon,\n" +
+      "  type AisPosition,\n" +
+      "  type AisTrack,\n" +
+      "  type AquacultureSite,\n" +
+      "  type BoundingBox,\n" +
       "  type CacheStore,\n" +
       "  type Company,\n" +
+      "  type Coordinates,\n" +
+      "  type FishingVessel,\n" +
+      "  type FishingVesselOwner,\n" +
       "  type KlassCodeResolution,\n" +
+      "  type Mmsi,\n" +
       "  type NorwayOpenDataConfig,\n" +
       "  type OpenDataResponse,\n" +
       "  type ProviderId,\n" +
       "  type RequestOptions,\n" +
+      "  type VesselProfile,\n" +
+      "  type WaveForecast,\n" +
       '} from "norway-open-data-sdk";\n' +
       "const store: CacheStore = {\n" +
       "  get: () => undefined,\n" +
@@ -359,9 +383,38 @@ try {
       "const electricityLicence: string | undefined = providers.hvakosterstrommen.license;\n" +
       "const electricityId: ProviderId = providerDescriptors.hvakosterstrommen.id;\n" +
       "const everyId: readonly ProviderId[] = providerIds;\n" +
+      // Maritime surface: credential shape, geographic primitives, the streaming
+      // signature as a plain AsyncIterable, and the record types.
+      "const aisId: ProviderId = providerDescriptors['barentswatch-ais'].id;\n" +
+      "const aisConfig: NorwayOpenDataConfig = {\n" +
+      "  credentials: {\n" +
+      "    'barentswatch-ais': { clientId: 'a@b.test:c', clientSecret: 's' },\n" +
+      "    barentswatch: { clientId: 'a@b.test:c', clientSecret: 's' },\n" +
+      "  },\n" +
+      "};\n" +
+      "const point: Coordinates = { latitude: 59.4, longitude: 5.2 };\n" +
+      "const box: BoundingBox = { south: 58.8, west: 4.5, north: 60, east: 6.5 };\n" +
+      "const ring = boundingBoxToPolygon(box).coordinates[0];\n" +
+      "const mmsi: Mmsi = '257111020';\n" +
+      "const positions: AsyncIterable<AisPosition> = client.ais.streamPositions({\n" +
+      "  boundingBox: box,\n" +
+      "});\n" +
+      "const track: Promise<OpenDataResponse<AisTrack>> = client.ais.getTrackLast24Hours(mmsi);\n" +
+      "const wave: Promise<OpenDataResponse<WaveForecast | undefined>> =\n" +
+      "  client.marine.getWaveForecast(point);\n" +
+      "const vessel: Promise<OpenDataResponse<FishingVessel>> = client.fisheries.getVessel({\n" +
+      "  registrationMark: 'R-62-H',\n" +
+      "});\n" +
+      "const owner: FishingVesselOwner | undefined = undefined;\n" +
+      "const site: AquacultureSite | undefined = undefined;\n" +
+      "const vesselProfile: Promise<OpenDataResponse<VesselProfile>> = client.profiles.vessel({\n" +
+      "  mmsi,\n" +
+      "});\n" +
       "void client; void options; void response; void electricityLicence;\n" +
       "void municipalityClassification; void klassMethod; void resolution;\n" +
-      "void electricityId; void everyId; void cleared; void InputValidationError;\n",
+      "void electricityId; void everyId; void cleared; void InputValidationError;\n" +
+      "void aisId; void aisConfig; void ring; void positions; void track; void wave;\n" +
+      "void vessel; void owner; void site; void vesselProfile;\n",
     "utf8",
   );
   writeFileSync(

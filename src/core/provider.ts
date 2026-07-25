@@ -7,8 +7,19 @@
  * stay fresh. Core reads descriptors; it never special-cases a provider.
  */
 
+import type { ProviderOAuth } from "./oauth.js";
+
 /** Configuration values a provider can require in order to identify the caller. */
-export type ProviderAuthField = "applicationName" | "contactEmail" | "apiKey";
+export type ProviderAuthField =
+  "applicationName" | "contactEmail" | "apiKey" | "clientId" | "clientSecret";
+
+/**
+ * Configuration a provider using the client-credentials grant requires.
+ *
+ * Declared once so the HTTP client, the registry checks and cross-provider
+ * profiles all agree on what "this provider is configured" means.
+ */
+export const OAUTH_AUTH_FIELDS: readonly ProviderAuthField[] = ["clientId", "clientSecret"];
 
 /**
  * Auth values passed to a descriptor's `headers` builder.
@@ -97,6 +108,14 @@ export type ProviderDescriptor<
    * credentials for a subset of its endpoints.
    */
   readonly auth?: ProviderAuth<Field>;
+  /**
+   * Client-credentials configuration, for a provider that issues bearer tokens.
+   *
+   * Mutually useful with `auth` rather than mutually exclusive: a provider could
+   * require both a token and an identifying header. The HTTP client applies
+   * whichever of the two the descriptor declares.
+   */
+  readonly oauth?: ProviderOAuth;
   /** Request budgets applied to this provider, when one is warranted. */
   readonly rateLimit?: ProviderRateLimits;
   /** Named cache lifetimes for this provider's operation classes. */
@@ -146,6 +165,10 @@ export type AvailableAuthValues = Partial<Record<ProviderAuthField, string>>;
 /**
  * Returns the auth fields a provider requires but the caller has not supplied.
  *
+ * Covers both identifying headers (`auth`) and the client-credentials grant
+ * (`oauth`), so one call answers "can this provider be reached at all" whichever
+ * mechanism it uses.
+ *
  * Shared by the HTTP client, which refuses to send an unidentifiable request,
  * and by cross-provider profiles, which skip a component the caller cannot
  * authenticate rather than failing the whole composition.
@@ -154,11 +177,23 @@ export function missingAuthFields(
   provider: ProviderDescriptor,
   available: AvailableAuthValues,
 ): readonly ProviderAuthField[] {
-  if (provider.auth === undefined) return [];
-  return provider.auth.requires.filter((field) => {
+  const required = [
+    ...(provider.auth?.requires ?? []),
+    ...(provider.oauth === undefined ? [] : OAUTH_AUTH_FIELDS),
+  ];
+  return required.filter((field) => {
     const value = available[field];
     return value === undefined || value.trim().length === 0;
   });
+}
+
+/** The instructions a provider gives when its required configuration is absent. */
+export function missingAuthMessage(provider: ProviderDescriptor): string {
+  return (
+    provider.oauth?.missing ??
+    provider.auth?.missing ??
+    `${provider.name} requires configuration this SDK cannot supply.`
+  );
 }
 
 /** Narrows a descriptor to the metadata the SDK documents publicly. */
