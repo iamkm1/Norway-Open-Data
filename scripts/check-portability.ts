@@ -68,7 +68,15 @@ console.log(`  ok: full-ICU Intl available (Europe/Oslo -> ${osloDate})`);
 
 const probe = `
 const sdkUrl = ${JSON.stringify(pathToFileURL(esmPath).href)};
-const { NorwayOpenData, NotFoundError, InputValidationError, boundingBoxToPolygon } = await import(sdkUrl);
+const {
+  NorwayOpenData,
+  NotFoundError,
+  InputValidationError,
+  boundingBoxToPolygon,
+  collectFeaturePage,
+  geoJsonFeatureCollectionSchema,
+  resolveGeoJsonCrs,
+} = await import(sdkUrl);
 
 // A minimal object matching only the parts of the Response contract the SDK
 // uses. Running against this rather than Node's Response proves the SDK relies
@@ -109,6 +117,36 @@ const norway = new NorwayOpenData({
 });
 
 results.push(["klass-namespace", typeof norway.klass?.listClassifications === "function"]);
+results.push([
+  "geospatial-namespaces",
+  typeof norway.geodata?.searchDatasets === "function" &&
+    typeof norway.environment?.getProtectedAreasAt === "function" &&
+    typeof norway.land?.getLandResourcesAt === "function",
+]);
+
+const collection = geoJsonFeatureCollectionSchema.parse({
+  type: "FeatureCollection",
+  features: [{ type: "Feature", id: "point", geometry: null, properties: {} }],
+});
+const crs = resolveGeoJsonCrs(undefined);
+results.push([
+  "geojson",
+  collection.features.length === 1 && crs.identifier === "OGC:CRS84",
+]);
+
+const bounded = await collectFeaturePage(
+  async ({ offset, pageSize }) => ({
+    features: Array.from({ length: pageSize }, (_, index) => ({ id: offset + index })),
+    hasMore: true,
+  }),
+  { limit: 2, pageSize: 2, maxPages: 1 },
+);
+results.push([
+  "feature-pagination",
+  bounded.features.length === 2 &&
+    bounded.pagination.truncated === true &&
+    bounded.pagination.nextOffset === 2,
+]);
 
 // Request, normalization and response envelope.
 const first = await norway.companies.get("923609016");

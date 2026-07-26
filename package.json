@@ -1,6 +1,6 @@
 {
   "name": "norway-open-data-sdk",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "One TypeScript interface for Norway's open public APIs.",
   "keywords": [
     "norway",
@@ -27,6 +27,11 @@
     "vessel-tracking",
     "fiskeridir",
     "aquaculture",
+    "geonorge",
+    "naturbase",
+    "nibio",
+    "geojson",
+    "geospatial",
     "typescript",
     "sdk"
   ],

@@ -1,0 +1,159 @@
+{
+  "Uuid": "no.met.adc:weather/product",
+  "Title": "Weather observations",
+  "Type": "dataset",
+  "Abstract": "A representative geospatial observation dataset.",
+  "Organization": "Meteorologisk institutt",
+  "TopicCategories": ["Klima og meteorologi"],
+  "KeywordsTheme": [
+    {
+      "KeywordValue": "vær",
+      "Type": "theme"
+    },
+    {
+      "KeywordValue": "observasjoner",
+      "Type": "theme"
+    }
+  ],
+  "KeywordsNationalTheme": [
+    {
+      "KeywordValue": "Vær og klima",
+      "Thesaurus": "Nasjonal tematisk inndeling"
+    }
+  ],
+  "SpatialScope": "National",
+  "BoundingBox": {
+    "EastBoundLongitude": "33,00",
+    "NorthBoundLatitude": "72,00",
+    "SouthBoundLatitude": "57,00",
+    "WestBoundLongitude": "−18,00"
+  },
+  "ReferenceSystem": {
+    "CoordinateSystem": "EUREF89 UTM sone 33",
+    "CoordinateSystemUrl": "http://www.opengis.net/def/crs/EPSG/0/25833"
+  },
+  "ReferenceSystems": [
+    {
+      "CoordinateSystem": "EUREF89 UTM sone 33",
+      "CoordinateSystemUrl": "http://www.opengis.net/def/crs/EPSG/0/25833"
+    },
+    {
+      "CoordinateSystem": "ETRS89 geographic",
+      "CoordinateSystemUrl": "http://www.opengis.net/def/crs/EPSG/0/4258",
+      "Namespace": "EPSG"
+    }
+  ],
+  "ContactMetadata": {
+    "Email": "metadata@example.test",
+    "Name": "Metadata desk",
+    "Organization": "Meteorologisk institutt",
+    "Role": "pointOfContact"
+  },
+  "ContactOwner": {
+    "Email": "owner@example.test",
+    "Name": "Observation team",
+    "Organization": "Meteorologisk institutt",
+    "Role": "owner"
+  },
+  "ContactOwners": [
+    {
+      "Email": "owner@example.test",
+      "Name": "Observation team",
+      "Organization": "Meteorologisk institutt",
+      "Role": "owner"
+    }
+  ],
+  "ContactPublisher": {
+    "Email": "publisher@example.test",
+    "Name": "Data publisher",
+    "Organization": "Meteorologisk institutt",
+    "Role": "publisher"
+  },
+  "Constraints": {
+    "AccessConstraints": "Åpne data",
+    "OtherConstraints": "Credit Meteorologisk institutt.",
+    "OtherConstraintsLink": "https://data.norge.no/nlod/no/2.0",
+    "OtherConstraintsLinkText": "Norsk lisens for offentlige data (NLOD) 2.0",
+    "SecurityConstraints": "Ugradert",
+    "SecurityConstraintsNote": "",
+    "UseConstraints": "Lisens",
+    "UseLimitations": "Do not imply that the publisher endorses derived products.",
+    "OtherConstraintsAccess": "http://inspire.ec.europa.eu/metadata-codelist/LimitationsOnPublicAccess/noLimitations"
+  },
+  "AccessIsOpendata": true,
+  "AccessIsRestricted": false,
+  "AccessIsProtected": false,
+  "DataAccess": "Åpne data",
+  "DateCreated": "2020-01-02T00:00:00",
+  "DatePublished": "2020-02-03T00:00:00",
+  "DateUpdated": "2026-06-15T10:20:30Z",
+  "DateMetadataUpdated": "2026-07-20T00:00:00",
+  "DateMetadataValidFrom": "2020-02-03T00:00:00",
+  "MaintenanceFrequency": "Daglig",
+  "Status": "Pågående",
+  "DistributionsFormats": [
+    {
+      "ProtocolName": "WFS-tjeneste",
+      "FormatName": "GML",
+      "FormatVersion": "3.2",
+      "URL": "https://example.test/wfs?service=WFS&request=GetCapabilities",
+      "Protocol": "OGC:WFS",
+      "Organization": "Meteorologisk institutt"
+    },
+    {
+      "ProtocolName": "OGC API Features",
+      "FormatName": "GeoJSON",
+      "URL": "https://example.test/ogc/features",
+      "Protocol": "OGC:API-Features",
+      "Organization": "Meteorologisk institutt"
+    },
+    {
+      "ProtocolName": "REST-API",
+      "FormatName": "GeoJSON",
+      "URL": "https://example.test/arcgis/rest/services/Weather/FeatureServer",
+      "Protocol": "W3C:REST",
+      "Organization": "Meteorologisk institutt"
+    },
+    {
+      "ProtocolName": "REST-API",
+      "FormatName": "JSON",
+      "URL": "https://example.test/arcgis/rest/services/Weather/FeatureServer",
+      "Protocol": "W3C:REST",
+      "Organization": "Meteorologisk institutt"
+    },
+    {
+      "ProtocolName": "Geonorge nedlastning",
+      "FormatName": "GML",
+      "URL": "https://nedlasting.geonorge.no/api/capabilities/",
+      "Protocol": "GEONORGE:DOWNLOAD",
+      "Organization": "Kartverket",
+      "UnitsOfDistribution": "landsfiler"
+    },
+    {
+      "ProtocolName": "Vendor protocol",
+      "FormatName": "CSV",
+      "URL": "https://example.test/vendor",
+      "Protocol": "VENDOR:CUSTOM",
+      "Organization": "Meteorologisk institutt"
+    }
+  ],
+  "DistributionDetails": {
+    "Protocol": "OGC:WFS",
+    "ProtocolName": "WFS-tjeneste",
+    "URL": "https://example.test/wfs?service=WFS&request=GetCapabilities"
+  },
+  "DatasetServicesWithShowMapLink": [
+    {
+      "Uuid": "service-wms",
+      "Title": "Weather observations WMS",
+      "DistributionProtocol": "WMS-tjeneste",
+      "GetCapabilitiesUrl": "https://example.test/wms?service=WMS&request=GetCapabilities"
+    }
+  ],
+  "ServiceUuid": "service-wms",
+  "ServiceDistributionUrlForDataset": "https://example.test/wms?service=WMS&request=GetCapabilities",
+  "ServiceDistributionProtocolForDataset": "OGC:WMS",
+  "ServiceWfsDistributionUrlForDataset": "https://example.test/wfs?service=WFS&request=GetCapabilities",
+  "OperatesOn": [],
+  "ServiceType": null
+}

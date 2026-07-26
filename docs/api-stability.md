@@ -26,6 +26,14 @@ metadata that applies to their operations. `OpenDataSource.attribution` is likew
 present only when the provider registry or a service-specific profile component declares
 attribution text.
 
+The 0.8.0 profile-attribution addition is source-compatible. The established company,
+address, municipality and vessel profiles retain their synthetic top-level composite `source`
+identities, and the new nature profile uses the same convention. The optional `sources` array is
+derived from successful components and carries their distinct real provider descriptors, including
+separate entries when licence or mandatory attribution text differs. `components` continues to
+retain per-operation provenance. A multi-provider profile is therefore never presented as though
+its complete result came from only the first provider.
+
 ## Versioning
 
 Changesets record user-visible changes and drive semantic versions:

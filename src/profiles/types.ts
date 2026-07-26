@@ -1,9 +1,18 @@
 import type { OpenDataSource } from "../core/provider.js";
+import type { Coordinates } from "../core/geo.js";
+import type { FeaturePagePagination } from "../core/feature-page.js";
 import type { AisTrack, AisTrackPoint, Mmsi } from "../providers/barentswatch-ais/types.js";
 import type { Company } from "../providers/brreg/types.js";
 import type { FishingVessel } from "../providers/fiskeridir/types.js";
 import type { NorwegianAddress, PlaceName } from "../providers/kartverket/types.js";
 import type { WeatherTimeseriesEntry } from "../providers/met/types.js";
+import type {
+  InterventionFreeAreaFeature,
+  NatureTypeFeature,
+  ProposedProtectedAreaFeature,
+  ProtectedAreaFeature,
+} from "../providers/naturbase/types.js";
+import type { LandResourceFeature } from "../providers/nibio/types.js";
 import type { HazardWarning } from "../providers/nve/types.js";
 import type { RoadNetworkSegment } from "../providers/vegvesen/types.js";
 
@@ -23,7 +32,12 @@ export type ProfileComponentOperation =
   | "ais.getVesselSnapshot"
   | "ais.getTrackLast24Hours"
   | "fisheries.searchVessels"
-  | "places.nearby";
+  | "places.nearby"
+  | "environment.getProtectedAreasAt"
+  | "environment.getProposedProtectedAreasAt"
+  | "environment.getNatureTypesAt"
+  | "environment.getInterventionFreeAreasAt"
+  | "land.getLandResourcesAt";
 
 /** Logical profile section populated by a component operation. */
 export type ProfileComponentSection =
@@ -38,7 +52,12 @@ export type ProfileComponentSection =
   | "roads"
   | "ais"
   | "registration"
-  | "place";
+  | "place"
+  | "protected-areas"
+  | "proposed-protected-areas"
+  | "nature-types"
+  | "intervention-free-areas"
+  | "land-resources";
 
 /**
  * Why an optional profile component is missing.
@@ -268,4 +287,56 @@ export type VesselProfile = {
   nearestPlace?: PlaceName;
   /** Provenance and availability for every component operation. */
   components?: ProfileComponent[];
+};
+
+/** Parameters for a bounded, cross-provider nature lookup at one WGS84 point. */
+export type NatureAtLocationParameters = Coordinates & {
+  /**
+   * Maximum features requested from each environmental or land dataset.
+   * Defaults to 100 and is capped by each provider client.
+   */
+  limit?: number;
+};
+
+/** Municipality inferred from the nearest official Kartverket place name. */
+export type NatureProfileMunicipality = {
+  code?: string;
+  name?: string;
+  countyCode?: string;
+  countyName?: string;
+};
+
+/** Pagination metadata retained for each bounded geospatial component. */
+export type NatureProfilePagination = {
+  protectedAreas?: FeaturePagePagination;
+  proposedProtectedAreas?: FeaturePagePagination;
+  natureTypes?: FeaturePagePagination;
+  interventionFreeAreas?: FeaturePagePagination;
+  landResources?: FeaturePagePagination;
+};
+
+/**
+ * Nature and land-resource information composed at one location.
+ *
+ * Every dataset is queried independently. A missing section means its provider
+ * failed; `components` and `warnings` explain which operation was affected.
+ */
+export type NatureAtLocationProfile = {
+  /** Exact WGS84 coordinate supplied by the caller. */
+  location: Coordinates;
+  /** Administrative context inferred from `nearestPlace`, when published. */
+  municipality?: NatureProfileMunicipality;
+  /** Nearest official Kartverket place name, when one was returned. */
+  nearestPlace?: PlaceName;
+  protectedAreas?: ProtectedAreaFeature[];
+  proposedProtectedAreas?: ProposedProtectedAreaFeature[];
+  natureTypes?: NatureTypeFeature[];
+  interventionFreeAreas?: InterventionFreeAreaFeature[];
+  landResources?: LandResourceFeature[];
+  /** Dataset-specific safety and truncation metadata. */
+  pagination: NatureProfilePagination;
+  /** Sanitized provider failures and bounded-result truncation notices. */
+  warnings: string[];
+  /** Provenance and availability for every component operation. */
+  components: ProfileComponent[];
 };

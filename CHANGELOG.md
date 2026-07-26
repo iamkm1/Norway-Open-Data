@@ -2,6 +2,59 @@
 
 All notable user-visible changes are recorded here. The project follows semantic versioning.
 
+## 0.8.0 — 2026-07-26
+
+### Minor Changes
+
+- **Geospatial Norway.** Adds three anonymous, experimental namespaces for focused catalogue,
+  environmental and land-resource use. The SDK deliberately remains a curated data client rather
+  than a general GIS proxy.
+
+  **`sdk.geodata` — Geonorge / Kartverket catalogue.** `searchDatasets()` and `searchServices()`
+  return bounded, deterministically ordered metadata results; `searchDatasetsAll()` and
+  `searchServicesAll()` expose caller-bounded async iterators. `getMetadata()`, `getDataset()` and
+  `getService()` normalize publisher, themes, licence, geographic extent, update metadata,
+  distributions and related services. Discovery classifies WFS, WMS, OGC API Features, ArcGIS REST,
+  downloadable files and other published links, but the SDK never follows a discovered URL or
+  grants access to the resource behind it.
+
+  **`sdk.environment` — Miljødirektoratet / Naturbase.** Adds point lookups, bounding-box searches
+  and lazy bounded iterators for current protected areas, proposed protected areas, modern NiN
+  nature localities and the January 2023 intervention-free nature status. The integration is
+  intentionally limited to these useful public vector layers instead of exposing every map layer.
+
+  **`sdk.land` — NIBIO AR50.** Adds point lookup, bounding-box search and a bounded iterator for the
+  open generalized AR50 land-resource classification. Restricted agreement-based Geovekst AR5,
+  parcel-precision data and soil/cultivation-suitability products are not included.
+
+  **`profiles.natureAtLocation()` — a partial cross-provider nature profile.** Composes all five
+  Naturbase/NIBIO datasets with the nearest official Kartverket place and municipality context.
+  Each operation retains its real source, retrieval time and attribution. Provider failures degrade
+  to component warnings without removing successful sections; caller cancellation still rejects
+  the complete call.
+
+  **Profile-source compatibility and provenance.** Existing `profiles.company()`,
+  `profiles.address()`, `profiles.municipality()` and `profiles.vessel()` responses retain their
+  synthetic top-level composite source identities. The new nature profile also uses a synthetic
+  top-level source so a multi-provider result is not attributed to only one provider. The additive
+  `sources` array is derived from successful components and carries their real provider descriptors,
+  preserving separate entries when licence or mandatory attribution text differs; `components`
+  retains per-operation provenance.
+
+  **Strict shared GeoJSON and bounded feature paging.** Adds runtime validation for two-dimensional
+  WGS84 Point, MultiPoint, LineString, Polygon, MultiPolygon, polygon holes, null geometry, feature
+  identifiers, feature collections and CRS declarations. Naturbase and NIBIO request server-side
+  WGS84 output while retaining the advertised source CRS. Unsupported CRS declarations are rejected;
+  the SDK does not silently reinterpret coordinates and includes no client-side reprojection engine.
+  Feature searches default to 100 results, expose truncation and continuation metadata, propagate
+  `AbortSignal`, and stop repeated cursors, repeated pages and empty endless pages.
+
+  **Scope and verification.** WMS image rendering, arbitrary caller-supplied upstream URLs,
+  restricted datasets and full-country downloads remain out of scope. Deterministic offline tests
+  cover geometry, CRS, ArcGIS/WFS/OGC paging, truncation, attribution and partial profiles; bounded
+  anonymous live probes are opt-in through the existing `RUN_LIVE_TESTS` switch. No new credentials
+  or environment variables are required.
+
 ## 0.7.0 — 2026-07-26
 
 ### Minor Changes

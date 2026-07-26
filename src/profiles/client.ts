@@ -1,10 +1,23 @@
 import { createResponse } from "../core/client.js";
-import { ConfigurationError, InputValidationError, NotFoundError } from "../core/errors.js";
-import { missingAuthMessage, type ProviderDescriptor, responseSource } from "../core/provider.js";
+import { parseCoordinates } from "../core/geo.js";
+import {
+  ConfigurationError,
+  InputValidationError,
+  NotFoundError,
+  ProviderError,
+} from "../core/errors.js";
+import {
+  missingAuthMessage,
+  type OpenDataSource,
+  type ProviderDescriptor,
+  responseSource,
+} from "../core/provider.js";
 import { providers } from "../providers/registry.js";
 import { barentswatchAisProvider } from "../providers/barentswatch-ais/provider.js";
 import { kartverketProvider } from "../providers/kartverket/provider.js";
 import { metProvider } from "../providers/met/provider.js";
+import { naturbaseProvider } from "../providers/naturbase/provider.js";
+import { nibioProvider } from "../providers/nibio/provider.js";
 import { ssbProvider } from "../providers/ssb/provider.js";
 import { vegvesenProvider } from "../providers/vegvesen/provider.js";
 import type { OpenDataResponse, RequestOptions } from "../core/types.js";
@@ -15,6 +28,8 @@ import type { FisheriesClient } from "../providers/fiskeridir/client.js";
 import type { KartverketAddressClient } from "../providers/kartverket/address-client.js";
 import type { KartverketPlaceClient } from "../providers/kartverket/place-client.js";
 import type { MetClient } from "../providers/met/client.js";
+import type { NaturbaseClient } from "../providers/naturbase/client.js";
+import type { NibioClient } from "../providers/nibio/client.js";
 import type { NveHazardsClient } from "../providers/nve/hazards-client.js";
 import type { SsbClient } from "../providers/ssb/client.js";
 import type { VegvesenClient } from "../providers/vegvesen/client.js";
@@ -37,6 +52,8 @@ import type {
   AddressProfile,
   CompanyProfile,
   MunicipalityProfile,
+  NatureAtLocationParameters,
+  NatureAtLocationProfile,
   ProfileComponent,
   ProfileComponentOperation,
   ProfileComponentSection,
@@ -92,6 +109,22 @@ function addressProfileSource(
   );
 }
 
+function municipalityProfileSource(
+  includeFhi: boolean,
+  includeBrreg: boolean,
+  includeNve: boolean,
+): ProfileSource {
+  return profileSource(
+    [
+      { id: "ssb", name: "Statistics Norway" },
+      ...(includeFhi ? [{ id: "fhi", name: "FHI" }] : []),
+      ...(includeBrreg ? [{ id: "brreg", name: "Brønnøysundregistrene" }] : []),
+      ...(includeNve ? [{ id: "nve", name: "NVE" }] : []),
+    ],
+    "cross-provider-municipality-profile",
+  );
+}
+
 function vesselProfileSource(
   includeFisheries: boolean,
   includeWeather: boolean,
@@ -108,19 +141,18 @@ function vesselProfileSource(
   );
 }
 
-function municipalityProfileSource(
-  includeFhi: boolean,
-  includeBrreg: boolean,
-  includeNve: boolean,
+function natureProfileSource(
+  includeNaturbase: boolean,
+  includeNibio: boolean,
+  includeKartverket: boolean,
 ): ProfileSource {
   return profileSource(
     [
-      { id: "ssb", name: "Statistics Norway" },
-      ...(includeFhi ? [{ id: "fhi", name: "FHI" }] : []),
-      ...(includeBrreg ? [{ id: "brreg", name: "Brønnøysundregistrene" }] : []),
-      ...(includeNve ? [{ id: "nve", name: "NVE" }] : []),
+      ...(includeNaturbase ? [{ id: "naturbase", name: "Miljødirektoratet / Naturbase" }] : []),
+      ...(includeNibio ? [{ id: "nibio", name: "NIBIO" }] : []),
+      ...(includeKartverket ? [{ id: "kartverket", name: "Kartverket" }] : []),
     ],
-    "cross-provider-municipality-profile",
+    "cross-provider-nature-profile",
   );
 }
 
@@ -194,6 +226,76 @@ function succeeded<T>(result: AttemptResult<T> | undefined): OpenDataResponse<T>
   return result !== undefined && "response" in result ? result.response : undefined;
 }
 
+function uniqueSources(sources: readonly OpenDataSource[]): OpenDataSource[] {
+  const seen = new Set<string>();
+  return sources.filter((source) => {
+    // A single provider can publish several feeds under different legal terms
+    // or mandatory attribution text. Provider ID alone is therefore not a
+    // sufficient provenance key (for example, Naturbase's INON snapshot and
+    // NVE's three Varsom warning feeds).
+    const key = JSON.stringify([
+      source.id,
+      source.name,
+      source.homepage,
+      source.documentation,
+      source.license,
+      source.attribution,
+    ]);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function presentResponses(
+  ...responses: readonly (OpenDataResponse<unknown> | undefined)[]
+): OpenDataResponse<unknown>[] {
+  return responses.filter(
+    (response): response is OpenDataResponse<unknown> => response !== undefined,
+  );
+}
+
+/**
+ * Builds a profile envelope with a stable synthetic profile identity and the
+ * real providers that actually contributed.
+ *
+ * The top-level synthetic `source` preserves the existing profile contract and
+ * makes clear that the result is SDK composition rather than one upstream's
+ * response. `sources` is authoritative for provider licences, attribution and
+ * provenance. The fallback responses cover successful "no data here"
+ * operations, whose components are intentionally marked omitted even though
+ * the provider answered normally.
+ */
+function createProfileResponse<T extends { components?: readonly ProfileComponent[] }>(
+  data: T,
+  source: ProfileSource,
+  raw: unknown,
+  cached: boolean,
+  options?: RequestOptions,
+  successfulEmptyResponses: readonly OpenDataResponse<unknown>[] = [],
+): OpenDataResponse<T> {
+  const componentSources = (data.components ?? [])
+    .filter(
+      (component): component is Extract<ProfileComponent, { status: "available" }> =>
+        component.status === "available",
+    )
+    .map((component) => component.source);
+  const sources = uniqueSources(
+    componentSources.length === 0
+      ? successfulEmptyResponses.map((response) => response.source)
+      : componentSources,
+  );
+  if (sources.length === 0) {
+    throw new ProviderError("Every provider needed for this profile failed.", {
+      provider: "profiles",
+    });
+  }
+  return {
+    ...createResponse(data, source, raw, cached, options),
+    sources,
+  };
+}
+
 function addressHazardMatch(
   warning: AddressProfile["hazards"][number],
   match: WarningAreaMatch,
@@ -243,6 +345,8 @@ export type ProfileDependencies = {
   ais: AisClient;
   fisheries: FisheriesClient;
   places: KartverketPlaceClient;
+  environment: NaturbaseClient;
+  land: NibioClient;
   /**
    * Reports whether the current configuration satisfies a provider's declared
    * identification requirements, so a component can be skipped as
@@ -283,7 +387,7 @@ function hasUsableAddress(address: CompanyProfile["company"]["businessAddress"])
   );
 }
 
-/** Cross-provider client for deterministic, transparent company enrichment. */
+/** Cross-provider client for deterministic, transparent public-data composition. */
 export class ProfileClient {
   readonly #companies: BrregClient;
   readonly #addresses: KartverketAddressClient;
@@ -442,7 +546,7 @@ export class ProfileClient {
       components,
     };
 
-    return createResponse(
+    return createProfileResponse(
       profile,
       addressProfileSource(
         weather !== undefined,
@@ -681,7 +785,7 @@ export class ProfileClient {
       components,
     };
 
-    return createResponse(
+    return createProfileResponse(
       profile,
       municipalityProfileSource(
         lifeResponse !== undefined,
@@ -916,7 +1020,7 @@ export class ProfileClient {
       components,
     };
 
-    return createResponse(
+    return createProfileResponse(
       profile,
       vesselProfileSource(
         registeredVessel !== undefined,
@@ -936,6 +1040,266 @@ export class ProfileClient {
         (weather?.cached ?? true) &&
         (place?.cached ?? true),
       options,
+      presentResponses(snapshot, track, registration, weather, place),
+    );
+  }
+
+  /**
+   * Composes bounded nature, land-resource and place-name information at one
+   * WGS84 coordinate.
+   *
+   * The five dataset lookups and Kartverket place lookup run independently.
+   * Provider failures are reported in `components` and `warnings`; caller
+   * cancellation is always propagated.
+   */
+  async natureAtLocation(
+    parameters: NatureAtLocationParameters,
+    options?: RequestOptions,
+  ): Promise<OpenDataResponse<NatureAtLocationProfile>> {
+    const dependencies = this.#dependencies;
+    if (dependencies === undefined) {
+      throw new NotFoundError("Nature profiles require a fully configured NorwayOpenData client.");
+    }
+    const location = parseCoordinates(
+      { latitude: parameters.latitude, longitude: parameters.longitude },
+      "profiles",
+    );
+    const limit = parameters.limit ?? 100;
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+      throw new InputValidationError(
+        "Nature profile limit must be a safe integer between 1 and 100.",
+        { provider: "profiles" },
+      );
+    }
+    const forwarded: RequestOptions = {
+      ...(options?.signal === undefined ? {} : { signal: options.signal }),
+      ...(options?.bypassCache === undefined ? {} : { bypassCache: options.bypassCache }),
+      includeRaw: options?.includeRaw === true,
+    };
+    const spatialParameters = { ...location, limit };
+
+    const [
+      protectedResult,
+      proposedResult,
+      natureTypeResult,
+      interventionFreeResult,
+      landResourceResult,
+      placeResult,
+    ] = await Promise.all([
+      attempt(
+        dependencies.environment.getProtectedAreasAt(spatialParameters, forwarded),
+        options?.signal,
+      ),
+      attempt(
+        dependencies.environment.getProposedProtectedAreasAt(spatialParameters, forwarded),
+        options?.signal,
+      ),
+      attempt(
+        dependencies.environment.getNatureTypesAt(spatialParameters, forwarded),
+        options?.signal,
+      ),
+      attempt(
+        dependencies.environment.getInterventionFreeAreasAt(spatialParameters, forwarded),
+        options?.signal,
+      ),
+      attempt(dependencies.land.getLandResourcesAt(spatialParameters, forwarded), options?.signal),
+      attempt(
+        dependencies.places.nearby({ ...location, radiusMeters: 5_000, limit: 1 }, forwarded),
+        options?.signal,
+      ),
+    ]);
+
+    const protectedAreas = succeeded(protectedResult);
+    const proposedProtectedAreas = succeeded(proposedResult);
+    const natureTypes = succeeded(natureTypeResult);
+    const interventionFreeAreas = succeeded(interventionFreeResult);
+    const landResources = succeeded(landResourceResult);
+    const nearbyPlaces = succeeded(placeResult);
+    const nearestPlace = nearbyPlaces?.data.items[0];
+    const municipality =
+      nearestPlace !== undefined &&
+      (nearestPlace.municipalityCode !== undefined ||
+        nearestPlace.municipalityName !== undefined ||
+        nearestPlace.countyCode !== undefined ||
+        nearestPlace.countyName !== undefined)
+        ? {
+            ...(nearestPlace.municipalityCode === undefined
+              ? {}
+              : { code: nearestPlace.municipalityCode }),
+            ...(nearestPlace.municipalityName === undefined
+              ? {}
+              : { name: nearestPlace.municipalityName }),
+            ...(nearestPlace.countyCode === undefined
+              ? {}
+              : { countyCode: nearestPlace.countyCode }),
+            ...(nearestPlace.countyName === undefined
+              ? {}
+              : { countyName: nearestPlace.countyName }),
+          }
+        : undefined;
+
+    const components: ProfileComponent[] = [
+      "failure" in protectedResult
+        ? failedComponent(
+            "environment.getProtectedAreasAt",
+            "protected-areas",
+            naturbaseProvider,
+            protectedResult.failure,
+          )
+        : availableComponent(
+            "environment.getProtectedAreasAt",
+            "protected-areas",
+            protectedResult.response,
+          ),
+      "failure" in proposedResult
+        ? failedComponent(
+            "environment.getProposedProtectedAreasAt",
+            "proposed-protected-areas",
+            naturbaseProvider,
+            proposedResult.failure,
+          )
+        : availableComponent(
+            "environment.getProposedProtectedAreasAt",
+            "proposed-protected-areas",
+            proposedResult.response,
+          ),
+      "failure" in natureTypeResult
+        ? failedComponent(
+            "environment.getNatureTypesAt",
+            "nature-types",
+            naturbaseProvider,
+            natureTypeResult.failure,
+          )
+        : availableComponent(
+            "environment.getNatureTypesAt",
+            "nature-types",
+            natureTypeResult.response,
+          ),
+      "failure" in interventionFreeResult
+        ? failedComponent(
+            "environment.getInterventionFreeAreasAt",
+            "intervention-free-areas",
+            naturbaseProvider,
+            interventionFreeResult.failure,
+          )
+        : availableComponent(
+            "environment.getInterventionFreeAreasAt",
+            "intervention-free-areas",
+            interventionFreeResult.response,
+          ),
+      "failure" in landResourceResult
+        ? failedComponent(
+            "land.getLandResourcesAt",
+            "land-resources",
+            nibioProvider,
+            landResourceResult.failure,
+          )
+        : availableComponent(
+            "land.getLandResourcesAt",
+            "land-resources",
+            landResourceResult.response,
+          ),
+      "failure" in placeResult
+        ? failedComponent("places.nearby", "place", kartverketProvider, placeResult.failure)
+        : nearestPlace === undefined
+          ? omittedComponent("places.nearby", "place", kartverketProvider, "not-found")
+          : availableComponent("places.nearby", "place", placeResult.response),
+    ];
+
+    const warnings: string[] = [];
+    const failures: Array<[string, AttemptResult<unknown>]> = [
+      ["Protected-area lookup", protectedResult],
+      ["Proposed protected-area lookup", proposedResult],
+      ["Nature-type lookup", natureTypeResult],
+      ["Intervention-free-area lookup", interventionFreeResult],
+      ["Land-resource lookup", landResourceResult],
+      ["Nearby-place lookup", placeResult],
+    ];
+    for (const [label, result] of failures) {
+      if ("failure" in result) warnings.push(`${label} failed: ${result.failure.message}`);
+    }
+    const truncationChecks = [
+      ["protected areas", protectedAreas?.data.pagination],
+      ["proposed protected areas", proposedProtectedAreas?.data.pagination],
+      ["nature types", natureTypes?.data.pagination],
+      ["intervention-free areas", interventionFreeAreas?.data.pagination],
+      ["land resources", landResources?.data.pagination],
+    ] as const;
+    for (const [label, pagination] of truncationChecks) {
+      if (pagination?.truncated === true) {
+        warnings.push(
+          `The ${label} result was truncated at ${String(pagination.returned)} ${
+            pagination.returned === 1 ? "feature" : "features"
+          }.`,
+        );
+      }
+    }
+
+    const profile: NatureAtLocationProfile = {
+      location,
+      ...(municipality === undefined ? {} : { municipality }),
+      ...(nearestPlace === undefined ? {} : { nearestPlace }),
+      ...(protectedAreas === undefined ? {} : { protectedAreas: protectedAreas.data.features }),
+      ...(proposedProtectedAreas === undefined
+        ? {}
+        : { proposedProtectedAreas: proposedProtectedAreas.data.features }),
+      ...(natureTypes === undefined ? {} : { natureTypes: natureTypes.data.features }),
+      ...(interventionFreeAreas === undefined
+        ? {}
+        : { interventionFreeAreas: interventionFreeAreas.data.features }),
+      ...(landResources === undefined ? {} : { landResources: landResources.data.features }),
+      pagination: {
+        ...(protectedAreas === undefined ? {} : { protectedAreas: protectedAreas.data.pagination }),
+        ...(proposedProtectedAreas === undefined
+          ? {}
+          : { proposedProtectedAreas: proposedProtectedAreas.data.pagination }),
+        ...(natureTypes === undefined ? {} : { natureTypes: natureTypes.data.pagination }),
+        ...(interventionFreeAreas === undefined
+          ? {}
+          : { interventionFreeAreas: interventionFreeAreas.data.pagination }),
+        ...(landResources === undefined ? {} : { landResources: landResources.data.pagination }),
+      },
+      warnings,
+      components,
+    };
+
+    return createProfileResponse(
+      profile,
+      natureProfileSource(
+        protectedAreas !== undefined ||
+          proposedProtectedAreas !== undefined ||
+          natureTypes !== undefined ||
+          interventionFreeAreas !== undefined,
+        landResources !== undefined,
+        nearestPlace !== undefined,
+      ),
+      {
+        ...(protectedAreas === undefined ? {} : { protectedAreas: protectedAreas.raw }),
+        ...(proposedProtectedAreas === undefined
+          ? {}
+          : { proposedProtectedAreas: proposedProtectedAreas.raw }),
+        ...(natureTypes === undefined ? {} : { natureTypes: natureTypes.raw }),
+        ...(interventionFreeAreas === undefined
+          ? {}
+          : { interventionFreeAreas: interventionFreeAreas.raw }),
+        ...(landResources === undefined ? {} : { landResources: landResources.raw }),
+        ...(nearbyPlaces === undefined ? {} : { nearbyPlaces: nearbyPlaces.raw }),
+      },
+      (protectedAreas?.cached ?? true) &&
+        (proposedProtectedAreas?.cached ?? true) &&
+        (natureTypes?.cached ?? true) &&
+        (interventionFreeAreas?.cached ?? true) &&
+        (landResources?.cached ?? true) &&
+        (nearbyPlaces?.cached ?? true),
+      options,
+      presentResponses(
+        protectedAreas,
+        proposedProtectedAreas,
+        natureTypes,
+        interventionFreeAreas,
+        landResources,
+        nearbyPlaces,
+      ),
     );
   }
 
@@ -953,7 +1317,7 @@ export class ProfileClient {
     const companyComponent = availableComponent("companies.get", "company", companyResponse);
     const businessAddress = company.businessAddress;
     if (!hasUsableAddress(businessAddress) || businessAddress === undefined) {
-      return createResponse(
+      return createProfileResponse(
         {
           company,
           components: [
@@ -988,7 +1352,7 @@ export class ProfileClient {
       options?.signal,
     );
     if ("failure" in addressResult) {
-      return createResponse(
+      return createProfileResponse(
         {
           company,
           components: [
@@ -1009,7 +1373,7 @@ export class ProfileClient {
     }
     const addressResponse = addressResult.response;
     const match = selectAddressMatch(businessAddress, addressResponse.data.items);
-    return createResponse(
+    return createProfileResponse(
       {
         company,
         ...(match === undefined ? {} : { location: match }),

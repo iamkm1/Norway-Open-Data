@@ -11,9 +11,12 @@ import { enturProvider } from "./entur/provider.js";
 import { fhiProvider } from "./fhi/provider.js";
 import { fiskeridirAquaProvider } from "./fiskeridir/aqua-provider.js";
 import { fiskeridirVesselsProvider } from "./fiskeridir/vessels-provider.js";
+import { geonorgeProvider } from "./geonorge/provider.js";
 import { hvakosterstrommenProvider } from "./hvakosterstrommen/provider.js";
 import { kartverketProvider } from "./kartverket/provider.js";
 import { metProvider } from "./met/provider.js";
+import { naturbaseProvider } from "./naturbase/provider.js";
+import { nibioProvider } from "./nibio/provider.js";
 import { norgesBankProvider } from "./norges-bank/provider.js";
 import { nveProvider } from "./nve/provider.js";
 import { ssbKlassProvider } from "./ssb-klass/provider.js";
@@ -45,9 +48,12 @@ export const providerDescriptors = registry({
   fhi: fhiProvider,
   "fiskeridir-aqua": fiskeridirAquaProvider,
   "fiskeridir-vessels": fiskeridirVesselsProvider,
+  geonorge: geonorgeProvider,
   hvakosterstrommen: hvakosterstrommenProvider,
   kartverket: kartverketProvider,
   met: metProvider,
+  naturbase: naturbaseProvider,
+  nibio: nibioProvider,
   "norges-bank": norgesBankProvider,
   nve: nveProvider,
   ssb: ssbProvider,

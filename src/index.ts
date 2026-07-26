@@ -27,9 +27,62 @@ export type {
   RateLimitPolicy,
 } from "./core/provider.js";
 export type { ProviderId } from "./providers/registry.js";
-export type { PaginateOptions } from "./core/paginate.js";
 export { boundingBoxToPolygon, boundingBoxSchema, coordinatesSchema } from "./core/geo.js";
 export type { BoundingBox, Coordinates, GeoJsonPolygon, GeoJsonRing } from "./core/geo.js";
+export {
+  boundingBoxToGeoJsonBoundingBox,
+  coordinatesToGeoJsonPosition,
+  geoJsonBoundingBoxSchema,
+  geoJsonCrsDeclarationSchema,
+  geoJsonFeatureCollectionSchema,
+  geoJsonFeatureIdSchema,
+  geoJsonFeatureSchema,
+  geoJsonGeometrySchema,
+  geoJsonLinearRingSchema,
+  geoJsonLineStringSchema,
+  geoJsonMultiPointSchema,
+  geoJsonMultiPolygonSchema,
+  geoJsonPointSchema,
+  geoJsonPolygonSchema,
+  geoJsonPositionSchema,
+  nullableGeoJsonGeometrySchema,
+  resolveGeoJsonCrs,
+} from "./core/geojson.js";
+export type {
+  GeoJsonBoundingBox,
+  GeoJsonCrsDeclaration,
+  GeoJsonCrsMetadata,
+  GeoJsonFeature,
+  GeoJsonFeatureCollection,
+  GeoJsonFeatureId,
+  GeoJsonFeatureProperties,
+  GeoJsonGeometry,
+  GeoJsonLinearRing,
+  GeoJsonLineString,
+  GeoJsonMultiPoint,
+  GeoJsonMultiPolygon,
+  GeoJsonPoint,
+  GeoJsonPolygonGeometry,
+  GeoJsonPosition,
+} from "./core/geojson.js";
+export {
+  collectFeaturePage,
+  DEFAULT_FEATURE_PAGE_SIZE,
+  iterateFeaturePages,
+  MAX_FEATURE_ITEMS,
+  MAX_FEATURE_PAGES,
+  MAX_FEATURE_PAGE_SIZE,
+} from "./core/feature-page.js";
+export type {
+  BoundedFeaturePage,
+  FeaturePageBatch,
+  FeaturePageChunk,
+  FeaturePageFetcher,
+  FeaturePageOptions,
+  FeaturePagePagination,
+  FeaturePageRequest,
+} from "./core/feature-page.js";
+export type { PaginateOptions } from "./core/paginate.js";
 export { DEFAULT_MAX_RECORD_SIZE } from "./core/ndjson.js";
 export type { ProviderOAuth } from "./core/oauth.js";
 export type {
@@ -51,6 +104,10 @@ export type {
   MunicipalityLifeExpectancy,
   MunicipalityPopulation,
   MunicipalityProfile,
+  NatureAtLocationParameters,
+  NatureAtLocationProfile,
+  NatureProfileMunicipality,
+  NatureProfilePagination,
   ProfileComponent,
   ProfileComponentOperation,
   ProfileComponentSection,
@@ -258,6 +315,29 @@ export type {
   CatalogSearchResult,
 } from "./providers/data-norge/types.js";
 
+export { GeonorgeClient } from "./providers/geonorge/index.js";
+export type {
+  GeonorgeAccess,
+  GeonorgeContact,
+  GeonorgeDatasetMetadata,
+  GeonorgeDatasetSummary,
+  GeonorgeDistribution,
+  GeonorgeDistributionFormat,
+  GeonorgeDistributionKind,
+  GeonorgeLicense,
+  GeonorgeMetadata,
+  GeonorgeMetadataSummary,
+  GeonorgeMetadataType,
+  GeonorgeReferenceSystem,
+  GeonorgeSearchPagination,
+  GeonorgeSearchParameters,
+  GeonorgeSearchResult,
+  GeonorgeServiceMetadata,
+  GeonorgeServiceReference,
+  GeonorgeServiceSummary,
+  GeonorgeUpdateMetadata,
+} from "./providers/geonorge/index.js";
+
 export { ElectricityClient } from "./providers/hvakosterstrommen/client.js";
 export type {
   CurrentElectricityPriceParameters,
@@ -286,6 +366,42 @@ export type {
   PowerPlant,
   ReservoirStatistic,
 } from "./providers/nve/types.js";
+
+export { NaturbaseClient } from "./providers/naturbase/index.js";
+export type {
+  InterventionFreeAreaFeature,
+  InterventionFreeAreaProperties,
+  InterventionFreeZone,
+  NaturbaseAreaGeometry,
+  NaturbaseBoundingBoxQuery,
+  NaturbaseFeatureQueryOptions,
+  NaturbaseFeatureResult,
+  NaturbasePointQuery,
+  NaturbaseSourceCrs,
+  NatureTypeFeature,
+  NatureTypeProperties,
+  ProposedProtectedAreaFeature,
+  ProposedProtectedAreaProperties,
+  ProtectedAreaFeature,
+  ProtectedAreaProperties,
+} from "./providers/naturbase/index.js";
+
+export { NibioClient } from "./providers/nibio/index.js";
+export type {
+  Ar50AgricultureCode,
+  Ar50ForestProductivityCode,
+  Ar50LandTypeCode,
+  Ar50TreeTypeCode,
+  Ar50VegetationCoverCode,
+  LandResourceBoundingBoxQuery,
+  LandResourceFeature,
+  LandResourceGeometry,
+  LandResourcePointQuery,
+  LandResourceProperties,
+  LandResourceResult,
+  NibioFeatureQueryOptions,
+  NibioSourceCrs,
+} from "./providers/nibio/index.js";
 
 export { StortingetClient } from "./providers/stortinget/client.js";
 export type {

@@ -337,7 +337,22 @@ describe("profiles.municipality", () => {
       addressArea: { code: "1106", name: "Haugesund" },
     });
     expect(profile.components?.every((component) => component.status === "available")).toBe(true);
-    expect(response.source.id).toBe("ssb+fhi+brreg+nve");
+    expect(response.source).toEqual({
+      id: "ssb+fhi+brreg+nve",
+      name: "Statistics Norway, FHI, Brønnøysundregistrene and NVE",
+      homepage: "https://github.com/iamkm1/Norway-Open-Data",
+      documentation:
+        "https://github.com/iamkm1/Norway-Open-Data#cross-provider-municipality-profile",
+    });
+    expect(response.sources?.map((source) => source.id)).toEqual([
+      "ssb",
+      "fhi",
+      "brreg",
+      "nve",
+      "nve",
+      "nve",
+    ]);
+    expect(response.sources?.some(({ id }) => id === response.source.id)).toBe(false);
   });
 
   it("reads the SSB region metadata once per profile", async () => {
@@ -434,6 +449,20 @@ describe("profiles.municipality", () => {
       reason: "provider-error",
       error: { name: "ProviderError" },
     });
-    expect(response.source.id).toBe("ssb+fhi+nve");
+    expect(response.source).toMatchObject({
+      id: "ssb+fhi+nve",
+      name: "Statistics Norway, FHI and NVE",
+      homepage: "https://github.com/iamkm1/Norway-Open-Data",
+      documentation:
+        "https://github.com/iamkm1/Norway-Open-Data#cross-provider-municipality-profile",
+    });
+    expect(response.sources?.map((source) => source.id)).toEqual([
+      "ssb",
+      "fhi",
+      "nve",
+      "nve",
+      "nve",
+    ]);
+    expect(response.sources?.some(({ id }) => id === response.source.id)).toBe(false);
   });
 });

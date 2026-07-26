@@ -268,10 +268,26 @@ describe("profiles.address", () => {
           cached: false,
         });
       }
-      expect(response.source.documentation).toBe(
-        "https://github.com/iamkm1/Norway-Open-Data#cross-provider-address-profile",
-      );
-      expect(response.source.id).toBe("kartverket+met+nve+vegvesen");
+      expect(response.source).toEqual({
+        id: "kartverket+met+nve+vegvesen",
+        name: "Kartverket, MET Norway, NVE and Statens vegvesen",
+        homepage: "https://github.com/iamkm1/Norway-Open-Data",
+        documentation: "https://github.com/iamkm1/Norway-Open-Data#cross-provider-address-profile",
+      });
+      expect(response.sources?.map((source) => source.id)).toEqual([
+        "kartverket",
+        "nve",
+        "nve",
+        "nve",
+        "met",
+        "vegvesen",
+      ]);
+      expect(
+        response.sources
+          ?.filter((source) => source.id === "nve")
+          .map((source) => source.attribution),
+      ).toEqual(Object.values(warningAttributions));
+      expect(response.sources?.some(({ id }) => id === response.source.id)).toBe(false);
     } finally {
       vi.useRealTimers();
     }
@@ -452,7 +468,18 @@ describe("profiles.address", () => {
         reason: "not-configured",
       },
     ]);
-    expect(response.source.id).toBe("kartverket+nve");
+    expect(response.source).toMatchObject({
+      id: "kartverket+nve",
+      name: "Kartverket and NVE",
+      homepage: "https://github.com/iamkm1/Norway-Open-Data",
+      documentation: "https://github.com/iamkm1/Norway-Open-Data#cross-provider-address-profile",
+    });
+    expect(response.sources?.map((source) => source.id)).toEqual([
+      "kartverket",
+      "nve",
+      "nve",
+      "nve",
+    ]);
     // Kartverket plus the three anonymous warning endpoints only.
     expect(mock).toHaveBeenCalledTimes(4);
   });
@@ -544,8 +571,18 @@ describe("profiles.address", () => {
       error: { name: "ProviderError" },
     });
     expect(byOperation.get("roads.getRoadNetwork")?.status).toBe("available");
-    // A degraded provider is excluded from the composed source attribution.
-    expect(response.source.id).not.toContain("met");
+    // A degraded provider is excluded from both the legacy composite identity
+    // and the authoritative real-source attribution.
+    expect(response.source).toMatchObject({
+      id: "kartverket+nve+vegvesen",
+      name: "Kartverket, NVE and Statens vegvesen",
+    });
+    expect(response.sources?.map((source) => source.id)).toEqual([
+      "kartverket",
+      "nve",
+      "nve",
+      "vegvesen",
+    ]);
   });
 
   it("does not credit NVE when every warning feed failed", async () => {
@@ -566,8 +603,13 @@ describe("profiles.address", () => {
     expect(
       response.data.components?.filter((component) => component.status === "available"),
     ).toHaveLength(1);
-    expect(response.source.id).toBe("kartverket");
-    expect(response.source.name).toBe("Kartverket");
+    expect(response.source).toEqual({
+      id: "kartverket",
+      name: "Kartverket",
+      homepage: "https://github.com/iamkm1/Norway-Open-Data",
+      documentation: "https://github.com/iamkm1/Norway-Open-Data#cross-provider-address-profile",
+    });
+    expect(response.sources).toEqual([expectedSource(providers.kartverket)]);
   });
 
   it("still rejects when the caller aborts during enrichment", async () => {

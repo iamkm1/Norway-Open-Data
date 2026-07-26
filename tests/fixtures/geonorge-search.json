@@ -1,0 +1,41 @@
+{
+  "NumFound": 3,
+  "Limit": 2,
+  "Offset": 1,
+  "Results": [
+    {
+      "Uuid": "dataset-a",
+      "Title": "Administrative units",
+      "Abstract": "Administrative boundaries for Norway.",
+      "Type": "dataset",
+      "Theme": "Basis geodata",
+      "Organization": "Kartverket",
+      "IsOpenData": true,
+      "AccessIsOpendata": true,
+      "AccessIsRestricted": false,
+      "AccessIsProtected": false,
+      "Date": "2026-01-15T12:30:00Z",
+      "SpatialScope": "Nasjonal",
+      "Distributions": ["Kartverket|OGC:WFS|https://example.test/wfs|GML||||"]
+    },
+    {
+      "Uuid": "dataset-b",
+      "Title": "Bathymetry",
+      "Abstract": null,
+      "Type": "dataset",
+      "Theme": "Kyst og fiskeri",
+      "Organization": "Kartverket",
+      "IsOpenData": true,
+      "AccessIsOpendata": true,
+      "AccessIsRestricted": false,
+      "AccessIsProtected": false,
+      "Date": "2026-01-16T00:00:00",
+      "SpatialScope": "Nasjonal",
+      "DatasetServices": [
+        "service-b|Bathymetry WMS||service|Kartverket||OGC:WMS|https://example.test/wms"
+      ]
+    }
+  ],
+  "Facets": [],
+  "Type": "dataset"
+}

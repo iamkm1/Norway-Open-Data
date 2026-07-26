@@ -15,6 +15,9 @@ import {
   NotFoundError,
   ProviderError,
   boundingBoxToPolygon,
+  collectFeaturePage,
+  geoJsonFeatureCollectionSchema,
+  resolveGeoJsonCrs,
   version,
 } from "../dist/index.js";
 
@@ -65,6 +68,16 @@ if (typeof norway.klass?.listClassifications === "function") {
   ok("Klass namespace", "available");
 } else {
   bad("Klass namespace", "missing");
+}
+
+if (
+  typeof norway.geodata?.searchDatasets === "function" &&
+  typeof norway.environment?.getProtectedAreasAt === "function" &&
+  typeof norway.land?.getLandResourcesAt === "function"
+) {
+  ok("geospatial namespaces", "Geonorge, Naturbase and NIBIO available");
+} else {
+  bad("geospatial namespaces", "one or more namespaces are missing");
 }
 
 try {
@@ -141,6 +154,67 @@ try {
   }
 } catch (error) {
   bad("bounding box to GeoJSON ring", error.message);
+}
+
+try {
+  const collection = geoJsonFeatureCollectionSchema.parse({
+    type: "FeatureCollection",
+    features: [
+      {
+        type: "Feature",
+        id: "portable-polygon",
+        geometry: {
+          type: "Polygon",
+          coordinates: [
+            [
+              [4, 58],
+              [6, 58],
+              [6, 60],
+              [4, 60],
+              [4, 58],
+            ],
+            [
+              [4.5, 58.5],
+              [5, 58.5],
+              [5, 59],
+              [4.5, 59],
+              [4.5, 58.5],
+            ],
+          ],
+        },
+        properties: {},
+      },
+    ],
+  });
+  const crs = resolveGeoJsonCrs(undefined);
+  if (collection.features.length === 1 && crs.identifier === "OGC:CRS84") {
+    ok("GeoJSON + CRS validation", "polygon hole and implicit CRS84");
+  } else {
+    bad("GeoJSON + CRS validation", "unexpected normalized value");
+  }
+} catch (error) {
+  bad("GeoJSON + CRS validation", error.message);
+}
+
+try {
+  const page = await collectFeaturePage(
+    async ({ offset, pageSize }) => ({
+      features: Array.from({ length: pageSize }, (_, index) => ({ id: offset + index })),
+      hasMore: true,
+    }),
+    { limit: 2, pageSize: 2, maxPages: 1 },
+  );
+  if (
+    page.features.length === 2 &&
+    page.pagination.truncated === true &&
+    page.pagination.nextOffset === 2
+  ) {
+    ok("bounded feature pagination", "limit and continuation preserved");
+  } else {
+    bad("bounded feature pagination", JSON.stringify(page));
+  }
+} catch (error) {
+  bad("bounded feature pagination", error.message);
 }
 
 // Streaming uses ReadableStream, TextDecoder and AbortSignal only. Running it here

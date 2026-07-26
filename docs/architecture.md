@@ -1,14 +1,14 @@
 # Architecture
 
-Norway Open Data SDK is a Node.js TypeScript library that calls Norwegian public-sector APIs
+Norway Open Data SDK is a portable TypeScript library that calls Norwegian public-sector APIs
 directly. It also supports the documented third-party Hva koster strømmen? electricity API, which
 derives EUR price data from ENTSO-E and converts it to NOK using a Norges Bank exchange rate. The
 SDK has no hosted backend, database, account system, scraper, or data warehouse.
 
-The public surface has 74 methods across 16 namespaces, backed by 12 official service integrations
-from 11 public-sector organizations plus one third-party integration. Organization and integration
-counts are intentionally separate: one organization can operate independently governed services
-with different API contracts.
+The 0.8.0 public surface has 118 methods across 22 namespaces, backed by 19 official
+service integrations from 15 public-sector organizations plus one third-party integration.
+Organization and integration counts are intentionally separate: one organization can operate
+independently governed services with different API contracts.
 
 ## Public facade
 
@@ -18,9 +18,10 @@ client and optional in-memory cache:
 ```text
 NorwayOpenData
 ├─ companies / statistics / klass / addresses / places
-├─ transport / weather / profiles
-├─ catalog / currency / parliament / roads
-└─ energy / hazards / electricity
+├─ transport / weather / catalog / currency / parliament / roads
+├─ energy / hazards / ais / marine / fisheries / electricity
+├─ geodata / environment / land
+└─ profiles
         │
         └─ HttpClient → retry, timeout, cancellation, rate limits, cache, Zod validation
 ```
@@ -53,20 +54,55 @@ endpoints, response schemas, cache policies and request budgets stay separate. K
 every consumed response strictly and reports malformed successful responses as
 `ResponseValidationError`.
 
+## Geospatial boundary
+
+The geospatial support is deliberately smaller than a general GIS framework. `src/core/geojson.ts`
+defines strict, portable two-dimensional WGS84 shapes for Point, MultiPoint, LineString, Polygon,
+MultiPolygon, polygon holes, null geometry, feature ids and feature collections. Non-finite or
+out-of-range coordinates, open or degenerate rings, unsupported geometry kinds and unsupported CRS
+declarations fail runtime validation. The original accepted CRS declaration is retained alongside a
+normalized identifier.
+
+Caller-facing points and boxes reuse the existing `Coordinates` and `BoundingBox` contracts.
+GeoJSON positions are `[longitude, latitude]`. Naturbase and NIBIO ask their fixed upstream services
+to convert source data to WGS84, then validate that output; their result also carries `sourceCrs`.
+The SDK has no reprojection engine and never guesses that projected values are longitude/latitude.
+
+`src/core/feature-page.ts` maps ArcGIS offsets, WFS `startIndex` values and already-validated OGC
+continuation markers onto one bounded page contract. An explicit item budget, a maximum 1,000-item
+provider page, a maximum 100-page walk and a 10,000-feature hard ceiling prevent accidental bulk
+downloads. The walker propagates `AbortSignal`, reports truncation, rejects oversized or empty
+endless pages, and detects repeated cursors and repeated page contents.
+
+Protocol details and URL trust stay inside provider adapters. Geonorge may describe a WFS, WMS, OGC
+API Features, ArcGIS REST or download URL, but the catalogue client returns it as metadata only.
+The feature-page helper never follows a URL, and the public API accepts no arbitrary upstream URL.
+WMS rendering, capability traversal and a generic query engine remain out of scope.
+
 ## Cross-provider profiles
 
 `profiles.company()` composes Brønnøysundregistrene and Kartverket when a deterministic address
 match is available. `profiles.address()` starts with one Kartverket address and can add MET
-conditions, NVE warning summaries and NVDB road candidates. Enrichments that require missing caller
-identification are omitted instead of failing the base address result.
+conditions, NVE warning summaries and NVDB road candidates. `profiles.natureAtLocation()` runs five
+bounded Naturbase/NIBIO lookups and one Kartverket place lookup independently. Enrichments that
+require missing caller identification are omitted instead of failing the base result.
 
 Every profile carries a `components` entry for each operation it used or deliberately skipped. An
 `available` entry records the operation, logical section, provider source, SDK operation-resolution
 time and cache state. That timestamp includes cache hits and is not the original upstream fetch
 time. Warning components carry the service-specific Varsom attribution for their feed. An
-`omitted` entry records its provider source and a `not-configured`, `missing-coordinate` or
-`not-applicable` reason. The composite response is marked cached only when every provider call
-included in it was served from cache.
+`omitted` entry records its provider source and one of `not-configured`, `missing-coordinate`,
+`not-applicable`, `not-found`, `not-covered` or `provider-error`. Provider errors retain only a
+sanitized error name and message. The composite response is marked cached only when every provider
+call included in it was served from cache.
+
+The response envelope separates composition identity from provider provenance. Its top-level
+`source` is a synthetic profile descriptor; established profiles retain their existing descriptor
+values for compatibility. `sources` is derived from successful components and contains their real
+provider descriptors. Deduplication compares the complete descriptor rather than only its provider
+id, so feeds with different licence or mandatory attribution text remain separate. Per-operation
+detail remains in `components`; a multi-provider profile is never attributed wholesale to the first
+provider.
 
 Address-profile warning discovery uses only structured NVE municipality/county data. An explicit
 municipality is matched by official code, then exact case-insensitive, NFC-normalized name. County
@@ -87,17 +123,28 @@ resolve administrative codes explicitly with `klass.resolveMunicipalityCode()` o
 profile lookup is appropriate. This avoids silently choosing among merges, splits and ambiguous
 correspondences or implying statistical comparability across administrative boundaries.
 
+`profiles.natureAtLocation()` uses a synthetic top-level profile source and retains each successful
+component's actual provider descriptor in `sources` and `components`. A failed environmental, land or
+place operation becomes a sanitized component warning while successful sections survive; caller
+abort remains a rejection. Each feature section also keeps its own paging metadata, and truncation
+produces an explicit warning. The optional municipality is context inferred from the nearest official
+place name, not a separate administrative-boundary lookup.
+
 ## Auto-pagination
 
-Five list methods expose bounded async generators: `companies.searchAll()`,
+Fourteen list methods expose bounded async generators. The existing `companies.searchAll()`,
 `catalog.searchAll()`, `parliament.searchCasesAll()`, `roads.searchRoadObjectsAll()` and
-`roads.getRoadNetworkAll()`. Shared pagination helpers follow either numbered pages or opaque NVDB
-continuation markers and request the next page only when iteration advances. `maxItems` and
-`maxPages` stop a walk early. `maxItems` must be a non-negative integer; `maxPages` must be an
-integer from 1 to 100 and defaults to 100 so a provider contract change cannot create an unbounded
-request loop. Cursor-based walks retain every requested marker and raise
-`ResponseValidationError` before requesting an already-seen marker, including an immediate repeat
-or a longer cycle.
+`roads.getRoadNetworkAll()`, `fisheries.searchVesselsAll()` and
+`fisheries.searchAquacultureSitesAll()` are joined by `geodata.searchDatasetsAll()`,
+`geodata.searchServicesAll()`, the four `environment.iterate*()` methods and
+`land.iterateLandResources()`.
+
+The ordinary list iterators accept `maxItems` and `maxPages`; the spatial iterators use the feature
+query's `limit`, `pageSize`, `maxPages` and `offset`. All request the next page only when iteration
+advances, and the 100-page cap prevents a provider contract change from creating an unbounded
+request loop. Cursor-based walks retain every requested marker and raise `ResponseValidationError`
+before requesting an already-seen marker. Feature walks also fingerprint non-empty pages, protecting
+offset-based services that ignore a requested offset.
 
 Klass uses explicit page requests rather than another async generator. Classification list and
 metadata-search endpoints are paged by Klass itself. Version lists, codes, code changes and
@@ -183,6 +230,8 @@ guidance.
 - NVE energy and warning feeds are anonymous.
 - NVE HydAPI station and observation methods require `credentials.nve.apiKey` from free
   registration.
+- Geonorge catalogue, the selected Naturbase layers and NIBIO AR50 are anonymous and introduce no
+  credentials or environment variables.
 
 These requirements are declared on each descriptor rather than implemented per client. A descriptor
 names the configuration values it needs and builds its own headers from them; the HTTP client

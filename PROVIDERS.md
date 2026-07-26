@@ -4,7 +4,7 @@
 > sponsored by, or endorsed by Norwegian public authorities or by the third-party service Hva
 > koster strømmen?. Data remains subject to each source's terms and licence.**
 
-Last contract and documentation verification: **2026-07-25**
+Last contract and documentation verification: **2026-07-26**
 
 The MIT licence applies only to this SDK's source code. It does not automatically apply to data
 returned by public providers. Users are responsible for following current provider terms,
@@ -40,6 +40,9 @@ resemble abuse.
 | Statistics Norway — Klass         | 30/minute                          | sdk-courtesy        |
 | FHI                               | 30/minute                          | sdk-courtesy        |
 | Kartverket                        | 60/minute                          | sdk-courtesy        |
+| Geonorge catalogue                | 30/minute                          | sdk-courtesy        |
+| Miljødirektoratet / Naturbase     | 30/minute                          | sdk-courtesy        |
+| NIBIO                             | 20/minute                          | sdk-courtesy        |
 | Entur                             | 60/minute                          | sdk-courtesy        |
 | MET Norway                        | 60/minute                          | sdk-courtesy        |
 | Data.norge                        | 10/minute search; 5/second lookups | provider-documented |
@@ -218,6 +221,104 @@ versions, codes, and mappings used to describe data.
   support at most 500 hits per page; nearby radius is capped at 5,000 metres. Address search has no
   documented direct county parameter, so the SDK retrieves at most one provider page and applies a
   deterministic county-code filter locally.
+
+## Geonorge / Kartverket catalogue
+
+- **Status:** Experimental in 0.8.0. Catalogue models, protocol labels and individual publishers'
+  metadata quality vary independently of the SDK.
+- **Supported methods:** `geodata.searchDatasets()`, `geodata.searchDatasetsAll()`,
+  `geodata.searchServices()`, `geodata.searchServicesAll()`, `geodata.getMetadata()`,
+  `geodata.getDataset()`, `geodata.getService()`
+- **Official homepage:** https://www.geonorge.no/
+- **Kartkatalog API:** https://kartkatalog.geonorge.no/swagger/index.html
+- **Access:** Open anonymous for the fixed catalogue search and metadata endpoints; no credentials
+  or caller identification are required.
+- **Licence:** Kartverket states CC BY 4.0 for its own open products. Geonorge is a metadata
+  catalogue, not an umbrella licence: catalogued resources keep their publisher-specific licence,
+  access constraints and attribution requirements.
+- **Attribution:** Credit © Kartverket for catalogue metadata and also follow each resource
+  publisher's licence and attribution metadata.
+- **Paging:** Search uses zero-based `offset`, defaults to 10 results, accepts at most 100 per page
+  and orders by title for deterministic iteration. `searchDatasetsAll()` and
+  `searchServicesAll()` remain bounded by caller-supplied `maxItems`/`maxPages` and the shared
+  100-page safety cap.
+- **Discovery boundary:** Dataset detail can classify published WFS, WMS, OGC API Features, ArcGIS
+  REST, generic REST, download, Atom, offline and web links while retaining the provider's raw
+  protocol label. The SDK returns those links as metadata only. It does not request capabilities,
+  render WMS images, download files, call discovered services or accept one of those URLs as a
+  caller-selected upstream.
+- **Contract notes:** Metadata identifiers are path-encoded but are not assumed to be UUIDs.
+  Bounding boxes with decimal commas and Unicode minus signs and dates without timezone offsets are
+  normalized explicitly. Fully typed distributions come from the detail endpoint; ambiguous
+  pipe-delimited search-result distribution strings are intentionally not treated as service
+  contracts.
+- **Request budget and caching:** Geonorge publishes no numeric Kartkatalog request limit. The SDK
+  applies a 30-request-per-minute courtesy budget, caches search results for 10 minutes and metadata
+  detail for one hour when caching is enabled.
+
+## Miljødirektoratet / Naturbase
+
+- **Status:** Experimental in 0.8.0, particularly the NiN and intervention-free WFS contracts.
+- **Supported methods:** Point lookup, bounding-box search and bounded iteration for four selected
+  datasets:
+  - `environment.getProtectedAreasAt()`, `environment.searchProtectedAreas()`,
+    `environment.iterateProtectedAreas()`
+  - `environment.getProposedProtectedAreasAt()`, `environment.searchProposedProtectedAreas()`,
+    `environment.iterateProposedProtectedAreas()`
+  - `environment.getNatureTypesAt()`, `environment.searchNatureTypes()`,
+    `environment.iterateNatureTypes()`
+  - `environment.getInterventionFreeAreasAt()`, `environment.searchInterventionFreeAreas()`,
+    `environment.iterateInterventionFreeAreas()`
+- **Official homepage:** https://www.miljodirektoratet.no/
+- **Map catalogue:** https://kartkatalog.miljodirektoratet.no/
+- **Access:** Open anonymous for the fixed public ArcGIS REST and WFS layers used by the SDK.
+- **Licence:** Norwegian Licence for Open Government Data (NLOD), as published for the selected
+  datasets.
+- **Attribution:** “Contains data made available by Miljødirektoratet under the Norwegian Licence
+  for Open Government Data (NLOD).” The intervention-free layer carries the more specific
+  `Miljødirektoratet - inngrepsfri natur 01.2023` wording. Retain each response/component `source`
+  when redistributing results.
+- **CRS:** Inputs and returned GeoJSON are WGS84. The provider performs conversion from the source
+  EPSG:25833 data; `sourceCrs` retains that original declaration. Unsupported or conflicting CRS
+  metadata raises `ResponseValidationError`; the SDK performs no client-side reprojection.
+- **Paging:** Every call is explicitly bounded. The default result limit and page size are 100;
+  responses expose `pagination.truncated` and continuation metadata. Iterators are lazy, propagate
+  `AbortSignal` and stop repeated cursors, repeated contents or an empty page that claims another
+  page exists.
+- **Dataset scope:** “Nature types” means the modern NiN important/red-listed/central-ecosystem
+  localities selected for this release, not every legacy or legally selected nature layer.
+  Intervention-free nature is the latest January 2023 status only, with official zones 1, 2 and
+  wilderness-like `v`. WMS rendering and the many other Naturbase map layers remain out of scope.
+- **Request budget and caching:** Miljødirektoratet publishes no numeric request budget for these
+  services. The SDK applies a 30-request-per-minute courtesy budget and conservative bounded spatial
+  pages. When caching is enabled, protected/proposed/NiN data recommends six hours and the dated
+  intervention-free layer recommends 24 hours.
+
+## Norwegian Institute of Bioeconomy Research (NIBIO)
+
+- **Status:** Experimental in 0.8.0. The public WFS/GML contract and schema remain provider-specific.
+- **Supported methods:** `land.getLandResourcesAt()`, `land.searchLandResources()`,
+  `land.iterateLandResources()`
+- **Official homepage:** https://www.nibio.no/
+- **AR50 WFS documentation:** https://www.nibio.no/tjenester/wfs-tjenester/wfs-tjeneste-ar50
+- **Access:** Open anonymous for the supported AR50 WFS.
+- **Licence:** Norwegian Licence for Open Government Data (NLOD) 1.0.
+- **Attribution:** `Kilde: NIBIO.`
+- **CRS:** The SDK requests WGS84 GML, validates its CRS and geometry, swaps the GML
+  latitude/longitude axis order into GeoJSON longitude/latitude order, and validates the resulting
+  rings strictly. `sourceCrs` preserves the WFS feature type's advertised EPSG:4258 default. It does
+  not reproject coordinates locally or silently accept another CRS.
+- **Paging:** Point and bounding-box operations default to 100 features and expose explicit
+  `limit`, `pageSize`, `maxPages`, `offset` and truncation metadata. The iterator remains lazy and
+  uses the same repeated-page and abort protections as Naturbase.
+- **Dataset scope:** AR50 is a generalized land-resource map intended roughly for scales from
+  1:20,000 to 1:100,000; areas below 15 decares may be merged into surrounding classes. It is not
+  parcel-precision AR5. Returned properties preserve the provider's land-type, forest-productivity,
+  tree-type, agriculture and vegetation-cover class codes. Restricted agreement-based Geovekst/AR5
+  data, detailed agricultural-land records, soil and cultivation-suitability layers, and forest
+  inventory products are excluded.
+- **Request budget and caching:** NIBIO publishes no numeric WFS budget. The SDK applies a
+  20-request-per-minute courtesy budget and a 24-hour provider cache recommendation.
 
 ## Entur
 

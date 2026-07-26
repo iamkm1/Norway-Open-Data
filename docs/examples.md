@@ -88,7 +88,10 @@ including cache hits, rather than the original upstream fetch time. Omitted entr
 `not-configured`, `missing-coordinate`, `not-applicable` or `provider-error`; the last means the
 operation was attempted but its provider failed, and the component then carries a sanitized `error`.
 Sources include provider attribution text, with service-specific wording for each Varsom warning
-feed.
+feed. A profile's top-level `source` is a synthetic descriptor for the SDK composition; inspect
+`sources` for the distinct real provider descriptors derived from successful components and
+`components` for operation-level provenance. Separate descriptors are retained when feeds from one
+provider have different licence or mandatory attribution text.
 
 Municipality profiles answer one kommune from SSB, FHI, Brønnøysundregistrene and NVE at once:
 
@@ -114,6 +117,37 @@ code. Resolve it first with `klass.resolveMunicipalityCode()`. An application ma
 continue only for an `unchanged`, `renamed` or one-to-one `replaced` result with exactly one match.
 Merge, split and ambiguous results require an explicit policy, and successor statistics are never
 combined by the SDK.
+
+The experimental nature profile asks Naturbase, NIBIO and Kartverket about one WGS84 point. Each
+dataset is bounded independently and a provider failure removes only its own section:
+
+```ts
+const nature = await norway.profiles.natureAtLocation({
+  latitude: 61.494,
+  longitude: 8.349,
+  limit: 25,
+});
+
+console.log(nature.data.municipality); // inferred from the nearest official place, when available
+console.log(nature.data.protectedAreas);
+console.log(nature.data.proposedProtectedAreas);
+console.log(nature.data.natureTypes);
+console.log(nature.data.interventionFreeAreas);
+console.log(nature.data.landResources);
+console.log(nature.data.pagination);
+console.log(nature.data.warnings); // provider failures and truncation notices
+
+for (const component of nature.data.components) {
+  console.log(component.operation, component.status, component.source.attribution);
+}
+```
+
+An omitted section and an empty array are different: omission means the component failed; an empty
+array means the provider successfully returned no feature from that selected layer. The profile's
+`sources` are derived from successful profile components and preserve the real Kartverket,
+Miljødirektoratet and NIBIO attribution. Its top-level `source` remains a synthetic descriptor for
+the multi-provider composition. The municipality is place-name context, not a point-in-polygon
+administrative-boundary result.
 
 Automatic hazard matching checks an explicit municipality by official code, then exact
 case-insensitive, Unicode-normalized name. It checks a county only when the warning has no
@@ -347,10 +381,91 @@ A multi-type search makes one provider request per requested type and combines t
 locally. Combined paging is bounded to the first 100 positions of the type-ordered combined result;
 request one type when deeper provider paging is needed.
 
+## Geonorge geospatial catalogue
+
+`geodata` searches Geonorge's focused dataset and service catalogue separately from the broader
+Data.norge catalogue. Results are metadata; a discovered URL is never requested by the SDK:
+
+```ts
+import { NorwayOpenData } from "norway-open-data-sdk";
+
+const norway = new NorwayOpenData();
+const results = await norway.geodata.searchDatasets({
+  query: "verneområder",
+  limit: 5,
+});
+
+const first = results.data.items[0];
+if (first !== undefined) {
+  const dataset = await norway.geodata.getDataset(first.id);
+  console.log(dataset.data.publisher);
+  console.log(dataset.data.geographicExtent);
+  console.log(dataset.data.license);
+
+  for (const distribution of dataset.data.distributions) {
+    console.log(distribution.kind, distribution.protocol, distribution.url);
+    // Discovery only: validate the resource's licence and access terms yourself.
+  }
+}
+
+const services = await norway.geodata.searchServices({ query: "natur", limit: 5 });
+console.log(services.data.items.map((service) => service.endpoint?.kind));
+```
+
+`getMetadata(id)` accepts any supported record; `getDataset(id)` and `getService(id)` additionally
+verify the record's catalogue type. Detail identifies WFS, WMS, OGC API Features, ArcGIS REST and
+download links while retaining the raw protocol label. It does not fetch a capability document,
+render an image, download a file or turn the SDK into a proxy. Catalogue metadata does not grant
+access and does not replace the underlying publisher's licence and attribution.
+
+## Naturbase and NIBIO vector data
+
+Caller inputs are WGS84 objects; returned GeoJSON positions are `[longitude, latitude]`. Naturbase
+and NIBIO perform server-side WGS84 conversion, while `sourceCrs` retains the layer's advertised
+source CRS. Unsupported CRS metadata is rejected instead of silently reinterpreted.
+
+```ts
+const point = { latitude: 61.494, longitude: 8.349 };
+const box = {
+  south: 61.45,
+  west: 8.25,
+  north: 61.55,
+  east: 8.45,
+};
+
+const protectedAtPoint = await norway.environment.getProtectedAreasAt({
+  ...point,
+  limit: 25,
+});
+const protectedInBox = await norway.environment.searchProtectedAreas({
+  boundingBox: box,
+  limit: 100,
+  pageSize: 50,
+  maxPages: 3,
+});
+const land = await norway.land.getLandResourcesAt({ ...point, limit: 25 });
+
+console.log(protectedAtPoint.data.features);
+console.log(protectedInBox.data.pagination.truncated);
+console.log(protectedInBox.data.crs, protectedInBox.data.sourceCrs);
+console.log(land.data.features);
+console.log(land.source.attribution);
+```
+
+The same point/search/iterator pattern is available for proposed protected areas, modern selected
+NiN nature localities and the January 2023 intervention-free nature layer. Every feature result
+contains paging metadata. The default `limit` is 100; set an explicit smaller limit for interactive
+queries and inspect `pagination.truncated` before claiming completeness. `AbortSignal` is accepted
+through the normal request options.
+
+`land` intentionally exposes generalized AR50 only. It is not parcel-precision AR5, and restricted
+Geovekst data, soil/cultivation suitability and forest inventory are not included. These geospatial
+methods are experimental in 0.8.0 because upstream catalogue and ArcGIS/WFS contracts can change.
+
 ## Auto-paginating iterators
 
-Five list APIs provide async iterators. They fetch the next numbered page or opaque continuation
-marker only when iteration advances:
+Fourteen list APIs provide async iterators. They fetch the next numbered page, spatial offset or opaque
+continuation marker only when iteration advances:
 
 ```ts
 import { NorwayOpenData } from "norway-open-data-sdk";
@@ -363,6 +478,18 @@ const datasets = norway.catalog.searchAll({ query: "transport", type: ["dataset"
 const cases = norway.parliament.searchCasesAll({ sessionId: "2025-2026" }, bounds);
 const roadObjects = norway.roads.searchRoadObjectsAll({ typeId: 105 }, bounds);
 const roadSegments = norway.roads.getRoadNetworkAll({}, bounds);
+const geonorgeDatasets = norway.geodata.searchDatasetsAll({ query: "natur" }, bounds);
+const protectedAreas = norway.environment.iterateProtectedAreas({
+  boundingBox: { south: 61.45, west: 8.25, north: 61.55, east: 8.45 },
+  limit: 25,
+  pageSize: 10,
+  maxPages: 3,
+});
+const landResources = norway.land.iterateLandResources({
+  latitude: 61.494,
+  longitude: 8.349,
+  limit: 25,
+});
 
 for await (const company of companies) {
   console.log(company.organizationNumber, company.name);
@@ -372,14 +499,20 @@ void datasets;
 void cases;
 void roadObjects;
 void roadSegments;
+void geonorgeDatasets;
+void protectedAreas;
+void landResources;
 ```
 
-All five iterators accept the normal request options together with `maxItems` and `maxPages`.
+The nine ordinary search iterators accept normal request options together with `maxItems` and
+`maxPages`.
 `maxItems` must be a non-negative integer. `maxPages` must be an integer from 1 to 100 and defaults
 to 100; set explicit bounds for batch jobs. Data.norge multi-type searches keep their 100-position
 combined-window limit, and NVDB continuation markers remain opaque. If a cursor-based provider
 repeats a marker or returns a cycle, the iterator raises `ResponseValidationError` before requesting
-the already-seen page again.
+the already-seen page again. The five spatial iterators instead use their query's `limit`,
+`pageSize`, `maxPages` and `offset`; they also reject repeated page contents so an offset service
+that ignores pagination cannot loop forever.
 
 ## Currency and interest rates
 

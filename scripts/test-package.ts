@@ -63,9 +63,11 @@ const expectedPackageFiles = [
   "examples/fisheries.ts",
   "examples/hazards.ts",
   "examples/health-statistics.ts",
+  "examples/geospatial.ts",
   "examples/klass.ts",
   "examples/marine.ts",
   "examples/municipality-profile.ts",
+  "examples/nature-profile.ts",
   "examples/parliament.ts",
   "examples/roads.ts",
   "examples/shared-cache.ts",
@@ -84,12 +86,15 @@ const expectedRuntimeExports = [
   "EnturClient",
   "FhiClient",
   "FisheriesClient",
+  "GeonorgeClient",
   "InputValidationError",
   "KartverketAddressClient",
   "KartverketPlaceClient",
   "KlassClient",
   "MarineClient",
   "MetClient",
+  "NaturbaseClient",
+  "NibioClient",
   "NorgesBankClient",
   "NorwayOpenData",
   "NotFoundError",
@@ -105,8 +110,12 @@ const expectedRuntimeExports = [
   "StortingetClient",
   "VegvesenClient",
   "boundingBoxSchema",
+  "boundingBoxToGeoJsonBoundingBox",
   "boundingBoxToPolygon",
+  "collectFeaturePage",
   "coordinatesSchema",
+  "coordinatesToGeoJsonPosition",
+  "DEFAULT_FEATURE_PAGE_SIZE",
   "DEFAULT_MAX_RECORD_SIZE",
   "draughtMetres",
   "normalizeRegistrationMark",
@@ -117,6 +126,25 @@ const expectedRuntimeExports = [
   "providerIds",
   "providers",
   "klassClassificationIds",
+  "geoJsonBoundingBoxSchema",
+  "geoJsonCrsDeclarationSchema",
+  "geoJsonFeatureCollectionSchema",
+  "geoJsonFeatureIdSchema",
+  "geoJsonFeatureSchema",
+  "geoJsonGeometrySchema",
+  "geoJsonLinearRingSchema",
+  "geoJsonLineStringSchema",
+  "geoJsonMultiPointSchema",
+  "geoJsonMultiPolygonSchema",
+  "geoJsonPointSchema",
+  "geoJsonPolygonSchema",
+  "geoJsonPositionSchema",
+  "iterateFeaturePages",
+  "MAX_FEATURE_ITEMS",
+  "MAX_FEATURE_PAGES",
+  "MAX_FEATURE_PAGE_SIZE",
+  "nullableGeoJsonGeometrySchema",
+  "resolveGeoJsonCrs",
   "version",
 ].sort();
 
@@ -241,7 +269,13 @@ try {
       '  if (typeof value.NorwayOpenData !== "function") throw new Error("Missing ESM root export.");\n' +
       '  if (typeof new value.NorwayOpenData().clearCache !== "function") throw new Error("Missing ESM clearCache method.");\n' +
       '  if (typeof new value.NorwayOpenData().klass?.listClassifications !== "function") throw new Error("Missing ESM Klass namespace.");\n' +
+      '  if (typeof new value.NorwayOpenData().geodata?.searchDatasets !== "function") throw new Error("Missing ESM Geonorge namespace.");\n' +
+      '  if (typeof new value.NorwayOpenData().environment?.getProtectedAreasAt !== "function") throw new Error("Missing ESM Naturbase namespace.");\n' +
+      '  if (typeof new value.NorwayOpenData().land?.getLandResourcesAt !== "function") throw new Error("Missing ESM NIBIO namespace.");\n' +
       '  if (value.providers?.["ssb-klass"]?.access !== "open") throw new Error("Missing SSB Klass provider metadata.");\n' +
+      '  if (value.providers?.geonorge?.access !== "open") throw new Error("Missing Geonorge provider metadata.");\n' +
+      '  if (value.providers?.naturbase?.license !== "Norwegian Licence for Open Government Data (NLOD)") throw new Error("Missing Naturbase licence metadata.");\n' +
+      '  if (value.providers?.nibio?.attribution !== "Kilde: NIBIO.") throw new Error("Missing NIBIO attribution metadata.");\n' +
       '  if (value.providers?.hvakosterstrommen?.license !== "Provider describes the API as open and free; no standardized licence stated") throw new Error("Missing electricity licence-status metadata.");\n' +
       "  process.stdout.write(JSON.stringify(Object.keys(value).sort()));\n" +
       "}\n",
@@ -253,7 +287,13 @@ try {
       'if (typeof sdk.NorwayOpenData !== "function") throw new Error("Missing CommonJS root export.");\n' +
       'if (typeof new sdk.NorwayOpenData().clearCache !== "function") throw new Error("Missing CommonJS clearCache method.");\n' +
       'if (typeof new sdk.NorwayOpenData().klass?.listClassifications !== "function") throw new Error("Missing CommonJS Klass namespace.");\n' +
+      'if (typeof new sdk.NorwayOpenData().geodata?.searchDatasets !== "function") throw new Error("Missing CommonJS Geonorge namespace.");\n' +
+      'if (typeof new sdk.NorwayOpenData().environment?.getProtectedAreasAt !== "function") throw new Error("Missing CommonJS Naturbase namespace.");\n' +
+      'if (typeof new sdk.NorwayOpenData().land?.getLandResourcesAt !== "function") throw new Error("Missing CommonJS NIBIO namespace.");\n' +
       'if (sdk.providers?.["ssb-klass"]?.access !== "open") throw new Error("Missing SSB Klass provider metadata.");\n' +
+      'if (sdk.providers?.geonorge?.access !== "open") throw new Error("Missing Geonorge provider metadata.");\n' +
+      'if (sdk.providers?.naturbase?.license !== "Norwegian Licence for Open Government Data (NLOD)") throw new Error("Missing Naturbase licence metadata.");\n' +
+      'if (sdk.providers?.nibio?.attribution !== "Kilde: NIBIO.") throw new Error("Missing NIBIO attribution metadata.");\n' +
       'if (sdk.providers?.hvakosterstrommen?.license !== "Provider describes the API as open and free; no standardized licence stated") throw new Error("Missing electricity licence-status metadata.");\n' +
       "process.stdout.write(JSON.stringify(Object.keys(sdk).sort()));\n",
     "utf8",
@@ -345,6 +385,8 @@ try {
       "  providerIds,\n" +
       "  providers,\n" +
       "  boundingBoxToPolygon,\n" +
+      "  geoJsonFeatureCollectionSchema,\n" +
+      "  resolveGeoJsonCrs,\n" +
       "  type AisPosition,\n" +
       "  type AisTrack,\n" +
       "  type AquacultureSite,\n" +
@@ -354,11 +396,15 @@ try {
       "  type Coordinates,\n" +
       "  type FishingVessel,\n" +
       "  type FishingVesselOwner,\n" +
+      "  type GeonorgeMetadata,\n" +
+      "  type LandResourceFeature,\n" +
       "  type KlassCodeResolution,\n" +
       "  type Mmsi,\n" +
       "  type NorwayOpenDataConfig,\n" +
+      "  type NatureAtLocationProfile,\n" +
       "  type OpenDataResponse,\n" +
       "  type ProviderId,\n" +
+      "  type ProtectedAreaFeature,\n" +
       "  type RequestOptions,\n" +
       "  type VesselProfile,\n" +
       "  type WaveForecast,\n" +
@@ -395,6 +441,16 @@ try {
       "const point: Coordinates = { latitude: 59.4, longitude: 5.2 };\n" +
       "const box: BoundingBox = { south: 58.8, west: 4.5, north: 60, east: 6.5 };\n" +
       "const ring = boundingBoxToPolygon(box).coordinates[0];\n" +
+      "const parsedGeoJson = geoJsonFeatureCollectionSchema.parse({ type: 'FeatureCollection', features: [] });\n" +
+      "const crs = resolveGeoJsonCrs(undefined);\n" +
+      "const geodata = client.geodata.searchDatasets({ query: 'vern', limit: 1 });\n" +
+      "const protectedAreas: Promise<OpenDataResponse<{ features: ProtectedAreaFeature[] }>> =\n" +
+      "  client.environment.getProtectedAreasAt({ ...point, limit: 1 });\n" +
+      "const landResources: Promise<OpenDataResponse<{ features: LandResourceFeature[] }>> =\n" +
+      "  client.land.getLandResourcesAt({ ...point, limit: 1 });\n" +
+      "const natureProfile: Promise<OpenDataResponse<NatureAtLocationProfile>> =\n" +
+      "  client.profiles.natureAtLocation(point);\n" +
+      "const metadata: GeonorgeMetadata | undefined = undefined;\n" +
       "const mmsi: Mmsi = '257111020';\n" +
       "const positions: AsyncIterable<AisPosition> = client.ais.streamPositions({\n" +
       "  boundingBox: box,\n" +
@@ -414,7 +470,8 @@ try {
       "void municipalityClassification; void klassMethod; void resolution;\n" +
       "void electricityId; void everyId; void cleared; void InputValidationError;\n" +
       "void aisId; void aisConfig; void ring; void positions; void track; void wave;\n" +
-      "void vessel; void owner; void site; void vesselProfile;\n",
+      "void vessel; void owner; void site; void vesselProfile; void parsedGeoJson; void crs;\n" +
+      "void geodata; void protectedAreas; void landResources; void natureProfile; void metadata;\n",
     "utf8",
   );
   writeFileSync(

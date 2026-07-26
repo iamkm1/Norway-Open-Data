@@ -21,6 +21,9 @@ describe("configuration", () => {
     expect(sdk.energy).toBeDefined();
     expect(sdk.hazards).toBeDefined();
     expect(sdk.electricity).toBeDefined();
+    expect(sdk.geodata).toBeDefined();
+    expect(sdk.environment).toBeDefined();
+    expect(sdk.land).toBeDefined();
     expect(typeof sdk.clearCache).toBe("function");
     expect(version).toBe(packageMetadata.version);
   });
