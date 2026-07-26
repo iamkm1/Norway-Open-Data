@@ -8,13 +8,14 @@
 One typed TypeScript interface for Norwegian public data.
 
 Norway Open Data SDK provides a consistent, runtime-validated client for official Norwegian APIs
-from Brønnøysundregistrene, SSB PxWeb and SSB Klass, FHI, Kartverket, Entur, MET Norway, Data.norge, Norges Bank,
-Stortinget, Statens vegvesen, NVE, BarentsWatch and Fiskeridirektoratet. It also wraps the
-documented third-party public electricity API from Hva koster strømmen?.
+from Brønnøysundregistrene, SSB PxWeb and SSB Klass, FHI, Kartverket/Geonorge, Entur, MET Norway,
+Data.norge, Norges Bank, Stortinget, Statens vegvesen, NVE, BarentsWatch, Fiskeridirektoratet,
+Miljødirektoratet and NIBIO. It also wraps the documented third-party public electricity API from
+Hva koster strømmen?.
 
-- 13 public-sector organizations through 16 official API integrations, plus 1 third-party derived API
-- 19 service namespaces
-- 95 supported namespace methods
+- 15 public-sector organizations through 19 official API integrations, plus 1 third-party derived API
+- 22 service namespaces
+- 118 supported namespace methods in the 0.8.0 surface
 - Runtime-validated responses
 - Cross-provider profiles that answer one question from several agencies
 - Auto-paginating async iterators for list endpoints
@@ -34,7 +35,7 @@ Runs on Node.js 22+, Deno, Bun and edge runtimes such as Cloudflare Workers. Typ
 declarations are included. See [Runtime support](#runtime-support) for what a host runtime must
 provide.
 
-Version `0.7.0` is the current release. Install it with:
+Version `0.8.0` is the current release. Install it with:
 
 ```bash
 npm install norway-open-data-sdk
@@ -54,7 +55,7 @@ corepack pnpm pack
 Install the generated tarball from another project:
 
 ```bash
-npm install /path/to/Norway-Open-Data/norway-open-data-sdk-0.7.0.tgz
+npm install /path/to/Norway-Open-Data/norway-open-data-sdk-0.8.0.tgz
 ```
 
 ## Quick start
@@ -95,6 +96,9 @@ requires `applicationName` and `contactEmail`; NVE HydAPI requires the caller's 
 | Statistics Norway / SSB | `statistics`, `klass` | PxWeb statistics; Klass classifications, codes and mappings    | Anonymous                      |
 | FHI                     | `health`              | Health-register statistics with preserved suppression flags    | Anonymous                      |
 | Kartverket              | `addresses`, `places` | Addresses, place names and nearby search                       | Anonymous                      |
+| Geonorge / Kartverket   | `geodata`             | Geospatial dataset/service catalogue and typed discovery       | Anonymous; experimental        |
+| Miljødirektoratet       | `environment`         | Selected Naturbase protected, NiN and intervention-free layers | Anonymous; experimental        |
+| NIBIO                   | `land`                | Generalized AR50 land-resource classification                  | Anonymous; experimental        |
 | Entur                   | `transport`           | Autocomplete, departures and journeys                          | Identification required        |
 | MET Norway              | `weather`             | Locationforecast data and current entry                        | Identification + contact email |
 | Data.norge              | `catalog`             | Datasets, data services and publishers                         | Anonymous                      |
@@ -111,6 +115,8 @@ requires `applicationName` and `contactEmail`; NVE HydAPI requires the caller's 
 with a Kartverket address match, `address` combines Kartverket, MET Norway, NVE and NVDB,
 `municipality` combines SSB, FHI, Brønnøysundregistrene and NVE, and `vessel` combines BarentsWatch
 AIS with the Fiskeridirektoratet vessel register, MET Norway and Kartverket.
+`natureAtLocation` combines Naturbase, NIBIO and Kartverket with per-component provenance and
+partial-failure handling.
 
 BarentsWatch has two distinct service contracts in the SDK, and they need **separate credentials**.
 BarentsWatch issues two kinds of self-registered client, and neither one's secret works for the
@@ -189,6 +195,44 @@ const results = await norway.catalog.search({
 });
 console.log(results.data.items);
 ```
+
+### Geospatial catalogue and bounded vector data
+
+The v0.8.0 geospatial namespaces are experimental and anonymous:
+
+```ts
+const metadata = await norway.geodata.searchDatasets({
+  query: "verneområder",
+  limit: 5,
+});
+
+const protectedAreas = await norway.environment.searchProtectedAreas({
+  boundingBox: { south: 61.45, west: 8.25, north: 61.55, east: 8.45 },
+  limit: 100,
+  pageSize: 50,
+  maxPages: 3,
+});
+
+const land = await norway.land.getLandResourcesAt({
+  latitude: 61.494,
+  longitude: 8.349,
+  limit: 25,
+});
+
+console.log(metadata.data.items);
+console.log(protectedAreas.data.features);
+console.log(protectedAreas.data.pagination.truncated);
+console.log(land.data.features);
+```
+
+Caller points and boxes are WGS84; GeoJSON coordinates are `[longitude, latitude]`. Naturbase and
+NIBIO request server-side WGS84 conversion and retain their advertised `sourceCrs`. Unsupported CRS
+metadata is rejected rather than guessed, and there is no client-side reprojection engine. Check
+`pagination.truncated` before treating a feature result as complete.
+
+`geodata` discovers catalogue metadata, including WFS, WMS, OGC API Features, ArcGIS REST and
+download links, but never follows those links. Arbitrary upstream URLs, WMS image rendering,
+restricted Geovekst data and nationwide unbounded downloads are outside the SDK.
 
 ### SSB Klass classifications and historical codes
 
@@ -358,6 +402,33 @@ with `klass.resolveMunicipalityCode()` first. Continue automatically only for an
 `renamed` or one-to-one `replaced` result with exactly one match. A merge, split or ambiguous result
 requires an application decision; the SDK never combines successor statistics.
 
+### Cross-provider nature profile
+
+```ts
+const nature = await norway.profiles.natureAtLocation({
+  latitude: 61.494,
+  longitude: 8.349,
+  limit: 25,
+});
+
+console.log(nature.data.municipality); // context inferred from the nearest official place
+console.log(nature.data.protectedAreas); // Naturbase
+console.log(nature.data.natureTypes); // selected modern NiN localities
+console.log(nature.data.interventionFreeAreas); // January 2023 INON status
+console.log(nature.data.landResources); // NIBIO generalized AR50
+console.log(nature.data.pagination);
+console.log(nature.data.warnings);
+```
+
+The five vector lookups and Kartverket place lookup run independently. A provider failure omits only
+its section, records a sanitized `provider-error` component and adds a warning; caller cancellation
+still rejects the call. Every successful component keeps its real provider, attribution,
+`retrievedAt` and cache state. The top-level `source` is a synthetic descriptor for the composed
+nature profile, while `sources` is derived from successful components and preserves their real
+provider attribution and licence terms. Distinct descriptors from the same provider remain distinct
+when their licence or required attribution differs. The per-dataset limit defaults to 100 and is
+capped at 100.
+
 ### Health statistics with suppression flags
 
 FHI publishes statistics from Norwegian health registers — cause-of-death rates, abortion
@@ -428,7 +499,13 @@ before requesting an already-seen marker when a provider repeats a cursor or ret
 
 Available on `companies.searchAll`, `catalog.searchAll`, `parliament.searchCasesAll`,
 `roads.searchRoadObjectsAll`, `roads.getRoadNetworkAll`, `fisheries.searchVesselsAll` and
-`fisheries.searchAquacultureSitesAll`.
+`fisheries.searchAquacultureSitesAll`, plus `geodata.searchDatasetsAll` and
+`geodata.searchServicesAll`.
+
+The four `environment.iterate*` methods and `land.iterateLandResources` use spatial query bounds
+instead: `limit`, `pageSize`, `maxPages` and `offset`. They detect repeated non-empty page contents
+as well as cursor cycles, so an ArcGIS/WFS service that ignores its requested offset cannot create an
+endless walk. All fourteen iterators are lazy and propagate the caller's `AbortSignal`.
 
 Neither Fiskeridirektoratet register reports a total count in its response body, so their iterators
 stop at the first page that comes back short or empty rather than at a known last page.
@@ -677,6 +754,7 @@ Every provider method accepts optional `signal`, `includeRaw` and `bypassCache` 
 
 The SDK reads no environment variables itself; these are the names used consistently by the examples,
 the live probes and the documentation.
+Geonorge, Naturbase, NIBIO and `profiles.natureAtLocation` are anonymous and add no new variables.
 
 | Variable                            | Used by                           | Required for                         |
 | ----------------------------------- | --------------------------------- | ------------------------------------ |
@@ -741,26 +819,37 @@ server-side or edge use remains the better fit for those namespaces.
 Every successful operation returns `OpenDataResponse<T>`:
 
 ```ts
+type OpenDataSource = {
+  id: string;
+  name: string;
+  homepage: string;
+  documentation: string;
+  license?: string;
+  attribution?: string;
+};
+
 type OpenDataResponse<T> = {
   data: T;
-  source: {
-    id: string;
-    name: string;
-    homepage: string;
-    documentation: string;
-    license?: string;
-    attribution?: string;
-  };
+  source: OpenDataSource;
+  sources?: OpenDataSource[];
   retrievedAt: string;
   cached: boolean;
   raw?: unknown;
 };
 ```
 
-`data` is the typed result; `source` identifies the provider and includes its licence or attribution
-when declared; `retrievedAt` is an ISO 8601 timestamp; `cached` reports a memory-cache hit; and
-`raw` is included only when requested. Raw payloads remain runtime-validated and may be allowlisted
-or sanitized.
+`data` is the typed result; on direct provider calls, `source` identifies that provider and includes
+its licence or attribution when declared. Cross-provider profiles retain a synthetic top-level
+`source` that identifies the SDK composition rather than misidentifying the complete result as one
+provider's data. `sources` lists the distinct real provider descriptors derived from successful
+profile components, including separate entries when one provider's feeds have different licence or
+required attribution text; `data.components` retains per-operation provenance. `retrievedAt` is an
+ISO 8601 timestamp; `cached` reports a memory-cache hit; and `raw` is included only when requested.
+Raw payloads remain runtime-validated and may be allowlisted or sanitized.
+
+The established company, address, municipality and vessel profiles keep their existing synthetic
+top-level source identities for backward compatibility. The new nature profile follows the same
+envelope convention. See the [API-stability policy](docs/api-stability.md).
 
 ## Error handling
 
@@ -994,7 +1083,8 @@ pnpm test:coverage
 ```
 
 Live tests are opt-in representative contract probes against the supported public-sector APIs and
-the third-party electricity endpoint:
+the third-party electricity endpoint. The Geonorge, Naturbase and NIBIO probes are anonymous,
+bounded, and use the same opt-in switch:
 
 ```bash
 NORWAY_OPEN_DATA_APPLICATION_NAME=my-application \
@@ -1065,8 +1155,31 @@ Personal and restricted data are outside the project scope.
 - Klass correspondence may be one-to-one, many-to-one or one-to-many, supplies no weights in the
   discovered resources, and may be absent. Absence is not proof of equivalence or non-equivalence,
   and administrative mapping is not evidence of statistical comparability.
+- The v0.8 `geodata`, `environment`, `land` and `profiles.natureAtLocation` surfaces are
+  experimental. Upstream catalogue labels and ArcGIS/WFS schemas can change independently.
+- Geospatial support is vector-only and curated: no WMS image rendering, arbitrary URL proxy,
+  reprojection engine, restricted Geovekst/AR5 data or unbounded full-country export.
 - Protected endpoints, personal data, write operations and delegated authentication are not
   supported.
+
+### Geospatial limitations
+
+- Geonorge describes datasets and services but does not guarantee that a distribution is open,
+  reachable, current or suitable. The SDK classifies published links and retains publisher licence
+  metadata; it never follows them. Verify the resource's access, licence and attribution before use.
+- Naturbase coverage is four selected public vector datasets: current and proposed protected areas,
+  modern selected NiN localities, and January 2023 intervention-free nature status. It is not a
+  complete Naturbase layer catalogue or a current legal determination for a location.
+- NIBIO coverage is generalized AR50. Small areas below 15 decares can be merged into surrounding
+  classes; it is not parcel-precision AR5, soil/cultivation suitability or a forest inventory.
+- Spatial results are bounded windows. Inspect each `pagination.truncated`; an empty result means
+  only that the selected upstream layer returned no feature in that query. It is not proof that no
+  protected, natural or agricultural interest exists.
+- Inputs and normalized output are WGS84. `sourceCrs` records the provider's source declaration.
+  Unsupported CRS metadata raises rather than being reprojected or guessed.
+- A nature profile is partial by design. Municipality context is inferred from the nearest
+  Kartverket place name, and every provider section can be absent. Consult authoritative current
+  source systems for planning, legal, environmental or land-management decisions.
 
 ### AIS coverage limitations
 
@@ -1094,7 +1207,7 @@ refuse a request the provider would have accepted.
 
 ### Streaming limitations
 
-- **No automatic reconnection in 0.7.0.** When the provider closes a stream, iteration ends normally
+- **No automatic reconnection in 0.8.0.** When the provider closes a stream, iteration ends normally
   and the SDK does not reopen it. Reconnecting silently would hide a gap in coverage from an
   application that may not be able to tolerate one.
 - A stream is never retried and never cached. `retries` and `cache` do not apply to it.

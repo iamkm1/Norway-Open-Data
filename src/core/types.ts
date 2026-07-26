@@ -18,6 +18,13 @@ export type OpenDataResponse<T> = {
   data: T;
   /** The public-data source responsible for the result. */
   source: OpenDataSource;
+  /**
+   * Every real provider that contributed to a composed result.
+   *
+   * Present on cross-provider profiles. `source` remains the first contributing
+   * provider for callers that consume the common single-source envelope.
+   */
+  sources?: OpenDataSource[];
   /** ISO-8601 timestamp for this SDK retrieval. */
   retrievedAt: string;
   /** Whether the provider payload was served from the SDK cache. */

@@ -101,10 +101,17 @@ describe("company profiles", () => {
           cached: false,
         },
       ]);
-      expect(response.source.documentation).toBe(
-        "https://github.com/iamkm1/Norway-Open-Data#cross-provider-company-profile",
-      );
-      expect(response.source.id).toBe("brreg+kartverket");
+      expect(response.source).toEqual({
+        id: "brreg+kartverket",
+        name: "Brønnøysundregistrene and Kartverket",
+        homepage: "https://github.com/iamkm1/Norway-Open-Data",
+        documentation: "https://github.com/iamkm1/Norway-Open-Data#cross-provider-company-profile",
+      });
+      expect(response.sources).toEqual([
+        expectedSource(providers.brreg),
+        expectedSource(providers.kartverket),
+      ]);
+      expect(response.sources?.some(({ id }) => id === response.source.id)).toBe(false);
       expect(mock).toHaveBeenCalledTimes(2);
     } finally {
       vi.useRealTimers();
@@ -139,7 +146,13 @@ describe("company profiles", () => {
           reason: "not-applicable",
         },
       ]);
-      expect(response.source.id).toBe("brreg");
+      expect(response.source).toMatchObject({
+        id: "brreg",
+        name: "Brønnøysundregistrene",
+        homepage: "https://github.com/iamkm1/Norway-Open-Data",
+        documentation: "https://github.com/iamkm1/Norway-Open-Data#cross-provider-company-profile",
+      });
+      expect(response.sources).toEqual([expectedSource(providers.brreg)]);
       expect(mock).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
@@ -218,7 +231,13 @@ describe("company profiles", () => {
       reason: "provider-error",
       error: { name: "ProviderError", message: expect.stringMatching(/kartverket/) },
     });
-    expect(partial.source.id).toBe("brreg");
+    expect(partial.source).toMatchObject({
+      id: "brreg",
+      name: "Brønnøysundregistrene",
+      homepage: "https://github.com/iamkm1/Norway-Open-Data",
+      documentation: "https://github.com/iamkm1/Norway-Open-Data#cross-provider-company-profile",
+    });
+    expect(partial.sources).toEqual([expectedSource(providers.brreg)]);
 
     const controller = new AbortController();
     const fetch = vi

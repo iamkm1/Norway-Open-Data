@@ -13,6 +13,7 @@
 import brregCompany from "../fixtures/brreg-company.json" with { type: "json" };
 import dataNorgeSearch from "../fixtures/data-norge-search.json" with { type: "json" };
 import fhiSources from "../fixtures/fhi-sources.json" with { type: "json" };
+import geonorgeSearch from "../fixtures/geonorge-search.json" with { type: "json" };
 import kartverketAddress from "../fixtures/kartverket-address.json" with { type: "json" };
 import kartverketPlace from "../fixtures/kartverket-place.json" with { type: "json" };
 import metForecast from "../fixtures/met-forecast.json" with { type: "json" };
@@ -109,6 +110,19 @@ function hourlyPrices(date: string, offset = "+02:00"): unknown[] {
   });
 }
 
+const emptyNaturbaseFeatureCollection = {
+  type: "FeatureCollection",
+  features: [],
+  exceededTransferLimit: false,
+};
+
+const emptyAr50FeatureCollection =
+  '<?xml version="1.0" encoding="UTF-8"?>' +
+  '<wfs:FeatureCollection xmlns:wfs="http://www.opengis.net/wfs/2.0" ' +
+  'xmlns:gml="http://www.opengis.net/gml/3.2" ' +
+  'xmlns:ms="http://mapserver.gis.umn.edu/mapserver" ' +
+  'numberMatched="0" numberReturned="0"></wfs:FeatureCollection>';
+
 const probes: readonly Probe[] = [
   {
     namespace: "companies",
@@ -192,6 +206,40 @@ const probes: readonly Probe[] = [
     invalidPayload: { hits: 42 },
     run: (sdk, signal) =>
       sdk.catalog.search({ query: "transport", size: 1 }, signal === undefined ? {} : { signal }),
+  },
+  {
+    namespace: "geodata",
+    providerIds: ["geonorge"],
+    payload: geonorgeSearch,
+    invalidPayload: { NumFound: "many", Limit: 2, Offset: 1, Results: [] },
+    run: (sdk, signal) =>
+      sdk.geodata.searchDatasets(
+        { query: "boundary", limit: 2 },
+        signal === undefined ? {} : { signal },
+      ),
+  },
+  {
+    namespace: "environment",
+    providerIds: ["naturbase"],
+    payload: emptyNaturbaseFeatureCollection,
+    invalidPayload: { type: "FeatureCollection", features: "many" },
+    run: (sdk, signal) =>
+      sdk.environment.getProtectedAreasAt(
+        { latitude: 59.91, longitude: 10.75, limit: 1 },
+        signal === undefined ? {} : { signal },
+      ),
+  },
+  {
+    namespace: "land",
+    providerIds: ["nibio"],
+    payload: emptyAr50FeatureCollection,
+    invalidPayload: "<not-a-feature-collection/>",
+    responseType: "text",
+    run: (sdk, signal) =>
+      sdk.land.getLandResourcesAt(
+        { latitude: 59.91, longitude: 10.75, limit: 1 },
+        signal === undefined ? {} : { signal },
+      ),
   },
   {
     namespace: "currency",
@@ -556,6 +604,16 @@ describe("facade construction", () => {
     expect(typeof sdk.fisheries.searchVessels).toBe("function");
     expect(typeof sdk.fisheries.searchAquacultureSites).toBe("function");
     expect(typeof sdk.profiles.vessel).toBe("function");
+  });
+
+  it("exposes the focused geospatial namespaces and nature profile", () => {
+    const sdk = new NorwayOpenData({ ...fullyConfigured, fetch: async () => jsonResponse({}) });
+    expect(typeof sdk.geodata.searchDatasets).toBe("function");
+    expect(typeof sdk.geodata.getMetadata).toBe("function");
+    expect(typeof sdk.environment.getProtectedAreasAt).toBe("function");
+    expect(typeof sdk.environment.getInterventionFreeAreasAt).toBe("function");
+    expect(typeof sdk.land.getLandResourcesAt).toBe("function");
+    expect(typeof sdk.profiles.natureAtLocation).toBe("function");
   });
 
   it("exposes no duplicate operation name across the maritime namespaces", () => {

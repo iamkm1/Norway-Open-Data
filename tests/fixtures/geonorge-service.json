@@ -1,0 +1,59 @@
+{
+  "Uuid": "service-wms",
+  "Title": "Weather observations WMS",
+  "Type": "service",
+  "Abstract": "A view service for weather observations.",
+  "Organization": "Meteorologisk institutt",
+  "TopicCategories": ["Klima og meteorologi"],
+  "KeywordsTheme": [
+    {
+      "KeywordValue": "vær"
+    }
+  ],
+  "KeywordsNationalTheme": [
+    {
+      "KeywordValue": "Vær og klima"
+    }
+  ],
+  "SpatialScope": "National",
+  "BoundingBox": {
+    "EastBoundLongitude": "33",
+    "NorthBoundLatitude": "72",
+    "SouthBoundLatitude": "57",
+    "WestBoundLongitude": "2"
+  },
+  "ReferenceSystems": [],
+  "ContactOwners": [],
+  "Constraints": {
+    "AccessConstraints": "Åpne data",
+    "OtherConstraintsLink": "https://data.norge.no/nlod/no/2.0",
+    "OtherConstraintsLinkText": "NLOD 2.0",
+    "OtherConstraintsAccess": "no restrictions"
+  },
+  "AccessIsOpendata": true,
+  "AccessIsRestricted": false,
+  "AccessIsProtected": false,
+  "DataAccess": "Åpne data",
+  "DatePublished": "2024-01-01T00:00:00",
+  "DateUpdated": "2026-07-01T00:00:00",
+  "MaintenanceFrequency": "Kontinuerlig",
+  "Status": "Pågående",
+  "DistributionsFormats": [
+    {
+      "ProtocolName": "WMS-tjeneste",
+      "FormatName": "PNG",
+      "FormatVersion": "1.3.0",
+      "URL": "https://example.test/wms?service=WMS&request=GetCapabilities",
+      "Protocol": "OGC:WMS",
+      "Organization": "Meteorologisk institutt"
+    }
+  ],
+  "DistributionDetails": {
+    "Protocol": "OGC:WMS",
+    "ProtocolName": "WMS-tjeneste",
+    "URL": "https://example.test/wms?service=WMS&request=GetCapabilities"
+  },
+  "DatasetServicesWithShowMapLink": [],
+  "OperatesOn": ["no.met.adc:weather/product", "no.met.adc:weather/product"],
+  "ServiceType": "view"
+}

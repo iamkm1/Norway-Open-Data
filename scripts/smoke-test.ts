@@ -148,6 +148,40 @@ await check("Data.norge catalog.search", async () => {
   return `${response.data.pagination.totalItems} result(s); ${first.title}`;
 });
 
+await check("Geonorge geodata.searchDatasets", async () => {
+  const response = await norway.geodata.searchDatasets({
+    query: "verneområder",
+    limit: 1,
+  });
+  const first = response.data.items[0];
+  requireResult(first !== undefined, "Geonorge returned no dataset metadata.");
+  return `${String(response.data.pagination.totalItems)} result(s); ${first.title}`;
+});
+
+await check("Naturbase environment.getProtectedAreasAt", async () => {
+  const response = await norway.environment.getProtectedAreasAt({
+    latitude: 59.888,
+    longitude: 10.829,
+    limit: 1,
+    pageSize: 1,
+    maxPages: 1,
+  });
+  requireResult(response.data.features.length <= 1, "Naturbase exceeded the requested limit.");
+  return `${String(response.data.features.length)} protected area(s); ${response.data.crs.identifier}`;
+});
+
+await check("NIBIO land.getLandResourcesAt", async () => {
+  const response = await norway.land.getLandResourcesAt({
+    latitude: 59.888,
+    longitude: 10.829,
+    limit: 1,
+    pageSize: 1,
+    maxPages: 1,
+  });
+  requireResult(response.data.features.length <= 1, "NIBIO exceeded the requested limit.");
+  return `${String(response.data.features.length)} AR50 feature(s); ${response.data.crs.identifier}`;
+});
+
 await check("Norges Bank currency.getExchangeRate", async () => {
   const response = await norway.currency.getExchangeRate({ from: "EUR", to: "NOK" });
   requireResult(

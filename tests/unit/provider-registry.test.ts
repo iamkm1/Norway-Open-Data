@@ -86,6 +86,24 @@ describe("provider registry", () => {
     });
   });
 
+  it("preserves geospatial provider licences and required attribution", () => {
+    expect(providers.geonorge).toMatchObject({
+      access: "open",
+      license: expect.stringContaining("CC BY 4.0"),
+      attribution: expect.stringContaining("Kartverket"),
+    });
+    expect(providers.naturbase).toMatchObject({
+      access: "open",
+      license: "Norwegian Licence for Open Government Data (NLOD)",
+      attribution: expect.stringContaining("Miljødirektoratet"),
+    });
+    expect(providers.nibio).toMatchObject({
+      access: "open",
+      license: "Norwegian Licence for Open Government Data (NLOD) 1.0",
+      attribution: "Kilde: NIBIO.",
+    });
+  });
+
   it("builds complete headers from only the fields each provider declared", () => {
     // Catches a descriptor that reads a value it never required: the core supplies
     // only declared fields, so such a header would render as "undefined".

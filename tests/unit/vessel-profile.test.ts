@@ -95,7 +95,20 @@ describe("vessel profile", () => {
 
     expect(profile.components).toHaveLength(5);
     expect(profile.components?.every((entry) => entry.status === "available")).toBe(true);
-    expect(response.source.id).toBe("barentswatch-ais+fiskeridir-vessels+met+kartverket");
+    expect(response.source).toEqual({
+      id: "barentswatch-ais+fiskeridir-vessels+met+kartverket",
+      name: "BarentsWatch AIS, Fiskeridirektoratet, MET Norway and Kartverket",
+      homepage: "https://github.com/iamkm1/Norway-Open-Data",
+      documentation: "https://github.com/iamkm1/Norway-Open-Data#cross-provider-vessel-profile",
+    });
+    expect(response.sources?.map((source) => source.id)).toEqual([
+      "barentswatch-ais",
+      "fiskeridir-vessels",
+      "met",
+      "kartverket",
+    ]);
+    expect(response.sources?.some(({ id }) => id === response.source.id)).toBe(false);
+    expect(response.sources?.[0]?.attribution).toMatch(/Kystverket/);
   });
 
   it("joins to the vessel register on the AIS call sign", async () => {
@@ -181,6 +194,11 @@ describe("vessel profile", () => {
       status: "omitted",
       reason: "provider-error",
     });
+    expect(response.source).toMatchObject({
+      id: "barentswatch-ais+kartverket",
+      name: "BarentsWatch AIS and Kartverket",
+    });
+    expect(response.sources?.map(({ id }) => id)).toEqual(["barentswatch-ais", "kartverket"]);
   });
 
   it("keeps the rest of the profile when the AIS snapshot fails but the track succeeds", async () => {

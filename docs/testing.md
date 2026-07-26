@@ -35,6 +35,12 @@ against a hand-written object implementing only the standard `Response` surface.
 `scripts/cross-runtime-check.mjs` is the script the Deno and Bun jobs run and can be executed with
 any runtime.
 
+Geospatial unit coverage remains offline as well. Saved fixtures exercise strict Point,
+MultiPoint, LineString, Polygon and MultiPolygon validation, holes, null geometry, CRS rejection,
+ArcGIS/WFS/OGC page normalization, empty and truncated results, repeated-page protection,
+`AbortSignal`, provider attribution and partial nature-profile failures. Tests never need a map
+server merely to prove paging or geometry behavior.
+
 ## Live provider tests
 
 Live tests are opt-in, low-volume contract checks under `tests/live`. `pnpm test:live` sets
@@ -58,14 +64,29 @@ pnpm test:live
 
 The application name is required for Entur and NVDB. MET's live cases are skipped without a contact
 email. The NVE HydAPI cases are skipped unless `NVE_HYDAPI_KEY` is set; every other check runs
-anonymously or with caller identification only.
+anonymously or with caller identification only. The v0.8 Geonorge, Naturbase and NIBIO probes need
+no new environment variables.
 
 Live checks are representative contract probes across the supported public-sector source adapters,
-the third-party electricity endpoint and every `profiles` composition. Every public
-auto-paginating iterator has a one-item, one-page probe. Individual cases may call several related
+the third-party electricity endpoint and representative `profiles` compositions. Representative
+auto-paginating iterators have one-item, one-page probes. Individual cases may call several related
 methods, but the suite does not claim exhaustive coverage of every method, parameter combination or
 upstream response variant. Detail lookups are chained from list calls rather than hard-coded IDs
 where practical. Keep requests bounded and do not add load or rate-limit bypasses.
+
+### Geospatial live probes
+
+`tests/live/geospatial.live.test.ts` includes low-volume, anonymous checks for Geonorge catalogue
+search/detail, each selected Naturbase dataset and NIBIO AR50. Spatial probes use one point, request
+at most one feature from one page and validate the live CRS declaration and representative
+attributes without assuming that a feature must always exist at one coordinate. The nature profile
+is covered offline with injected component responses and partial-failure cases.
+
+These checks are contract sentinels, not data-quality or coverage audits. They do not follow
+Geonorge distribution/service URLs, render WMS images, traverse nationwide feature sets or touch
+restricted Geovekst resources. An upstream timeout, temporary empty layer or changed metadata string
+must be investigated before changing a runtime schema. Enable them with the same
+`RUN_LIVE_TESTS=true` path as every other live check; there are no geospatial credentials.
 
 ### Maritime live probes
 
@@ -119,6 +140,9 @@ Configure once in repository settings:
 A BarentsWatch client id contains the registering account's address, so it is stored as a secret
 rather than a variable even though it is not a bearer credential on its own.
 
+Geonorge, Naturbase and NIBIO require no repository variable or secret. `RUN_LIVE_TESTS` is set by
+the live-test script/workflow itself rather than stored as a credential.
+
 A failure can indicate an upstream contract change, temporary provider/network trouble or an SDK
 regression. Inspect the provider response and failing path before adjusting a schema.
 
@@ -140,6 +164,8 @@ and exits with status 1 if any check fails.
 - Keep unit tests offline and deterministic.
 - Add a minimal saved fixture for each new provider response shape.
 - Test input validation, provider-response validation, normalized output and error behavior.
+- For geospatial changes, cover geometry structure, source/output CRS, limits, truncation, empty
+  results, repeated pages and abort propagation without broadening schemas to fit one fixture.
 - Put network checks under `tests/live` and keep them low-volume and explicitly opt-in.
 - Never commit caller emails, API keys, tokens or complete sensitive provider payloads.
 

@@ -13,10 +13,13 @@ import { DataNorgeClient } from "./providers/data-norge/client.js";
 import { EnturClient } from "./providers/entur/client.js";
 import { FhiClient } from "./providers/fhi/client.js";
 import { FisheriesClient } from "./providers/fiskeridir/client.js";
+import { GeonorgeClient } from "./providers/geonorge/client.js";
 import { ElectricityClient } from "./providers/hvakosterstrommen/client.js";
 import { KartverketAddressClient } from "./providers/kartverket/address-client.js";
 import { KartverketPlaceClient } from "./providers/kartverket/place-client.js";
 import { MetClient } from "./providers/met/client.js";
+import { NaturbaseClient } from "./providers/naturbase/client.js";
+import { NibioClient } from "./providers/nibio/client.js";
 import { NveEnergyClient } from "./providers/nve/energy-client.js";
 import { NveHazardsClient } from "./providers/nve/hazards-client.js";
 import { NorgesBankClient } from "./providers/norges-bank/client.js";
@@ -147,6 +150,12 @@ export class NorwayOpenData {
   readonly marine: MarineClient;
   /** Fishing-vessel and aquaculture registers from Fiskeridirektoratet. */
   readonly fisheries: FisheriesClient;
+  /** Geonorge's national metadata catalogue for geospatial datasets and services. */
+  readonly geodata: GeonorgeClient;
+  /** Focused Naturbase vector datasets from Miljødirektoratet. */
+  readonly environment: NaturbaseClient;
+  /** Open NIBIO land-resource classifications. */
+  readonly land: NibioClient;
 
   /** Creates an SDK client with safe request defaults. */
   constructor(config: NorwayOpenDataConfig = {}) {
@@ -172,6 +181,9 @@ export class NorwayOpenData {
     this.ais = new AisClient(http);
     this.marine = new MarineClient(http);
     this.fisheries = new FisheriesClient(http);
+    this.geodata = new GeonorgeClient(http);
+    this.environment = new NaturbaseClient(http);
+    this.land = new NibioClient(http);
     // Constructed last: cross-provider profiles depend on the clients above.
     this.profiles = new ProfileClient(this.companies, this.addresses, {
       weather: this.weather,
@@ -182,6 +194,8 @@ export class NorwayOpenData {
       ais: this.ais,
       fisheries: this.fisheries,
       places: this.places,
+      environment: this.environment,
+      land: this.land,
       canAuthenticate: (provider: ProviderDescriptor) =>
         missingAuthFields(provider, availableAuthValues(resolved, provider.id as ProviderId))
           .length === 0,
