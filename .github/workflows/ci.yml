@@ -20,7 +20,7 @@ jobs:
       RUN_LIVE_TESTS: "false"
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@v6.0.9
         with:
           version: 10.13.1
       - uses: actions/setup-node@v7
@@ -39,7 +39,7 @@ jobs:
         runtime: [deno, bun]
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@v6.0.9
         with:
           version: 10.13.1
       - uses: actions/setup-node@v7
