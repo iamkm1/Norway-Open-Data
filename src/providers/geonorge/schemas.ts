@@ -237,6 +237,7 @@ const geonorgeGroupedFormatSchema = z
   .object({
     FormatName: z.string().trim().min(1),
     FormatVersion: nullableString,
+    URL: nullableString,
   })
   .strict();
 

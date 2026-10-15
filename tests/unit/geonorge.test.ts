@@ -179,6 +179,30 @@ describe("Geonorge client", () => {
     expect(response.raw).toBeUndefined();
   });
 
+  it.each([datasetFixture, serviceFixture])(
+    "preserves grouped format URLs without following them for $Type metadata",
+    async (fixture) => {
+      const { fetch, mock } = sequenceFetch(jsonResponse(fixture));
+      const response = await clientFor(fetch).getMetadata(fixture.Uuid, { includeRaw: true });
+
+      expect(response.raw).toMatchObject({
+        DistributionFormatsGrouped: fixture.DistributionFormatsGrouped,
+      });
+      expect(mock).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each([{ url: 123 }, { url: [] }, { url: {} }, { url: true }])(
+    "rejects malformed grouped format URLs: $url",
+    ({ url }) => {
+      const metadata = {
+        ...datasetFixture,
+        DistributionFormatsGrouped: [{ Formats: [{ FormatName: "GML", URL: url }], URL: [] }],
+      };
+      expect(geonorgeMetadataSchema.safeParse(metadata).success).toBe(false);
+    },
+  );
+
   it("walks item offsets by returned count in deterministic order", async () => {
     const third = {
       ...searchFixture.Results[0],

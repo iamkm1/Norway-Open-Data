@@ -2,6 +2,18 @@
   "Uuid": "service-wms",
   "Title": "Weather observations WMS",
   "Type": "service",
+  "DistributionFormatsGrouped": [
+    {
+      "Protocol": "OGC:WMS",
+      "Formats": [
+        {
+          "FormatName": "PNG",
+          "URL": "https://example.test/wms?service=WMS&request=GetCapabilities"
+        }
+      ],
+      "URL": ["https://example.test/wms?service=WMS&request=GetCapabilities"]
+    }
+  ],
   "Abstract": "A view service for weather observations.",
   "Organization": "Meteorologisk institutt",
   "TopicCategories": ["Klima og meteorologi"],

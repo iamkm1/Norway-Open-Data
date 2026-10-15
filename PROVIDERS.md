@@ -288,7 +288,8 @@ versions, codes, and mappings used to describe data.
   Bounding boxes with decimal commas and Unicode minus signs and dates without timezone offsets are
   normalized explicitly. Fully typed distributions come from the detail endpoint; ambiguous
   pipe-delimited search-result distribution strings are intentionally not treated as service
-  contracts.
+  contracts. Grouped distribution formats may include their own `URL`, retained as validated raw
+  metadata without following the link.
 - **Request budget and caching:** Geonorge publishes no numeric Kartkatalog request limit. The SDK
   applies a 30-request-per-minute courtesy budget, caches search results for 10 minutes and metadata
   detail for one hour when caching is enabled.

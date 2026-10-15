@@ -91,6 +91,8 @@ All notable user-visible changes are recorded here. The project follows semantic
 
 ### Patch Changes
 
+- Geonorge metadata accepts the provider's per-format `URL` in grouped distributions, fixing
+  dataset and service lookups that previously rejected otherwise valid responses.
 - `ProviderCredential.clientId` documentation now covers Frost, which takes the client ID as an
   HTTP Basic username rather than exchanging it at an OAuth2 token endpoint.
 - The conformance suite holds four more operations to the shared contract, and a Basic credential

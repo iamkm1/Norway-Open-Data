@@ -2,6 +2,19 @@
   "Uuid": "no.met.adc:weather/product",
   "Title": "Weather observations",
   "Type": "dataset",
+  "DistributionFormatsGrouped": [
+    {
+      "Protocol": "OGC:WFS",
+      "Formats": [
+        {
+          "FormatName": "GML",
+          "FormatVersion": "3.2",
+          "URL": "https://example.test/wfs?service=WFS&request=GetCapabilities"
+        }
+      ],
+      "URL": ["https://example.test/wfs?service=WFS&request=GetCapabilities"]
+    }
+  ],
   "Abstract": "A representative geospatial observation dataset.",
   "Organization": "Meteorologisk institutt",
   "TopicCategories": ["Klima og meteorologi"],
