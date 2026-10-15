@@ -2,6 +2,100 @@
 
 All notable user-visible changes are recorded here. The project follows semantic versioning.
 
+## 0.9.0 — 2026-10-15
+
+### Minor Changes
+
+- **Weather and Climate Norway.** Expands `weather` from one product to seven and adds two
+  namespaces, two official service integrations and a cross-provider conditions profile. The
+  surface grows from 118 to 135 methods across 24 namespaces, backed by 21 official service
+  integrations from the same 15 public-sector organizations, plus one third-party API.
+
+  **`sdk.weather` — six more MET Norway products.** `forecast()` and `current()` are unchanged.
+
+  - `getWarnings()` returns MET Norway's current official weather warnings from MetAlerts 2.0:
+    wind, gale, rain, snow, ice, icing, storm surge, forest-fire danger, lightning and polar lows.
+    With a coordinate, MetAlerts itself decides which warning areas contain the point; other
+    filters narrow by county, event, land or marine domain and risk colour, in Norwegian or English.
+    Each warning keeps its awareness level and colour, CAP severity, certainty and message type
+    (including cancellations), named extreme-weather incidents, the counties and municipalities it
+    names, its validity window and its area as validated GeoJSON. An empty list is never an
+    all-clear, and flood, landslide and avalanche warnings remain NVE's, in `hazards`.
+  - `getNowcast()` returns the radar-based precipitation nowcast for roughly the next two hours in
+    five-minute steps, with current conditions and the radar status.
+  - `getSunTimes()` and `getMoonTimes()` return rise, set, culmination and moon phase in the
+    Europe/Oslo offset for the requested date. A day with neither sunrise nor sunset reports
+    `polarCondition` as `midnight-sun` or `polar-night` rather than leaving the gap unexplained.
+  - `getOceanForecast()` returns sea temperature, wave height and direction, and surface current for
+    the nearest ocean-model cell.
+  - `getAirQualityForecast()` returns the hourly air-quality index and NO₂, PM10, PM2.5 and O₃
+    concentrations for the statistical area containing a point. **Experimental:** MET Norway
+    publishes the product as version 0.1. Concentrations in an unexpected unit are rejected rather
+    than mislabelled.
+
+  A point outside a product's coverage resolves to `undefined` rather than raising: the nowcast
+  outside the Nordic radar area (which excludes Svalbard), the ocean forecast inland and offshore,
+  and the air-quality forecast outside Norway. Each case was verified against the live service.
+
+  **`sdk.tides` — Kartverket's Hydrographic Service.** `listStations()`, `getWaterLevels()`,
+  `getTideTable()` and `getReferenceLevels()` for the Norwegian coast. Water levels return
+  observation, astronomical prediction, weather effect (surge) and forecast series, with the
+  forecast's uncertainty band, the reference level they are measured from, Kartverket's quality
+  assessment and any service notice. Every result states which reference station the values were
+  modelled from, with its amplitude factor and time delay, and which permanent gauge supplied the
+  weather effect, because away from a gauge the values are modelled rather than measured. Inland and
+  far-offshore positions resolve to `undefined`. Windows are bounded per request (7 days at
+  10-minute resolution, 31 days hourly, 366 days for tide tables) well inside the provider's own
+  limit, and times are requested and returned in UTC. Anonymous; CC BY 4.0 with a mandatory credit
+  to the Hydrographic Service.
+
+  **`sdk.climate` — MET Norway Frost.** `searchStations()` (by ID, name, municipality, county,
+  element or nearest to a point), `getAvailableTimeSeries()`, `getObservations()`,
+  `getLatestObservations()` and `getClimateNormals()`. Requires a free Frost client ID, configured
+  as `credentials["met-frost"].clientId` and sent as the HTTP Basic username. Observation windows
+  are bounded to 31 days, or 366 days when every requested resolution is daily or coarser, and use
+  Frost's recommended default time offsets and sensor levels unless overridden. A query Frost has no
+  data for resolves to an empty array, because Frost answers HTTP 404 or 412 for both "no data" and
+  "no such station". Frost's station-holder names are withheld at the validation boundary, so they
+  reach neither `data`, `raw` nor the cache. **Experimental:** the schemas follow Frost's published
+  Swagger models; no Frost client ID was available to verify them against the live service, and
+  the opt-in live probes do so once `MET_FROST_CLIENT_ID` is configured.
+
+  **`places.getMunicipalityAt()` — Kartverket Kommuneinfo.** Resolves a coordinate to the
+  municipality and county whose official boundary contains it, or `undefined` at sea and abroad.
+  This is an administrative-boundary lookup, not an inference from nearby place names.
+
+  **`profiles.conditionsAtLocation()` — a cross-provider conditions profile.** Answers "what are
+  conditions here?" for one coordinate from MET Norway, NVE, Kartverket, the Hydrographic Service and,
+  when configured, Frost: forecast, nowcast, MET warnings, NVE warnings matched to the municipality
+  from `getMunicipalityAt()`, sun times, ocean forecast, tide table, air quality, and the latest
+  observations at the nearest active weather station beside its 1991–2020 monthly temperature
+  normal. Each of its 14 operations reports its own provenance or why it is absent —
+  `not-configured`, `not-covered`, `not-applicable`, `not-found` or `provider-error` — and a missing
+  section never removes another. NVE warnings are only requested once the municipality is known, and
+  a distant weather station or degraded radar coverage produces an explicit notice. **Experimental.**
+
+  **Shared infrastructure.** A request can now declare which non-success responses mean "the
+  provider has nothing for this subject", optionally matched on body text, and those are handed to
+  the schema as `null` exactly as HTTP 204 already was. A small strict XML reader parses the tide
+  API: it refuses document type declarations outright, so entity-expansion and external-entity
+  attacks have nothing to work with, decodes only the predefined and numeric entities, and bounds
+  input size and nesting depth. Time windows are validated once, require an explicit offset, and are
+  refused rather than silently reinterpreted.
+
+  **Scope and verification.** Every MET, Kartverket and tide method was verified against the live
+  services, including polar day and night, points outside each model area, inland and offshore tide
+  positions, and the provider's in-band XML errors. 2,640 current and archived MetAlerts geometries
+  validate against the SDK's strict GeoJSON schemas. Measured air quality from NILU is not included:
+  its measurement endpoints now require authentication and its lookups have been withdrawn.
+
+### Patch Changes
+
+- `ProviderCredential.clientId` documentation now covers Frost, which takes the client ID as an
+  HTTP Basic username rather than exchanging it at an OAuth2 token endpoint.
+- The conformance suite holds four more operations to the shared contract, and a Basic credential
+  may only ever be sent to `frost.met.no`.
+
 ## 0.8.0 — 2026-07-26
 
 ### Minor Changes

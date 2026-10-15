@@ -67,8 +67,9 @@ export type ProviderCredential = {
   /** Provider-issued key, sent only to that provider's hosts. */
   apiKey?: string;
   /**
-   * OAuth2 client id, for a provider using the client-credentials grant. Sent
-   * only to that provider's own token endpoint.
+   * Client id. For a provider using the OAuth2 client-credentials grant it is sent
+   * only to that provider's own token endpoint; Frost (`met-frost`) instead takes
+   * it as the HTTP Basic username on its own API requests.
    */
   clientId?: string;
   /** OAuth2 client secret, sent only to that provider's own token endpoint. */

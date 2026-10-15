@@ -78,5 +78,17 @@ export const placeResponseSchema = z
   })
   .loose();
 
+/** Kommuneinfo `punkt` response, or `null` for a point outside every municipality. */
+export const municipalityAtPointSchema = z
+  .object({
+    kommunenummer: z.string().regex(/^\d{4}$/),
+    kommunenavn: z.string().min(1),
+    fylkesnummer: z.string().regex(/^\d{2}$/),
+    fylkesnavn: z.string().min(1),
+  })
+  .loose()
+  .nullable();
+
 export type RawAddressResponse = z.infer<typeof addressResponseSchema>;
 export type RawPlaceResponse = z.infer<typeof placeResponseSchema>;
+export type RawMunicipalityAtPoint = NonNullable<z.infer<typeof municipalityAtPointSchema>>;

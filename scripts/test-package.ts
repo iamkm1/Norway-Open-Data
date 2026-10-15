@@ -55,8 +55,10 @@ const expectedPackageFiles = [
   "examples/address.ts",
   "examples/ais.ts",
   "examples/catalog.ts",
+  "examples/climate.ts",
   "examples/company-profile.ts",
   "examples/company.ts",
+  "examples/conditions-profile.ts",
   "examples/currency.ts",
   "examples/electricity.ts",
   "examples/energy.ts",
@@ -72,14 +74,17 @@ const expectedPackageFiles = [
   "examples/roads.ts",
   "examples/shared-cache.ts",
   "examples/statistics.ts",
+  "examples/tides.ts",
   "examples/transport.ts",
   "examples/vessel-profile.ts",
+  "examples/weather-warnings.ts",
   "examples/weather.ts",
   "package.json",
 ].sort();
 const expectedRuntimeExports = [
   "AisClient",
   "BrregClient",
+  "ClimateClient",
   "ConfigurationError",
   "DataNorgeClient",
   "ElectricityClient",
@@ -108,6 +113,7 @@ const expectedRuntimeExports = [
   "ResponseValidationError",
   "SsbClient",
   "StortingetClient",
+  "TidesClient",
   "VegvesenClient",
   "boundingBoxSchema",
   "boundingBoxToGeoJsonBoundingBox",
@@ -272,6 +278,10 @@ try {
       '  if (typeof new value.NorwayOpenData().geodata?.searchDatasets !== "function") throw new Error("Missing ESM Geonorge namespace.");\n' +
       '  if (typeof new value.NorwayOpenData().environment?.getProtectedAreasAt !== "function") throw new Error("Missing ESM Naturbase namespace.");\n' +
       '  if (typeof new value.NorwayOpenData().land?.getLandResourcesAt !== "function") throw new Error("Missing ESM NIBIO namespace.");\n' +
+      '  if (typeof new value.NorwayOpenData().tides?.getTideTable !== "function") throw new Error("Missing ESM tides namespace.");\n' +
+      '  if (typeof new value.NorwayOpenData().climate?.getObservations !== "function") throw new Error("Missing ESM climate namespace.");\n' +
+      '  if (value.providers?.["kartverket-tides"]?.license !== "Creative Commons Attribution 4.0 International (CC BY 4.0)") throw new Error("Missing tide licence metadata.");\n' +
+      '  if (value.providers?.["met-frost"]?.access !== "registration-required") throw new Error("Missing Frost provider metadata.");\n' +
       '  if (value.providers?.["ssb-klass"]?.access !== "open") throw new Error("Missing SSB Klass provider metadata.");\n' +
       '  if (value.providers?.geonorge?.access !== "open") throw new Error("Missing Geonorge provider metadata.");\n' +
       '  if (value.providers?.naturbase?.license !== "Norwegian Licence for Open Government Data (NLOD)") throw new Error("Missing Naturbase licence metadata.");\n' +
@@ -290,6 +300,8 @@ try {
       'if (typeof new sdk.NorwayOpenData().geodata?.searchDatasets !== "function") throw new Error("Missing CommonJS Geonorge namespace.");\n' +
       'if (typeof new sdk.NorwayOpenData().environment?.getProtectedAreasAt !== "function") throw new Error("Missing CommonJS Naturbase namespace.");\n' +
       'if (typeof new sdk.NorwayOpenData().land?.getLandResourcesAt !== "function") throw new Error("Missing CommonJS NIBIO namespace.");\n' +
+      'if (typeof new sdk.NorwayOpenData().tides?.getTideTable !== "function") throw new Error("Missing CommonJS tides namespace.");\n' +
+      'if (typeof new sdk.NorwayOpenData().climate?.getObservations !== "function") throw new Error("Missing CommonJS climate namespace.");\n' +
       'if (sdk.providers?.["ssb-klass"]?.access !== "open") throw new Error("Missing SSB Klass provider metadata.");\n' +
       'if (sdk.providers?.geonorge?.access !== "open") throw new Error("Missing Geonorge provider metadata.");\n' +
       'if (sdk.providers?.naturbase?.license !== "Norwegian Licence for Open Government Data (NLOD)") throw new Error("Missing Naturbase licence metadata.");\n' +

@@ -13,7 +13,9 @@ import { fiskeridirAquaProvider } from "./fiskeridir/aqua-provider.js";
 import { fiskeridirVesselsProvider } from "./fiskeridir/vessels-provider.js";
 import { geonorgeProvider } from "./geonorge/provider.js";
 import { hvakosterstrommenProvider } from "./hvakosterstrommen/provider.js";
+import { kartverketTidesProvider } from "./kartverket-tides/provider.js";
 import { kartverketProvider } from "./kartverket/provider.js";
+import { metFrostProvider } from "./met-frost/provider.js";
 import { metProvider } from "./met/provider.js";
 import { naturbaseProvider } from "./naturbase/provider.js";
 import { nibioProvider } from "./nibio/provider.js";
@@ -51,7 +53,9 @@ export const providerDescriptors = registry({
   geonorge: geonorgeProvider,
   hvakosterstrommen: hvakosterstrommenProvider,
   kartverket: kartverketProvider,
+  "kartverket-tides": kartverketTidesProvider,
   met: metProvider,
+  "met-frost": metFrostProvider,
   naturbase: naturbaseProvider,
   nibio: nibioProvider,
   "norges-bank": norgesBankProvider,

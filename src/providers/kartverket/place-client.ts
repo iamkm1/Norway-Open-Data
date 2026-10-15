@@ -5,8 +5,14 @@ import { InputValidationError } from "../../core/errors.js";
 import { responseSource } from "../../core/provider.js";
 import { kartverketProvider } from "./provider.js";
 import type { OpenDataResponse, RequestOptions } from "../../core/types.js";
-import { placeResponseSchema, type RawPlaceResponse } from "./schemas.js";
+import {
+  municipalityAtPointSchema,
+  placeResponseSchema,
+  type RawPlaceResponse,
+} from "./schemas.js";
 import type {
+  MunicipalityAtLocation,
+  MunicipalityAtLocationParameters,
   NearbyPlaceParameters,
   PlaceName,
   PlaceSearchParameters,
@@ -14,6 +20,7 @@ import type {
 } from "./types.js";
 
 const BASE_URL = "https://ws.geonorge.no/stedsnavn/v1";
+const MUNICIPALITY_URL = "https://api.kartverket.no/kommuneinfo/v1/punkt";
 const MAX_RESULTS = 500;
 const MAX_RADIUS_METERS = 5_000;
 
@@ -142,6 +149,51 @@ export class KartverketPlaceClient {
     });
     return createResponse(
       normalizePlaces(result.data),
+      responseSource(kartverketProvider),
+      result.data,
+      result.cached,
+      options,
+    );
+  }
+
+  /**
+   * Returns the municipality and county whose official boundary contains a point.
+   *
+   * This is an administrative-boundary lookup from Kartverket's Kommuneinfo API,
+   * not an inference from nearby place names. Resolves to `undefined` for a point
+   * outside every Norwegian municipality, such as the open sea or abroad.
+   */
+  async getMunicipalityAt(
+    parameters: MunicipalityAtLocationParameters,
+    options?: RequestOptions,
+  ): Promise<OpenDataResponse<MunicipalityAtLocation | undefined>> {
+    const parsed = coordinateSchema.safeParse(parameters);
+    if (!parsed.success) {
+      throw new InputValidationError("Invalid Kartverket municipality lookup coordinates.", {
+        provider: kartverketProvider.id,
+        cause: parsed.error,
+      });
+    }
+    const result = await this.#http.request({
+      provider: kartverketProvider,
+      url: MUNICIPALITY_URL,
+      query: { nord: parsed.data.latitude, ost: parsed.data.longitude, koordsys: 4258 },
+      schema: municipalityAtPointSchema,
+      // Kommuneinfo answers a point outside every municipality with this 404.
+      absentResponses: [{ status: 404, bodyIncludes: "Ingen treff" }],
+      options,
+      cacheTtlMs: kartverketProvider.cacheTtlMs.municipality,
+      resourceDescription: "municipality at point",
+    });
+    return createResponse(
+      result.data === null
+        ? undefined
+        : {
+            municipalityCode: result.data.kommunenummer,
+            municipalityName: result.data.kommunenavn,
+            countyCode: result.data.fylkesnummer,
+            countyName: result.data.fylkesnavn,
+          },
       responseSource(kartverketProvider),
       result.data,
       result.cached,

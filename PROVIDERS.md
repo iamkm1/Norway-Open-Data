@@ -4,7 +4,7 @@
 > sponsored by, or endorsed by Norwegian public authorities or by the third-party service Hva
 > koster strømmen?. Data remains subject to each source's terms and licence.**
 
-Last contract and documentation verification: **2026-07-26**
+Last contract and documentation verification: **2026-10-15**
 
 The MIT licence applies only to this SDK's source code. It does not automatically apply to data
 returned by public providers. Users are responsible for following current provider terms,
@@ -33,28 +33,30 @@ cited from the sections below; `sdk-courtesy` numbers are conservative budgets t
 providers that publish none, so that ordinary use stays comfortable while a runaway loop cannot
 resemble abuse.
 
-| Provider integration              | Budget                             | Basis               |
-| --------------------------------- | ---------------------------------- | ------------------- |
-| Brønnøysundregistrene             | 60/minute                          | sdk-courtesy        |
-| Statistics Norway — PxWeb         | 30/minute                          | provider-documented |
-| Statistics Norway — Klass         | 30/minute                          | sdk-courtesy        |
-| FHI                               | 30/minute                          | sdk-courtesy        |
-| Kartverket                        | 60/minute                          | sdk-courtesy        |
-| Geonorge catalogue                | 30/minute                          | sdk-courtesy        |
-| Miljødirektoratet / Naturbase     | 30/minute                          | sdk-courtesy        |
-| NIBIO                             | 20/minute                          | sdk-courtesy        |
-| Entur                             | 60/minute                          | sdk-courtesy        |
-| MET Norway                        | 60/minute                          | sdk-courtesy        |
-| Data.norge                        | 10/minute search; 5/second lookups | provider-documented |
-| Norges Bank                       | 60/minute                          | sdk-courtesy        |
-| Stortinget                        | 100/minute                         | provider-documented |
-| Statens vegvesen                  | 60/minute                          | sdk-courtesy        |
-| NVE                               | 30/minute                          | sdk-courtesy        |
-| BarentsWatch AIS                  | 60/minute; 5 stream opens/minute   | sdk-courtesy        |
-| BarentsWatch platform             | 60/minute                          | sdk-courtesy        |
-| Fiskeridirektoratet — vessels     | 60/minute                          | sdk-courtesy        |
-| Fiskeridirektoratet — aquaculture | 60/minute                          | sdk-courtesy        |
-| Hva koster strømmen?              | 30/minute                          | sdk-courtesy        |
+| Provider integration               | Budget                             | Basis               |
+| ---------------------------------- | ---------------------------------- | ------------------- |
+| Brønnøysundregistrene              | 60/minute                          | sdk-courtesy        |
+| Statistics Norway — PxWeb          | 30/minute                          | provider-documented |
+| Statistics Norway — Klass          | 30/minute                          | sdk-courtesy        |
+| FHI                                | 30/minute                          | sdk-courtesy        |
+| Kartverket                         | 60/minute                          | sdk-courtesy        |
+| Kartverket — tides and water level | 30/minute                          | sdk-courtesy        |
+| Geonorge catalogue                 | 30/minute                          | sdk-courtesy        |
+| Miljødirektoratet / Naturbase      | 30/minute                          | sdk-courtesy        |
+| NIBIO                              | 20/minute                          | sdk-courtesy        |
+| Entur                              | 60/minute                          | sdk-courtesy        |
+| MET Norway                         | 60/minute                          | sdk-courtesy        |
+| MET Norway — Frost                 | 30/minute                          | sdk-courtesy        |
+| Data.norge                         | 10/minute search; 5/second lookups | provider-documented |
+| Norges Bank                        | 60/minute                          | sdk-courtesy        |
+| Stortinget                         | 100/minute                         | provider-documented |
+| Statens vegvesen                   | 60/minute                          | sdk-courtesy        |
+| NVE                                | 30/minute                          | sdk-courtesy        |
+| BarentsWatch AIS                   | 60/minute; 5 stream opens/minute   | sdk-courtesy        |
+| BarentsWatch platform              | 60/minute                          | sdk-courtesy        |
+| Fiskeridirektoratet — vessels      | 60/minute                          | sdk-courtesy        |
+| Fiskeridirektoratet — aquaculture  | 60/minute                          | sdk-courtesy        |
+| Hva koster strømmen?               | 30/minute                          | sdk-courtesy        |
 
 BarentsWatch AIS declares a second, much tighter budget for opening streams. A streaming connection
 is meant to be opened once and held for as long as the caller iterates it, so five opens per minute
@@ -208,10 +210,12 @@ versions, codes, and mappings used to describe data.
 
 ## Kartverket
 
-- **Supported methods:** `addresses.search()`, `places.search()`, `places.nearby()`
+- **Supported methods:** `addresses.search()`, `places.search()`, `places.nearby()`,
+  `places.getMunicipalityAt()`
 - **Official homepage:** https://www.kartverket.no/en
 - **Address API:** https://ws.geonorge.no/adresser/v1/
 - **Place-name API:** https://ws.geonorge.no/stedsnavn/v1/
+- **Kommuneinfo API:** https://api.kartverket.no/kommuneinfo/v1/ (`GET /punkt` with `koordsys=4258`)
 - **Access:** Open for these endpoints; no authentication.
 - **Licence:** Geonorge terms are dataset-specific. Check the metadata/licence for the address or
   place-name dataset used; do not assume the SDK's MIT licence applies.
@@ -220,7 +224,40 @@ versions, codes, and mappings used to describe data.
 - **Known limits:** Address search supports at most 1,000 hits per page. Place-name endpoints
   support at most 500 hits per page; nearby radius is capped at 5,000 metres. Address search has no
   documented direct county parameter, so the SDK retrieves at most one provider page and applies a
-  deterministic county-code filter locally.
+  deterministic county-code filter locally. Kommuneinfo answers a point outside every municipality
+  with HTTP 404 and the text "Ingen treff"; the SDK resolves exactly that response to `undefined` and
+  reports any other 404 as `NotFoundError`. Kommuneinfo moved from ws.geonorge.no to
+  api.kartverket.no in December 2023; the SDK uses the new endpoint.
+
+## Kartverket — tides and water level (Hydrographic Service)
+
+- **Supported methods:** `tides.listStations()`, `tides.getWaterLevels()`, `tides.getTideTable()`,
+  `tides.getReferenceLevels()`
+- **Official homepage:** https://www.kartverket.no/til-sjos/se-havniva
+- **API documentation:** https://vannstand.kartverket.no/tideapi_en.html and the linked
+  communication-protocol PDF (revision June 2025)
+- **Endpoint used:** `GET https://vannstand.kartverket.no/tideapi.php` with `tide_request` set to
+  `stationlist`, `locationdata` (`datatype=all` or `tab`) or `locationlevels`
+- **Access:** Open anonymous; no registration.
+- **Licence:** Creative Commons Attribution 4.0 International (CC BY 4.0).
+- **Attribution:** The Norwegian Mapping Authority, Hydrographic Service must be credited.
+- **Format:** XML only, with no published XML schema. The SDK parses it with a strict reader that
+  refuses document type declarations and validates every attribute it reads. Invalid parameters
+  are reported in-band as an HTTP 200 `<error>` document, raised as `ProviderError` with the
+  provider's text. A position without sea-level data returns a `<nodata info="...">` element, which
+  the SDK resolves to `undefined`.
+- **Known limits:** Kartverket describes capacity of about 20 requests per second shared by all
+  users and asks clients to cache static data; the SDK keeps a 30-per-minute courtesy budget and
+  caches station lists and levels for 24 hours. The provider truncates silently at 366 days per
+  request (1,000 for tide tables); the SDK refuses windows over 7 days at 10-minute resolution, 31
+  days hourly and 366 days for tide tables before sending anything. Times are requested with
+  `tzone=0` and returned in UTC; the provider's default is Norwegian standard time.
+- **Interpretation:** Away from a permanent gauge, values are modelled: the tidal prediction of a
+  reference station scaled by a factor and shifted by a delay, plus the weather effect observed at a
+  possibly different permanent gauge. The SDK surfaces those parameters in `location`. Values are
+  heights above the stated reference level, normally in centimetres.
+- **Change notices:** Changes are announced through Geonorge with about three months' notice; the
+  provider states that new elements or parameters may be added to existing requests.
 
 ## Geonorge / Kartverket catalogue
 
@@ -341,11 +378,14 @@ versions, codes, and mappings used to describe data.
 
 ## MET Norway
 
-- **Supported methods:** `weather.forecast()`, `weather.current()`
+- **Supported methods:** `weather.forecast()`, `weather.current()`, `weather.getWarnings()`,
+  `weather.getNowcast()`, `weather.getSunTimes()`, `weather.getMoonTimes()`,
+  `weather.getOceanForecast()`, `weather.getAirQualityForecast()`
 - **Official homepage:** https://www.met.no/en
 - **Getting started:** https://api.met.no/doc/GettingStarted
-- **Locationforecast documentation:**
-  https://api.met.no/weatherapi/locationforecast/2.0/documentation
+- **Product documentation:** Locationforecast 2.0, MetAlerts 2.0, Nowcast 2.0, Sunrise 3.0,
+  Oceanforecast 2.0 and Airqualityforecast 0.1, each at
+  `https://api.met.no/weatherapi/<product>/<version>/documentation`
 - **Terms:** https://api.met.no/doc/TermsOfService
 - **Licensing:** https://api.met.no/doc/License
 - **Access:** Identification required, without an API key.
@@ -358,6 +398,47 @@ versions, codes, and mappings used to describe data.
 - **Known limits:** Latitude/longitude must have at most four decimals; the SDK rounds accordingly.
   MET asks clients to respect `Expires`, avoid unnecessary traffic, and seek agreement above 20
   requests/second per application. Locationforecast is an automated model forecast and has no SLA.
+- **Coverage, verified against the live service:** Nowcast answers HTTP 422 "outside the
+  geographic area supported by the product" outside the Nordic radar area, which excludes Svalbard.
+  Oceanforecast answers HTTP 422 outside its model area and HTTP 200 with `meta.error` and an empty
+  series on land. Airqualityforecast answers HTTP 400 `{"detail":"unknown location: ..."}` outside
+  Norway. The SDK resolves exactly these responses to `undefined` and reports any other 4xx as
+  `ProviderError`.
+- **MetAlerts:** Warnings carry CAP fields, MeteoAlarm awareness levels written as
+  `"2; yellow; Moderate"`, county numbers that may omit a leading zero (`"3"` for Oslo), optional
+  municipality lists and polygon or multipolygon areas. MetAlerts performs the point-in-area test for
+  `lat`/`lon` queries itself. An empty result is never an all-clear.
+- **Status:** `getAirQualityForecast()` is experimental: MET Norway versions the product 0.1.
+  Measured air quality from NILU's API was evaluated and excluded: on 2026-10-15 its measurement
+  endpoints answered HTTP 401 and its lookup endpoints HTTP 410, despite documentation describing it
+  as open.
+
+## MET Norway — Frost
+
+- **Supported methods:** `climate.searchStations()`, `climate.getAvailableTimeSeries()`,
+  `climate.getObservations()`, `climate.getLatestObservations()`, `climate.getClimateNormals()`
+- **Official homepage:** https://frost.met.no/
+- **API reference:** https://frost.met.no/api.html (Swagger document:
+  https://frost.met.no/swagger.json)
+- **Concepts:** https://frost.met.no/concepts2.html
+- **Endpoints used:** `GET /sources/v0.jsonld`, `/observations/availableTimeSeries/v0.jsonld`,
+  `/observations/v0.jsonld` and `/climatenormals/v0.jsonld` on https://frost.met.no
+- **Access:** Free registration required for a client ID
+  (https://frost.met.no/auth/requestCredentials.html), sent as the HTTP Basic username with an empty
+  password. The SDK refuses a client ID containing a colon or non-ASCII characters before sending.
+- **Licence:** Frost responses declare Creative Commons Attribution 3.0 Norway (CC BY 3.0 NO).
+- **Attribution:** Credit the Norwegian Meteorological Institute (MET Norway).
+- **Failure contract:** HTTP 404 means no data matched the query and, for observations, HTTP 412
+  means no time series matched; the SDK resolves both to an empty array. HTTP 403 means too many
+  observations were requested. HTTP 429 and 503 carry `Retry-After`, which the SDK obeys.
+- **Known limits:** Frost publishes no numeric request budget; the SDK keeps a 30-per-minute
+  courtesy budget. Observation windows are bounded to 31 days, or 366 days when every requested
+  resolution is daily or coarser. Frost intervals are half-open, `[from, to)`.
+- **Privacy:** Source metadata's `stationHolders` field is removed during response validation, so
+  station-holder names reach neither callers, `raw` nor the cache.
+- **Status:** Experimental. The schemas follow Frost's Swagger models; they were not verified
+  against the live service because no client ID was available. The live probes verify them when
+  `MET_FROST_CLIENT_ID` is configured.
 
 ## Data.norge
 

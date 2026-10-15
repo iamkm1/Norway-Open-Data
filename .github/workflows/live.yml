@@ -40,4 +40,5 @@ jobs:
           BARENTSWATCH_AIS_CLIENT_SECRET: ${{ secrets.BARENTSWATCH_AIS_CLIENT_SECRET }}
           BARENTSWATCH_CLIENT_ID: ${{ secrets.BARENTSWATCH_CLIENT_ID }}
           BARENTSWATCH_CLIENT_SECRET: ${{ secrets.BARENTSWATCH_CLIENT_SECRET }}
+          MET_FROST_CLIENT_ID: ${{ secrets.MET_FROST_CLIENT_ID }}
         run: pnpm test:live

@@ -160,6 +160,29 @@ directly for safety decisions.
 box in `roadSearch`, whose `halfSizeMetres` is approximately 250 by default. Use its exact
 `boundingBox`, `requestedPageSize` and `truncated` flag when interpreting completeness.
 
+### Conditions at a location
+
+```ts
+const conditions = await norway.profiles.conditionsAtLocation({
+  latitude: 60.398,
+  longitude: 5.32,
+  hours: 6,
+});
+
+console.log(conditions.data.municipality);
+console.log(conditions.data.weatherWarnings, conditions.data.hazards);
+console.log(conditions.data.tides?.events);
+for (const component of conditions.data.components) {
+  console.log(
+    component.operation,
+    component.status === "available" ? "available" : component.reason,
+  );
+}
+```
+
+The profile is experimental. Its 14 operations each degrade on their own; NVE warnings are matched
+to the municipality from Kartverket's boundary lookup, not to a nearby place name.
+
 ## Statistics
 
 SSB value codes are table-specific. Fetch metadata before constructing a dynamic query:
@@ -346,6 +369,101 @@ const forecast = await norway.weather.forecast({
 console.log(departures.data.length);
 console.log(forecast.data.timeseries.length);
 ```
+
+## Weather warnings, nowcast, sun and sea
+
+Every `weather` method needs MET Norway's identification, as `forecast` does:
+
+```ts
+import { NorwayOpenData } from "norway-open-data-sdk";
+
+const norway = new NorwayOpenData({
+  applicationName: "acme-weather-dashboard",
+  contactEmail: "open-data@acme.example",
+});
+const bergen = { latitude: 60.3913, longitude: 5.3221 };
+
+const warnings = await norway.weather.getWarnings({ ...bergen, language: "en" });
+const nowcast = await norway.weather.getNowcast(bergen);
+const sun = await norway.weather.getSunTimes({ ...bergen, date: "2026-12-21" });
+const moon = await norway.weather.getMoonTimes(bergen);
+const ocean = await norway.weather.getOceanForecast({ latitude: 60.1, longitude: 4.8 });
+const air = await norway.weather.getAirQualityForecast({ latitude: 59.9139, longitude: 10.7522 });
+
+console.log(warnings.data.warnings.map((warning) => warning.awarenessLevel));
+console.log(nowcast.data?.entries[0]);
+console.log(sun.data.sunrise, sun.data.polarCondition);
+console.log(moon.data.phaseDegrees);
+console.log(ocean.data?.entries[0]?.seaTemperature);
+console.log(air.data?.entries[0]?.index);
+```
+
+`getWarnings` with a coordinate returns only warnings whose MetAlerts area contains it, and an empty
+list is never an all-clear; NVE's flood, landslide and avalanche warnings are in `hazards`. The
+nowcast, ocean and air-quality methods resolve to `undefined` outside their coverage instead of
+raising. `getAirQualityForecast` is experimental because MET Norway versions the product 0.1.
+
+## Tides and water levels
+
+```ts
+import { NorwayOpenData } from "norway-open-data-sdk";
+
+const norway = new NorwayOpenData();
+const bergen = { latitude: 60.398, longitude: 5.32 };
+
+const stations = await norway.tides.listStations();
+const table = await norway.tides.getTideTable({
+  ...bergen,
+  from: "2026-10-15T00:00:00Z",
+  to: "2026-10-17T00:00:00Z",
+});
+const levels = await norway.tides.getWaterLevels({
+  ...bergen,
+  from: "2026-10-15T00:00:00Z",
+  to: "2026-10-16T00:00:00Z",
+  interval: 10,
+});
+const references = await norway.tides.getReferenceLevels({ ...bergen, referenceLevel: "nn2000" });
+
+console.log(stations.data.length);
+console.log(table.data?.events);
+console.log(levels.data?.series.map((series) => series.type));
+console.log(references.data?.levels.find((level) => level.code === "HAT"));
+```
+
+Values are heights above `referenceLevel`, chart datum by default. Away from a permanent gauge
+they are modelled, and `location` says from which reference station, with which factor and delay.
+
+## Frost observations and climate normals
+
+```ts
+import { NorwayOpenData } from "norway-open-data-sdk";
+
+const norway = new NorwayOpenData({
+  credentials: { "met-frost": { clientId: process.env.MET_FROST_CLIENT_ID! } },
+});
+
+const series = await norway.climate.getAvailableTimeSeries({
+  stationIds: ["SN18700"],
+  elements: ["air_temperature"],
+});
+const latest = await norway.climate.getLatestObservations({
+  stationIds: ["SN18700"],
+  elements: ["air_temperature", "wind_speed"],
+});
+const normals = await norway.climate.getClimateNormals({
+  stationIds: ["SN18700"],
+  elements: ["mean(air_temperature P1M)"],
+  period: "1991/2020",
+});
+
+console.log(series.data.map((entry) => entry.timeResolution));
+console.log(latest.data[0]?.observations);
+console.log(normals.data);
+```
+
+`climate` is experimental until its schemas are verified against the live service. A query Frost
+holds no data for resolves to an empty array.
 
 ## Data.norge catalogue
 

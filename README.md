@@ -8,16 +8,17 @@
 One typed TypeScript interface for Norwegian public data.
 
 Norway Open Data SDK provides a consistent, runtime-validated client for official Norwegian APIs
-from Brønnøysundregistrene, SSB PxWeb and SSB Klass, FHI, Kartverket/Geonorge, Entur, MET Norway,
-Data.norge, Norges Bank, Stortinget, Statens vegvesen, NVE, BarentsWatch, Fiskeridirektoratet,
-Miljødirektoratet and NIBIO. It also wraps the documented third-party public electricity API from
-Hva koster strømmen?.
+from Brønnøysundregistrene, SSB PxWeb and SSB Klass, FHI, Kartverket/Geonorge and its Hydrographic
+Service, Entur, MET Norway and its Frost archive, Data.norge, Norges Bank, Stortinget, Statens
+vegvesen, NVE, BarentsWatch, Fiskeridirektoratet, Miljødirektoratet and NIBIO. It also wraps the
+documented third-party public electricity API from Hva koster strømmen?.
 
-- 15 public-sector organizations through 19 official API integrations, plus 1 third-party derived API
-- 22 service namespaces
-- 118 supported namespace methods in the 0.8.0 surface
+- 15 public-sector organizations through 21 official API integrations, plus 1 third-party derived API
+- 24 service namespaces
+- 135 supported namespace methods in the 0.9.0 surface
 - Runtime-validated responses
 - Cross-provider profiles that answer one question from several agencies
+- Official weather warnings, nowcasts, tides, sun times and climate history alongside forecasts
 - Auto-paginating async iterators for list endpoints
 - Live AIS position streaming as a plain `AsyncIterable`, with cancellation
 - Reusable OAuth2 client-credentials support with single-flight token refresh
@@ -35,7 +36,7 @@ Runs on Node.js 22+, Deno, Bun and edge runtimes such as Cloudflare Workers. Typ
 declarations are included. See [Runtime support](#runtime-support) for what a host runtime must
 provide.
 
-Version `0.8.0` is the current release. Install it with:
+Version `0.9.0` is the current release. Install it with:
 
 ```bash
 npm install norway-open-data-sdk
@@ -55,7 +56,7 @@ corepack pnpm pack
 Install the generated tarball from another project:
 
 ```bash
-npm install /path/to/Norway-Open-Data/norway-open-data-sdk-0.8.0.tgz
+npm install /path/to/Norway-Open-Data/norway-open-data-sdk-0.9.0.tgz
 ```
 
 ## Quick start
@@ -90,33 +91,37 @@ requires `applicationName` and `contactEmail`; NVE HydAPI requires the caller's 
 
 ## Supported providers
 
-| Source                  | Namespace             | Capabilities                                                   | Access                         |
-| ----------------------- | --------------------- | -------------------------------------------------------------- | ------------------------------ |
-| Brønnøysundregistrene   | `companies`           | Organizations, search and sub-entities                         | Anonymous                      |
-| Statistics Norway / SSB | `statistics`, `klass` | PxWeb statistics; Klass classifications, codes and mappings    | Anonymous                      |
-| FHI                     | `health`              | Health-register statistics with preserved suppression flags    | Anonymous                      |
-| Kartverket              | `addresses`, `places` | Addresses, place names and nearby search                       | Anonymous                      |
-| Geonorge / Kartverket   | `geodata`             | Geospatial dataset/service catalogue and typed discovery       | Anonymous; experimental        |
-| Miljødirektoratet       | `environment`         | Selected Naturbase protected, NiN and intervention-free layers | Anonymous; experimental        |
-| NIBIO                   | `land`                | Generalized AR50 land-resource classification                  | Anonymous; experimental        |
-| Entur                   | `transport`           | Autocomplete, departures and journeys                          | Identification required        |
-| MET Norway              | `weather`             | Locationforecast data and current entry                        | Identification + contact email |
-| Data.norge              | `catalog`             | Datasets, data services and publishers                         | Anonymous                      |
-| Norges Bank             | `currency`            | Exchange rates, policy rate and NOWA                           | Anonymous                      |
-| Stortinget              | `parliament`          | Representatives, parties, cases, votes, questions and meetings | Anonymous                      |
-| Statens vegvesen / NVDB | `roads`               | Road metadata, objects and network segments                    | Identification required        |
-| NVE                     | `energy`, `hazards`   | Energy data, warnings and hydrology                            | Anonymous; API key for HydAPI  |
-| BarentsWatch AIS        | `ais`                 | Vessel positions, tracks, area search and live AIS streaming   | OAuth2 AIS-client              |
-| BarentsWatch            | `marine`              | Wave and sea-current point forecasts                           | OAuth2 API-client              |
-| Fiskeridirektoratet     | `fisheries`           | Fishing-vessel register and public aquaculture register        | Anonymous                      |
-| Hva koster strømmen?    | `electricity`         | Hourly spot prices for all five bidding zones                  | Anonymous third-party API      |
+| Source                          | Namespace             | Capabilities                                                                         | Access                         |
+| ------------------------------- | --------------------- | ------------------------------------------------------------------------------------ | ------------------------------ |
+| Brønnøysundregistrene           | `companies`           | Organizations, search and sub-entities                                               | Anonymous                      |
+| Statistics Norway / SSB         | `statistics`, `klass` | PxWeb statistics; Klass classifications, codes and mappings                          | Anonymous                      |
+| FHI                             | `health`              | Health-register statistics with preserved suppression flags                          | Anonymous                      |
+| Kartverket                      | `addresses`, `places` | Addresses, place names, nearby search and the municipality containing a point        | Anonymous                      |
+| Kartverket Hydrographic Service | `tides`               | Tide tables, observed and forecast water levels, surge and reference levels          | Anonymous                      |
+| Geonorge / Kartverket           | `geodata`             | Geospatial dataset/service catalogue and typed discovery                             | Anonymous; experimental        |
+| Miljødirektoratet               | `environment`         | Selected Naturbase protected, NiN and intervention-free layers                       | Anonymous; experimental        |
+| NIBIO                           | `land`                | Generalized AR50 land-resource classification                                        | Anonymous; experimental        |
+| Entur                           | `transport`           | Autocomplete, departures and journeys                                                | Identification required        |
+| MET Norway                      | `weather`             | Forecasts, official warnings, nowcast, sun and moon, ocean and air-quality forecasts | Identification + contact email |
+| MET Norway Frost                | `climate`             | Weather stations, historical and latest observations, climate normals                | Free client ID; experimental   |
+| Data.norge                      | `catalog`             | Datasets, data services and publishers                                               | Anonymous                      |
+| Norges Bank                     | `currency`            | Exchange rates, policy rate and NOWA                                                 | Anonymous                      |
+| Stortinget                      | `parliament`          | Representatives, parties, cases, votes, questions and meetings                       | Anonymous                      |
+| Statens vegvesen / NVDB         | `roads`               | Road metadata, objects and network segments                                          | Identification required        |
+| NVE                             | `energy`, `hazards`   | Energy data, warnings and hydrology                                                  | Anonymous; API key for HydAPI  |
+| BarentsWatch AIS                | `ais`                 | Vessel positions, tracks, area search and live AIS streaming                         | OAuth2 AIS-client              |
+| BarentsWatch                    | `marine`              | Wave and sea-current point forecasts                                                 | OAuth2 API-client              |
+| Fiskeridirektoratet             | `fisheries`           | Fishing-vessel register and public aquaculture register                              | Anonymous                      |
+| Hva koster strømmen?            | `electricity`         | Hourly spot prices for all five bidding zones                                        | Anonymous third-party API      |
 
 `profiles` composes several providers into one answer: `company` combines Brønnøysundregistrene
 with a Kartverket address match, `address` combines Kartverket, MET Norway, NVE and NVDB,
 `municipality` combines SSB, FHI, Brønnøysundregistrene and NVE, and `vessel` combines BarentsWatch
 AIS with the Fiskeridirektoratet vessel register, MET Norway and Kartverket.
 `natureAtLocation` combines Naturbase, NIBIO and Kartverket with per-component provenance and
-partial-failure handling.
+partial-failure handling. `conditionsAtLocation` combines MET Norway, NVE, Kartverket, its
+Hydrographic Service and, when configured, Frost into one answer about the weather, sea and
+daylight at a point.
 
 BarentsWatch has two distinct service contracts in the SDK, and they need **separate credentials**.
 BarentsWatch issues two kinds of self-registered client, and neither one's secret works for the
@@ -141,6 +146,14 @@ SSB has two distinct service contracts in the SDK:
 
 They belong to one public-sector organization, but use separate provider descriptors because their
 endpoints, limits, response formats and cache policies differ.
+
+MET Norway and Kartverket are likewise one organization each with two service contracts:
+
+- `weather` → api.met.no products under one identification requirement (`met`); `climate` → the
+  Frost observation archive, which needs its own free client ID (`met-frost`).
+- `addresses` and `places` → Kartverket's open Geonorge and Kommuneinfo APIs (`kartverket`);
+  `tides` → the Hydrographic Service's water-level API, with its own terms and mandatory credit
+  (`kartverket-tides`).
 
 Hva koster strømmen? is an independent third-party service, not a government or official data
 provider. Its documentation says the API derives EUR electricity prices from ENTSO-E and converts
@@ -428,6 +441,131 @@ nature profile, while `sources` is derived from successful components and preser
 provider attribution and licence terms. Distinct descriptors from the same provider remain distinct
 when their licence or required attribution differs. The per-dataset limit defaults to 100 and is
 capped at 100.
+
+### Weather warnings, nowcast and sun times
+
+```ts
+const warnings = await norway.weather.getWarnings({
+  latitude: 60.3913,
+  longitude: 5.3221,
+  language: "en",
+});
+for (const warning of warnings.data.warnings) {
+  console.log(warning.awarenessLevel.color, warning.event, warning.area, warning.expires);
+}
+
+const nowcast = await norway.weather.getNowcast({ latitude: 59.9139, longitude: 10.7522 });
+console.log(nowcast.data?.radarCoverage); // "ok" unless the radar is degraded
+console.log(nowcast.data?.entries.map((entry) => entry.precipitationRate)); // mm/h, 5-minute steps
+
+const sun = await norway.weather.getSunTimes({
+  latitude: 69.6492,
+  longitude: 18.9553,
+  date: "2026-12-21",
+});
+console.log(sun.data.polarCondition); // "polar-night": no sunrise, explained rather than absent
+```
+
+With a coordinate, MetAlerts itself decides which warning areas contain the point. An empty list
+is never an all-clear, and MET Norway's warnings cover weather only: flood, landslide and avalanche
+warnings are NVE's and come from `hazards`. A point outside a product's coverage resolves to
+`undefined` — the nowcast outside the Nordic radar area (which excludes Svalbard), the ocean
+forecast inland or offshore, and the experimental air-quality forecast outside Norway. Sun and moon
+times use the Europe/Oslo offset in force on the requested date.
+
+### Tides and water levels
+
+```ts
+const table = await norway.tides.getTideTable({
+  latitude: 60.398,
+  longitude: 5.32,
+  from: "2026-10-15T00:00:00Z",
+  to: "2026-10-17T00:00:00Z",
+});
+console.log(table.data?.events); // [{ time, value, kind: "high" | "low" }, ...] in cm
+
+const levels = await norway.tides.getWaterLevels({
+  latitude: 60.398,
+  longitude: 5.32,
+  from: "2026-10-15T00:00:00Z",
+  to: "2026-10-16T00:00:00Z",
+  referenceLevel: "mean-sea-level",
+});
+console.log(levels.data?.location); // reference station, factor, delay and surge gauge
+for (const series of levels.data?.series ?? []) {
+  console.log(series.type, series.unit, series.values.length); // observation, prediction, ...
+}
+```
+
+Every value is a height above the stated reference level — chart datum unless you choose mean sea
+level or NN2000 — so always read `referenceLevel` with it. Away from a permanent gauge, Kartverket
+models values from a reference station, and `location` says which one, with what amplitude factor
+and time delay, and which gauge supplied the weather effect. Inland and far-offshore positions
+resolve to `undefined`. A request may span 7 days at 10-minute resolution, 31 days hourly, or 366
+days for a tide table; times are in UTC.
+
+### Historical weather and climate normals
+
+`climate` reads MET Norway's Frost archive and needs a free client ID from
+[Frost](https://frost.met.no/auth/requestCredentials.html):
+
+```ts
+const withFrost = new NorwayOpenData({
+  credentials: { "met-frost": { clientId: process.env.MET_FROST_CLIENT_ID! } },
+});
+
+const stations = await withFrost.climate.searchStations({
+  near: { latitude: 59.9139, longitude: 10.7522, maxCount: 1 },
+  activeOnly: true,
+});
+const station = stations.data[0];
+if (station !== undefined) {
+  const january = await withFrost.climate.getObservations({
+    stationIds: [station.id],
+    elements: ["mean(air_temperature P1D)", "sum(precipitation_amount P1D)"],
+    from: "2026-01-01T00:00:00Z",
+    to: "2026-02-01T00:00:00Z",
+    timeResolutions: ["P1D"],
+  });
+  const normals = await withFrost.climate.getClimateNormals({
+    stationIds: [station.id],
+    elements: ["mean(air_temperature P1M)"],
+    period: "1991/2020",
+  });
+  console.log(station.name, station.distanceKm, january.data.length, normals.data);
+}
+```
+
+A window may span 31 days, or 366 days when every requested resolution is daily or coarser. A query
+Frost holds no data for resolves to an empty array: Frost answers the same way for "no data" and "no
+such station". Frost's station-holder names are not included. The namespace is experimental until
+its schemas are verified against the live service with a client ID.
+
+### Cross-provider conditions profile
+
+```ts
+const conditions = await norway.profiles.conditionsAtLocation({
+  latitude: 60.398,
+  longitude: 5.32,
+  hours: 6,
+});
+
+console.log(conditions.data.municipality); // the municipality whose boundary contains the point
+console.log(conditions.data.forecast); // MET Norway, the next 6 hours
+console.log(conditions.data.weatherWarnings); // MET Norway warnings covering the point
+console.log(conditions.data.hazards); // NVE warnings matched to the municipality
+console.log(conditions.data.tides?.events); // predicted high and low waters
+console.log(conditions.data.observations); // nearest Frost station, when configured
+console.log(conditions.data.components); // why every section is present or absent
+```
+
+The profile runs 14 operations. Each one records its provider and retrieval time, or why it is
+absent: `not-configured` (MET Norway identification or a Frost client ID is missing),
+`not-covered` (the point is outside that product's coverage), `not-applicable` (a prerequisite,
+such as the municipality, is missing), `not-found` or `provider-error`. A missing section never
+removes another, and caller cancellation still rejects the whole call. NVE warnings are requested
+only once the municipality is known, and a distant weather station or degraded radar produces an
+explicit notice in `warnings`. Neither warning list is ever an all-clear. Experimental.
 
 ### Health statistics with suppression flags
 
@@ -722,6 +860,7 @@ const norway = new NorwayOpenData({
       clientId: process.env.BARENTSWATCH_CLIENT_ID!,
       clientSecret: process.env.BARENTSWATCH_CLIENT_SECRET!,
     },
+    "met-frost": { clientId: process.env.MET_FROST_CLIENT_ID! },
   },
 });
 ```
@@ -743,6 +882,7 @@ const norway = new NorwayOpenData({
 | `credentials["barentswatch-ais"].clientSecret` | None               | BarentsWatch AIS-client secret                       |
 | `credentials.barentswatch.clientId`            | None               | BarentsWatch **API-client** id, for the `api` scope  |
 | `credentials.barentswatch.clientSecret`        | None               | BarentsWatch API-client secret                       |
+| `credentials["met-frost"].clientId`            | None               | Free Frost client ID, for `climate`                  |
 
 When required by the selected service, each application must provide its own identity, contact
 address and credentials. The SDK contains no shared email, API key or fallback identity. Missing
@@ -754,18 +894,24 @@ Every provider method accepts optional `signal`, `includeRaw` and `bypassCache` 
 
 The SDK reads no environment variables itself; these are the names used consistently by the examples,
 the live probes and the documentation.
-Geonorge, Naturbase, NIBIO and `profiles.natureAtLocation` are anonymous and add no new variables.
+Geonorge, Naturbase, NIBIO, `profiles.natureAtLocation`, `tides` and `places.getMunicipalityAt` are
+anonymous and add no variables.
 
-| Variable                            | Used by                           | Required for                         |
-| ----------------------------------- | --------------------------------- | ------------------------------------ |
-| `NORWAY_OPEN_DATA_APPLICATION_NAME` | `applicationName`                 | Entur, MET Norway, NVDB              |
-| `NORWAY_OPEN_DATA_CONTACT_EMAIL`    | `contactEmail`                    | MET Norway                           |
-| `NVE_HYDAPI_KEY`                    | `credentials.nve.apiKey`          | NVE HydAPI stations and observations |
-| `BARENTSWATCH_AIS_CLIENT_ID`        | `credentials["barentswatch-ais"]` | `norway.ais`, `profiles.vessel`      |
-| `BARENTSWATCH_AIS_CLIENT_SECRET`    | `credentials["barentswatch-ais"]` | `norway.ais`, `profiles.vessel`      |
-| `BARENTSWATCH_CLIENT_ID`            | `credentials.barentswatch`        | `norway.marine`                      |
-| `BARENTSWATCH_CLIENT_SECRET`        | `credentials.barentswatch`        | `norway.marine`                      |
-| `RUN_LIVE_TESTS`                    | Test runner                       | Enabling the opt-in live probes      |
+| Variable                            | Used by                           | Required for                                   |
+| ----------------------------------- | --------------------------------- | ---------------------------------------------- |
+| `NORWAY_OPEN_DATA_APPLICATION_NAME` | `applicationName`                 | Entur, MET Norway, NVDB                        |
+| `NORWAY_OPEN_DATA_CONTACT_EMAIL`    | `contactEmail`                    | MET Norway                                     |
+| `NVE_HYDAPI_KEY`                    | `credentials.nve.apiKey`          | NVE HydAPI stations and observations           |
+| `BARENTSWATCH_AIS_CLIENT_ID`        | `credentials["barentswatch-ais"]` | `norway.ais`, `profiles.vessel`                |
+| `BARENTSWATCH_AIS_CLIENT_SECRET`    | `credentials["barentswatch-ais"]` | `norway.ais`, `profiles.vessel`                |
+| `BARENTSWATCH_CLIENT_ID`            | `credentials.barentswatch`        | `norway.marine`                                |
+| `BARENTSWATCH_CLIENT_SECRET`        | `credentials.barentswatch`        | `norway.marine`                                |
+| `MET_FROST_CLIENT_ID`               | `credentials["met-frost"]`        | `norway.climate`, observations in a conditions |
+| `RUN_LIVE_TESTS`                    | Test runner                       | Enabling the opt-in live probes                |
+
+Frost takes its client ID as the HTTP Basic username on its own API requests rather than through
+an OAuth2 token exchange. Like every other credential, it is sent only to that provider's host and
+is redacted from errors.
 
 ### OAuth2 credentials
 
@@ -1159,8 +1305,35 @@ Personal and restricted data are outside the project scope.
   experimental. Upstream catalogue labels and ArcGIS/WFS schemas can change independently.
 - Geospatial support is vector-only and curated: no WMS image rendering, arbitrary URL proxy,
   reprojection engine, restricted Geovekst/AR5 data or unbounded full-country export.
+- The v0.9 `climate` namespace, `weather.getAirQualityForecast` and
+  `profiles.conditionsAtLocation` are experimental; see
+  [Weather, tide and climate limitations](#weather-tide-and-climate-limitations).
 - Protected endpoints, personal data, write operations and delegated authentication are not
   supported.
+
+### Weather, tide and climate limitations
+
+- **No warning list is an all-clear.** `weather.getWarnings` returns what MetAlerts publishes for a
+  query, and the conditions profile's NVE matches cover only warnings whose administrative areas
+  name the municipality. Use yr.no, varsom.no and local authorities for safety decisions.
+- MET Norway's products have different coverage. The nowcast covers the Nordic radar area, which
+  excludes Svalbard; the ocean forecast covers Northern and Western European seas but not land; the
+  air-quality forecast covers Norwegian statistical areas only. Outside coverage the SDK returns
+  `undefined`, never invented values.
+- The air-quality forecast is MET Norway's version 0.1 product: model forecasts, not measurements,
+  and its contract may change. Measured air quality from NILU is not included because its
+  measurement endpoints now require authentication.
+- Tide values away from a permanent gauge are modelled from a reference station, as `location`
+  states, and are always relative to the returned `referenceLevel`. Chart datum and NN2000 are not
+  defined everywhere.
+- Frost's schemas follow its published Swagger models and have not yet been verified against the
+  live service; configure `MET_FROST_CLIENT_ID` and run the live probes to do so. Frost does not
+  distinguish "no data" from "no such station", so both resolve to an empty array, and the nearest
+  station to a point can be far away or at a very different elevation: read `distanceKm` and
+  `elevationMetres`.
+- Frost's reference time, time offset and time resolution are passed through exactly as published.
+  For daily elements the observation time is not always `referenceTime`; see Frost's documentation
+  before computing one.
 
 ### Geospatial limitations
 
@@ -1207,7 +1380,7 @@ refuse a request the provider would have accepted.
 
 ### Streaming limitations
 
-- **No automatic reconnection in 0.8.0.** When the provider closes a stream, iteration ends normally
+- **No automatic reconnection in 0.9.0.** When the provider closes a stream, iteration ends normally
   and the SDK does not reopen it. Reconnecting silently would hide a gap in coverage from an
   application that may not be able to tolerate one.
 - A stream is never retried and never cached. `retries` and `cache` do not apply to it.

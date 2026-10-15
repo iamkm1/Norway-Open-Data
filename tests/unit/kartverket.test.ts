@@ -125,3 +125,79 @@ describe("Kartverket clients", () => {
     await expect(request).rejects.toBeInstanceOf(ResponseValidationError);
   });
 });
+
+describe("places.getMunicipalityAt", () => {
+  const oslo = {
+    fylkesnavn: "Oslo",
+    fylkesnummer: "03",
+    kommunenavn: "Oslo",
+    kommunenummer: "0301",
+  };
+  const noMatch = (): Response =>
+    new Response(
+      "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>Ingen treff, sjekk parameterene.</p>\n",
+      { status: 404, headers: { "Content-Type": "text/html; charset=utf-8" } },
+    );
+
+  it("resolves a point to the municipality whose boundary contains it", async () => {
+    const { fetch, mock } = sequenceFetch(jsonResponse(oslo));
+    const response = await new NorwayOpenData({ fetch, retries: 0 }).places.getMunicipalityAt({
+      latitude: 59.9139,
+      longitude: 10.7522,
+    });
+    const url = new URL(String(mock.mock.calls[0]?.[0]));
+    expect(url.origin + url.pathname).toBe("https://api.kartverket.no/kommuneinfo/v1/punkt");
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      koordsys: "4258",
+      nord: "59.9139",
+      ost: "10.7522",
+    });
+    expect(response.data).toEqual({
+      municipalityCode: "0301",
+      municipalityName: "Oslo",
+      countyCode: "03",
+      countyName: "Oslo",
+    });
+    expect(response.source.id).toBe("kartverket");
+  });
+
+  it("resolves to undefined for a point outside every municipality", async () => {
+    const { fetch } = sequenceFetch(noMatch());
+    const response = await new NorwayOpenData({ fetch, retries: 0 }).places.getMunicipalityAt({
+      latitude: 60.1,
+      longitude: 4,
+    });
+    expect(response.data).toBeUndefined();
+  });
+
+  it("still reports an unrelated 404 as not found", async () => {
+    const { fetch } = sequenceFetch(new Response("<h1>Not Found</h1>", { status: 404 }));
+    await expect(
+      new NorwayOpenData({ fetch, retries: 0 }).places.getMunicipalityAt({
+        latitude: 60,
+        longitude: 5,
+      }),
+    ).rejects.toMatchObject({ name: "NotFoundError", statusCode: 404 });
+  });
+
+  it("validates coordinates before any request", async () => {
+    const { fetch, mock } = sequenceFetch(jsonResponse(oslo));
+    await expect(
+      new NorwayOpenData({ fetch, retries: 0 }).places.getMunicipalityAt({
+        latitude: 59.9,
+        longitude: 181,
+      }),
+    ).rejects.toBeInstanceOf(InputValidationError);
+    expect(mock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a malformed municipality number", async () => {
+    const { fetch } = sequenceFetch(jsonResponse({ ...oslo, kommunenummer: "301" }));
+    await expect(
+      new NorwayOpenData({ fetch, retries: 0 }).places.getMunicipalityAt({
+        latitude: 59.9,
+        longitude: 10.7,
+      }),
+    ).rejects.toBeInstanceOf(ResponseValidationError);
+  });
+});

@@ -117,6 +117,30 @@ await check("MET weather.forecast", async () => {
   )} degrees C`;
 });
 
+await check("MET weather.getWarnings", async () => {
+  const response = await norway.weather.getWarnings({ language: "en" });
+  requireResult(response.data.language === "en", "MET Norway returned the wrong language.");
+  return `${String(response.data.warnings.length)} current warning(s)`;
+});
+
+await check("Kartverket places.getMunicipalityAt", async () => {
+  const response = await norway.places.getMunicipalityAt({ latitude: 59.9139, longitude: 10.7522 });
+  requireResult(response.data?.municipalityCode === "0301", "Kommuneinfo did not resolve Oslo.");
+  return `${response.data.municipalityName} (${response.data.municipalityCode})`;
+});
+
+await check("Kartverket tides.getTideTable", async () => {
+  const now = Date.now();
+  const response = await norway.tides.getTideTable({
+    latitude: 60.398,
+    longitude: 5.32,
+    from: new Date(now).toISOString(),
+    to: new Date(now + 48 * 60 * 60 * 1_000).toISOString(),
+  });
+  requireResult(response.data !== undefined, "Kartverket returned no tide table for Bergen.");
+  return `${String(response.data.events.length)} high/low waters above ${response.data.referenceLevel}`;
+});
+
 await check("Profiles profiles.company", async () => {
   const response = await norway.profiles.company("923609016");
   const location = response.data.location;

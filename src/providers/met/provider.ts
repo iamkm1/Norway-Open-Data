@@ -1,6 +1,13 @@
 import { defineAuth, type ProviderDescriptor } from "../../core/provider.js";
 
-/** MET Norway Locationforecast provider declaration. */
+/**
+ * MET Norway weather API provider declaration.
+ *
+ * Covers the api.met.no products the SDK uses -- Locationforecast, MetAlerts,
+ * Nowcast, Sunrise, Oceanforecast and Airqualityforecast -- which share one
+ * identification requirement and one set of terms. Frost, MET Norway's
+ * observation archive, has its own credentials and is declared separately.
+ */
 export const metProvider = {
   id: "met",
   name: "MET Norway",
@@ -28,5 +35,10 @@ export const metProvider = {
   },
   cacheTtlMs: {
     forecast: 10 * 60 * 1_000,
+    warnings: 2 * 60 * 1_000,
+    nowcast: 5 * 60 * 1_000,
+    celestial: 12 * 60 * 60 * 1_000,
+    ocean: 30 * 60 * 1_000,
+    airQuality: 30 * 60 * 1_000,
   },
 } as const satisfies ProviderDescriptor;

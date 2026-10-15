@@ -17,7 +17,9 @@ import { GeonorgeClient } from "./providers/geonorge/client.js";
 import { ElectricityClient } from "./providers/hvakosterstrommen/client.js";
 import { KartverketAddressClient } from "./providers/kartverket/address-client.js";
 import { KartverketPlaceClient } from "./providers/kartverket/place-client.js";
+import { TidesClient } from "./providers/kartverket-tides/client.js";
 import { MetClient } from "./providers/met/client.js";
+import { ClimateClient } from "./providers/met-frost/client.js";
 import { NaturbaseClient } from "./providers/naturbase/client.js";
 import { NibioClient } from "./providers/nibio/client.js";
 import { NveEnergyClient } from "./providers/nve/energy-client.js";
@@ -156,6 +158,10 @@ export class NorwayOpenData {
   readonly environment: NaturbaseClient;
   /** Open NIBIO land-resource classifications. */
   readonly land: NibioClient;
+  /** Tides and water levels from Kartverket's Hydrographic Service. */
+  readonly tides: TidesClient;
+  /** Historical weather observations and climate normals from MET Norway's Frost. */
+  readonly climate: ClimateClient;
 
   /** Creates an SDK client with safe request defaults. */
   constructor(config: NorwayOpenDataConfig = {}) {
@@ -184,6 +190,8 @@ export class NorwayOpenData {
     this.geodata = new GeonorgeClient(http);
     this.environment = new NaturbaseClient(http);
     this.land = new NibioClient(http);
+    this.tides = new TidesClient(http);
+    this.climate = new ClimateClient(http);
     // Constructed last: cross-provider profiles depend on the clients above.
     this.profiles = new ProfileClient(this.companies, this.addresses, {
       weather: this.weather,
@@ -196,6 +204,8 @@ export class NorwayOpenData {
       places: this.places,
       environment: this.environment,
       land: this.land,
+      tides: this.tides,
+      climate: this.climate,
       canAuthenticate: (provider: ProviderDescriptor) =>
         missingAuthFields(provider, availableAuthValues(resolved, provider.id as ProviderId))
           .length === 0,

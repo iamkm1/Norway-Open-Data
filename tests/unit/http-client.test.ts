@@ -23,7 +23,13 @@ import {
   providerDirectedDelayMs,
   retryDelayMs,
 } from "../../src/core/retry.js";
-import { jsonResponse, sequenceFetch, testProvider } from "./helpers.js";
+import {
+  failingStream,
+  jsonResponse,
+  resolvedConfig,
+  sequenceFetch,
+  testProvider,
+} from "./helpers.js";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -734,5 +740,104 @@ describe("shared HTTP behavior", () => {
     await expect(client.request(textRequest)).resolves.toMatchObject({ cached: true });
     await expect(client.request(jsonRequest)).resolves.toMatchObject({ cached: true });
     expect(fetch).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("declared absences", () => {
+  const nullableSchema = z.object({ value: z.number() }).nullable();
+
+  type Absence = { status: number; bodyIncludes?: string };
+
+  function absentRequest(absentResponses: Absence[]): {
+    provider: typeof testProvider;
+    url: string;
+    schema: typeof nullableSchema;
+    absentResponses: Absence[];
+  } {
+    return {
+      provider: testProvider,
+      url: "https://data.example.no/point",
+      schema: nullableSchema,
+      absentResponses,
+    };
+  }
+
+  it("hands a declared status to the schema as null", async () => {
+    const { fetch, mock } = sequenceFetch(new Response("no data here", { status: 422 }));
+    const client = new HttpClient(resolvedConfig(fetch, { retries: 2 }));
+
+    await expect(client.request(absentRequest([{ status: 422 }]))).resolves.toEqual({
+      data: null,
+      cached: false,
+    });
+    expect(mock).toHaveBeenCalledTimes(1);
+  });
+
+  it("matches declared body text case-insensitively", async () => {
+    const { fetch } = sequenceFetch(
+      new Response("422 Unprocessable Entity\nThe location is OUTSIDE the area.", {
+        status: 422,
+      }),
+    );
+    const client = new HttpClient(resolvedConfig(fetch));
+
+    await expect(
+      client.request(absentRequest([{ status: 422, bodyIncludes: "outside the area" }])),
+    ).resolves.toMatchObject({ data: null });
+  });
+
+  it("raises the ordinary error when the body does not carry the declared text", async () => {
+    const { fetch } = sequenceFetch(jsonResponse({ detail: "invalid parameter" }, 400));
+    const client = new HttpClient(resolvedConfig(fetch));
+
+    await expect(
+      client.request(absentRequest([{ status: 400, bodyIncludes: "unknown location" }])),
+    ).rejects.toMatchObject({ name: "ProviderError", statusCode: 400 });
+  });
+
+  it("does not turn an undeclared status into an absence", async () => {
+    const { fetch } = sequenceFetch(new Response("outside", { status: 422 }));
+    const client = new HttpClient(resolvedConfig(fetch));
+
+    await expect(client.request(absentRequest([{ status: 404 }]))).rejects.toMatchObject({
+      name: "ProviderError",
+      statusCode: 422,
+    });
+  });
+
+  it("resolves a declared 404 instead of raising NotFoundError", async () => {
+    const { fetch } = sequenceFetch(jsonResponse({ error: { code: 404 } }, 404));
+    const client = new HttpClient(resolvedConfig(fetch));
+
+    await expect(client.request(absentRequest([{ status: 404 }]))).resolves.toMatchObject({
+      data: null,
+    });
+  });
+
+  it("treats an unreadable body as no match rather than an absence", async () => {
+    const { fetch } = sequenceFetch(() =>
+      Promise.resolve(
+        new Response(failingStream(["partial"], new Error("connection reset")), { status: 422 }),
+      ),
+    );
+    const client = new HttpClient(resolvedConfig(fetch));
+
+    await expect(
+      client.request(absentRequest([{ status: 422, bodyIncludes: "outside" }])),
+    ).rejects.toMatchObject({ name: "ProviderError", statusCode: 422 });
+  });
+
+  it("still validates the null payload against the provider schema", async () => {
+    const { fetch } = sequenceFetch(new Response("", { status: 422 }));
+    const client = new HttpClient(resolvedConfig(fetch));
+
+    await expect(
+      client.request({
+        provider: testProvider,
+        url: "https://data.example.no/point",
+        schema: z.object({ value: z.number() }),
+        absentResponses: [{ status: 422 }],
+      }),
+    ).rejects.toBeInstanceOf(ResponseValidationError);
   });
 });

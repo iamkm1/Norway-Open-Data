@@ -1,0 +1,81 @@
+{
+  "type": "Feature",
+  "geometry": {
+    "type": "Point",
+    "coordinates": [10.7522, 59.9139, 5]
+  },
+  "properties": {
+    "meta": {
+      "updated_at": "2026-10-15T16:09:15Z",
+      "units": {
+        "air_temperature": "celsius",
+        "apparent_air_temperature": "celsius",
+        "precipitation_amount": "mm",
+        "precipitation_rate": "mm/h",
+        "relative_humidity": "%",
+        "ultraviolet_index_clear_sky": "1",
+        "wind_from_direction": "degrees",
+        "wind_speed": "m/s",
+        "wind_speed_of_gust": "m/s"
+      },
+      "radar_coverage": "ok"
+    },
+    "timeseries": [
+      {
+        "time": "2026-10-15T16:10:00Z",
+        "data": {
+          "instant": {
+            "details": {
+              "air_temperature": 14.3,
+              "apparent_air_temperature": 12.4,
+              "precipitation_rate": 0.0,
+              "relative_humidity": 87.9,
+              "ultraviolet_index_clear_sky": 0.0,
+              "wind_from_direction": 185.0,
+              "wind_speed": 7.2,
+              "wind_speed_of_gust": 12.7
+            }
+          },
+          "next_1_hours": {
+            "summary": {
+              "symbol_code": "cloudy"
+            },
+            "details": {
+              "precipitation_amount": 0.0
+            }
+          }
+        }
+      },
+      {
+        "time": "2026-10-15T16:15:00Z",
+        "data": {
+          "instant": {
+            "details": {
+              "precipitation_rate": 0.0
+            }
+          }
+        }
+      },
+      {
+        "time": "2026-10-15T16:20:00Z",
+        "data": {
+          "instant": {
+            "details": {
+              "precipitation_rate": 0.0
+            }
+          }
+        }
+      },
+      {
+        "time": "2026-10-15T16:25:00Z",
+        "data": {
+          "instant": {
+            "details": {
+              "precipitation_rate": 0.0
+            }
+          }
+        }
+      }
+    ]
+  }
+}

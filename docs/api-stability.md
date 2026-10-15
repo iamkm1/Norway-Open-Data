@@ -34,6 +34,14 @@ separate entries when licence or mandatory attribution text differs. `components
 retain per-operation provenance. A multi-provider profile is therefore never presented as though
 its complete result came from only the first provider.
 
+The 0.9.0 additions are source-compatible. `ProfileComponentOperation` and
+`ProfileComponentSection` gain members for the conditions profile, so code that switches
+exhaustively over them needs a default branch, as it already does for `ProfileOmissionReason`.
+`ProviderCredential.clientId` keeps its type; Frost reads it as an HTTP Basic username. The
+`climate` namespace, `weather.getAirQualityForecast` and `profiles.conditionsAtLocation` are
+experimental: Frost's schemas await verification against the live service, MET Norway versions the
+air-quality product 0.1, and the conditions profile composes both.
+
 ## Versioning
 
 Changesets record user-visible changes and drive semantic versions:
