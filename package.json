@@ -80,14 +80,6 @@
     "node": ">=22"
   },
   "packageManager": "pnpm@10.13.1",
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild"
-    ],
-    "overrides": {
-      "esbuild": "0.28.1"
-    }
-  },
   "scripts": {
     "build": "tsup",
     "test": "vitest run",
