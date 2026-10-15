@@ -123,6 +123,14 @@ results.push([
     typeof norway.environment?.getProtectedAreasAt === "function" &&
     typeof norway.land?.getLandResourcesAt === "function",
 ]);
+results.push([
+  "weather-tide-climate-namespaces",
+  typeof norway.weather?.getWarnings === "function" &&
+    typeof norway.tides?.getTideTable === "function" &&
+    typeof norway.climate?.getObservations === "function" &&
+    typeof norway.places?.getMunicipalityAt === "function" &&
+    typeof norway.profiles?.conditionsAtLocation === "function",
+]);
 
 const collection = geoJsonFeatureCollectionSchema.parse({
   type: "FeatureCollection",

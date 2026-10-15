@@ -17,6 +17,7 @@ import geonorgeSearch from "../fixtures/geonorge-search.json" with { type: "json
 import kartverketAddress from "../fixtures/kartverket-address.json" with { type: "json" };
 import kartverketPlace from "../fixtures/kartverket-place.json" with { type: "json" };
 import metForecast from "../fixtures/met-forecast.json" with { type: "json" };
+import metWarnings from "../fixtures/met-warnings.json" with { type: "json" };
 import nvdbRoadObjectTypes from "../fixtures/nvdb-road-object-types.json" with { type: "json" };
 import nveReservoir from "../fixtures/nve-reservoir.json" with { type: "json" };
 import nveWarning from "../fixtures/nve-warning.json" with { type: "json" };
@@ -26,6 +27,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import { aisTrackFixture, tokenResponseFixture } from "../fixtures/ais.js";
 import { aquacultureSitesFixture, fishingVesselsFixture } from "../fixtures/fiskeridir.js";
+import { tideStationListXml } from "../fixtures/kartverket-tides.js";
+import { frostNearestSourcesFixture } from "../fixtures/met-frost.js";
 import { eurLatestCsv } from "../fixtures/norges-bank.js";
 import { klassMunicipalityClassification } from "../fixtures/ssb-klass.js";
 import {
@@ -47,6 +50,7 @@ const CONTACT_EMAIL = "developer@example.no";
 const API_KEY = "test-conformance-api-key";
 const CLIENT_ID = "developer@example.test:conformance-client";
 const CLIENT_SECRET = "test-conformance-client-secret";
+const FROST_CLIENT_ID = "9d3c2b1a-0f9e-4d8c-b7a6-5f4e3d2c1b0a";
 
 /** Every credential the suite configures, so leakage can be checked in bulk. */
 const SECRETS = [
@@ -54,6 +58,8 @@ const SECRETS = [
   CLIENT_SECRET,
   CLIENT_ID,
   CONTACT_EMAIL,
+  FROST_CLIENT_ID,
+  btoa(`${FROST_CLIENT_ID}:`),
   tokenResponseFixture.access_token,
 ];
 
@@ -67,6 +73,7 @@ const fullyConfigured: Omit<NorwayOpenDataConfig, "fetch"> = {
     nve: { apiKey: API_KEY },
     "barentswatch-ais": { clientId: CLIENT_ID, clientSecret: CLIENT_SECRET },
     barentswatch: { clientId: CLIENT_ID, clientSecret: CLIENT_SECRET },
+    "met-frost": { clientId: FROST_CLIENT_ID },
   },
 };
 
@@ -85,6 +92,12 @@ type Probe = {
   requiresCredentials?: readonly string[];
   /** Response body type, for providers that do not return JSON. */
   responseType?: "text";
+  /**
+   * The provider documents HTTP 404 as "no data matched the query", so the
+   * operation resolves with an empty result instead of raising `NotFoundError`.
+   * Frost does this for every query endpoint.
+   */
+  notFoundMeansNoData?: boolean;
   /**
    * Upstream requests one call makes. Defaults to 1.
    *
@@ -198,6 +211,50 @@ const probes: readonly Probe[] = [
         signal === undefined ? {} : { signal },
       ),
     requiresCredentials: ["met"],
+  },
+  {
+    namespace: "weather (warnings)",
+    providerIds: ["met"],
+    payload: metWarnings,
+    invalidPayload: { type: "FeatureCollection", features: 42 },
+    run: (sdk, signal) =>
+      sdk.weather.getWarnings(
+        { latitude: 60.39, longitude: 5.32 },
+        signal === undefined ? {} : { signal },
+      ),
+    requiresCredentials: ["met"],
+  },
+  {
+    namespace: "places (municipality)",
+    providerIds: ["kartverket"],
+    payload: { fylkesnavn: "Oslo", fylkesnummer: "03", kommunenavn: "Oslo", kommunenummer: "0301" },
+    invalidPayload: { kommunenummer: 42 },
+    run: (sdk, signal) =>
+      sdk.places.getMunicipalityAt(
+        { latitude: 59.91, longitude: 10.75 },
+        signal === undefined ? {} : { signal },
+      ),
+  },
+  {
+    namespace: "tides",
+    providerIds: ["kartverket-tides"],
+    payload: tideStationListXml,
+    invalidPayload: "<html><body>maintenance</body></html>",
+    responseType: "text",
+    run: (sdk, signal) => sdk.tides.listStations(signal === undefined ? {} : { signal }),
+  },
+  {
+    namespace: "climate",
+    providerIds: ["met-frost"],
+    payload: frostNearestSourcesFixture,
+    invalidPayload: { data: "many" },
+    run: (sdk, signal) =>
+      sdk.climate.searchStations(
+        { near: { latitude: 59.91, longitude: 10.75 } },
+        signal === undefined ? {} : { signal },
+      ),
+    requiresCredentials: ["met-frost"],
+    notFoundMeansNoData: true,
   },
   {
     namespace: "catalog",
@@ -449,6 +506,11 @@ describe.each(probes)("conformance: norway.$namespace", (probe) => {
   ] as const)("maps HTTP %i onto the documented error", async (status, expected) => {
     const { fetch } = conformanceFetch(() => bodyResponse(probe, {}, status));
     const failing = probe.run(sdk(fetch, { retries: 0 }));
+    if (status === 404 && probe.notFoundMeansNoData === true) {
+      // A provider documenting 404 as "no data matched" answers with an empty result.
+      await expect(failing).resolves.toMatchObject({ data: [] });
+      return;
+    }
     await expect(failing).rejects.toBeInstanceOf(expected);
   });
 
@@ -544,7 +606,11 @@ describe.each(probes)("conformance: norway.$namespace", (probe) => {
     headers().forEach((header, index) => {
       const host = urls[index]?.hostname ?? "";
       const authorization = header.get("Authorization");
-      if (authorization !== null) {
+      if (authorization?.startsWith("Basic ") === true) {
+        // A Basic credential carries the Frost client ID and belongs only to Frost.
+        expect(host).toBe("frost.met.no");
+        expect(authorization).toBe(`Basic ${btoa(`${FROST_CLIENT_ID}:`)}`);
+      } else if (authorization !== null) {
         // A bearer token belongs only to a BarentsWatch host or its issuer.
         expect(host).toMatch(/barentswatch\.no$/);
       }
@@ -614,6 +680,23 @@ describe("facade construction", () => {
     expect(typeof sdk.environment.getInterventionFreeAreasAt).toBe("function");
     expect(typeof sdk.land.getLandResourcesAt).toBe("function");
     expect(typeof sdk.profiles.natureAtLocation).toBe("function");
+  });
+
+  it("exposes the weather, tide and climate operations and the conditions profile", () => {
+    const sdk = new NorwayOpenData({ ...fullyConfigured, fetch: async () => jsonResponse({}) });
+    expect(typeof sdk.weather.getWarnings).toBe("function");
+    expect(typeof sdk.weather.getNowcast).toBe("function");
+    expect(typeof sdk.weather.getSunTimes).toBe("function");
+    expect(typeof sdk.weather.getMoonTimes).toBe("function");
+    expect(typeof sdk.weather.getOceanForecast).toBe("function");
+    expect(typeof sdk.weather.getAirQualityForecast).toBe("function");
+    expect(typeof sdk.places.getMunicipalityAt).toBe("function");
+    expect(typeof sdk.tides.getWaterLevels).toBe("function");
+    expect(typeof sdk.tides.getTideTable).toBe("function");
+    expect(typeof sdk.tides.getReferenceLevels).toBe("function");
+    expect(typeof sdk.climate.getObservations).toBe("function");
+    expect(typeof sdk.climate.getClimateNormals).toBe("function");
+    expect(typeof sdk.profiles.conditionsAtLocation).toBe("function");
   });
 
   it("exposes no duplicate operation name across the maritime namespaces", () => {

@@ -4,8 +4,25 @@ import type { FeaturePagePagination } from "../core/feature-page.js";
 import type { AisTrack, AisTrackPoint, Mmsi } from "../providers/barentswatch-ais/types.js";
 import type { Company } from "../providers/brreg/types.js";
 import type { FishingVessel } from "../providers/fiskeridir/types.js";
-import type { NorwegianAddress, PlaceName } from "../providers/kartverket/types.js";
-import type { WeatherTimeseriesEntry } from "../providers/met/types.js";
+import type {
+  MunicipalityAtLocation,
+  NorwegianAddress,
+  PlaceName,
+} from "../providers/kartverket/types.js";
+import type { TideTable } from "../providers/kartverket-tides/types.js";
+import type {
+  AirQualityForecast,
+  Nowcast,
+  OceanForecast,
+  SunTimes,
+  WeatherTimeseriesEntry,
+  WeatherWarning,
+} from "../providers/met/types.js";
+import type {
+  ClimateNormal,
+  ClimateObservationRecord,
+  ClimateStation,
+} from "../providers/met-frost/types.js";
 import type {
   InterventionFreeAreaFeature,
   NatureTypeFeature,
@@ -37,7 +54,18 @@ export type ProfileComponentOperation =
   | "environment.getProposedProtectedAreasAt"
   | "environment.getNatureTypesAt"
   | "environment.getInterventionFreeAreasAt"
-  | "land.getLandResourcesAt";
+  | "land.getLandResourcesAt"
+  | "places.getMunicipalityAt"
+  | "weather.forecast"
+  | "weather.getNowcast"
+  | "weather.getWarnings"
+  | "weather.getSunTimes"
+  | "weather.getOceanForecast"
+  | "weather.getAirQualityForecast"
+  | "tides.getTideTable"
+  | "climate.searchStations"
+  | "climate.getLatestObservations"
+  | "climate.getClimateNormals";
 
 /** Logical profile section populated by a component operation. */
 export type ProfileComponentSection =
@@ -57,7 +85,16 @@ export type ProfileComponentSection =
   | "proposed-protected-areas"
   | "nature-types"
   | "intervention-free-areas"
-  | "land-resources";
+  | "land-resources"
+  | "forecast"
+  | "nowcast"
+  | "weather-warnings"
+  | "sun"
+  | "ocean"
+  | "tides"
+  | "air-quality"
+  | "observations"
+  | "climate-normals";
 
 /**
  * Why an optional profile component is missing.
@@ -336,6 +373,68 @@ export type NatureAtLocationProfile = {
   /** Dataset-specific safety and truncation metadata. */
   pagination: NatureProfilePagination;
   /** Sanitized provider failures and bounded-result truncation notices. */
+  warnings: string[];
+  /** Provenance and availability for every component operation. */
+  components: ProfileComponent[];
+};
+
+/** Parameters for a cross-provider conditions lookup at one WGS84 point. */
+export type ConditionsAtLocationParameters = Coordinates & {
+  /**
+   * Hours ahead to include from the forecast, ocean forecast and air-quality
+   * forecast, counted from the start of the current hour. Defaults to 12; 1 to 48.
+   * The tide table always covers at least the next 24 hours.
+   */
+  hours?: number;
+};
+
+/** What the nearest Frost weather station has observed recently. */
+export type ConditionsObservations = {
+  /** The active station nearest the point, with its distance in `distanceKm`. */
+  station: ClimateStation;
+  /** Latest air temperature, wind and humidity, within the last three hours. */
+  latest?: ClimateObservationRecord[];
+  /** The station's 1991-2020 mean air temperature for the current month. */
+  monthlyTemperatureNormal?: ClimateNormal;
+};
+
+/**
+ * Weather, sea and daylight conditions at one location, from several agencies.
+ *
+ * Every section is optional and degrades on its own. `components` records, per
+ * operation, whether it contributed and if not why: not configured, outside the
+ * product's coverage, a missing prerequisite, or a provider failure.
+ *
+ * Neither `weatherWarnings` nor `hazards` is ever an all-clear. An empty list
+ * means only that the provider published no matching warning when asked; check
+ * yr.no, varsom.no and local authorities before any safety decision.
+ */
+export type ConditionsAtLocationProfile = {
+  /** Exact WGS84 coordinate supplied by the caller. */
+  location: Coordinates;
+  /** Municipality whose official boundary contains the point. */
+  municipality?: MunicipalityAtLocation;
+  /** MET Norway hourly forecast for the requested hours. */
+  forecast?: WeatherTimeseriesEntry[];
+  /** MET Norway radar nowcast for roughly the next two hours. */
+  nowcast?: Nowcast;
+  /** MET Norway warnings whose area contains the point. */
+  weatherWarnings?: WeatherWarning[];
+  /** NVE flood, avalanche and landslide warnings matched to `municipality`. */
+  hazards?: HazardWarning[];
+  /** Exact administrative evidence for each entry in `hazards`. */
+  hazardMatches?: AddressHazardMatch[];
+  /** Today's sun times in Europe/Oslo. */
+  sun?: SunTimes;
+  /** MET Norway ocean forecast for the requested hours, at the nearest model cell. */
+  ocean?: OceanForecast;
+  /** Kartverket's predicted high and low waters. */
+  tides?: TideTable;
+  /** MET Norway air-quality forecast for the requested hours. Experimental. */
+  airQuality?: AirQualityForecast;
+  /** Recent observations at the nearest Frost station. Requires a Frost client ID. */
+  observations?: ConditionsObservations;
+  /** Sanitized provider failures and interpretation notices. */
   warnings: string[];
   /** Provenance and availability for every component operation. */
   components: ProfileComponent[];

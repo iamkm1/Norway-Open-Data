@@ -15,7 +15,9 @@ import {
 import { providers } from "../providers/registry.js";
 import { barentswatchAisProvider } from "../providers/barentswatch-ais/provider.js";
 import { kartverketProvider } from "../providers/kartverket/provider.js";
+import { kartverketTidesProvider } from "../providers/kartverket-tides/provider.js";
 import { metProvider } from "../providers/met/provider.js";
+import { metFrostProvider } from "../providers/met-frost/provider.js";
 import { naturbaseProvider } from "../providers/naturbase/provider.js";
 import { nibioProvider } from "../providers/nibio/provider.js";
 import { ssbProvider } from "../providers/ssb/provider.js";
@@ -27,7 +29,9 @@ import type { FhiClient } from "../providers/fhi/client.js";
 import type { FisheriesClient } from "../providers/fiskeridir/client.js";
 import type { KartverketAddressClient } from "../providers/kartverket/address-client.js";
 import type { KartverketPlaceClient } from "../providers/kartverket/place-client.js";
+import type { TidesClient } from "../providers/kartverket-tides/client.js";
 import type { MetClient } from "../providers/met/client.js";
+import type { ClimateClient } from "../providers/met-frost/client.js";
 import type { NaturbaseClient } from "../providers/naturbase/client.js";
 import type { NibioClient } from "../providers/nibio/client.js";
 import type { NveHazardsClient } from "../providers/nve/hazards-client.js";
@@ -51,6 +55,8 @@ import type {
   AddressHazardMatch,
   AddressProfile,
   CompanyProfile,
+  ConditionsAtLocationParameters,
+  ConditionsAtLocationProfile,
   MunicipalityProfile,
   NatureAtLocationParameters,
   NatureAtLocationProfile,
@@ -65,6 +71,17 @@ import type {
 import { joinCallSign, latestTrackPoint, trackName } from "./vessel-profile.js";
 
 const PROJECT_URL = "https://github.com/iamkm1/Norway-Open-Data";
+const HOUR_MS = 60 * 60 * 1_000;
+/** Elements requested from the nearest Frost station in a conditions profile. */
+const CONDITIONS_OBSERVED_ELEMENTS = ["air_temperature", "wind_speed", "relative_humidity"];
+const CONDITIONS_NORMAL_ELEMENT = "mean(air_temperature P1M)";
+const CONDITIONS_NORMAL_PERIOD = "1991/2020";
+/** Beyond this distance a station's observations get an explicit caveat. */
+const REMOTE_STATION_KM = 25;
+const osloMonthFormatter = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Europe/Oslo",
+  month: "numeric",
+});
 const FLOOD_WARNING_ATTRIBUTION = "Varsler fra Flomvarslingen i Norge og www.varsom.no";
 const AVALANCHE_WARNING_ATTRIBUTION = "Varsler fra Snøskredvarslingen i Norge og www.varsom.no";
 const LANDSLIDE_WARNING_ATTRIBUTION = "Varsler fra Jordskredvarslingen i Norge og www.varsom.no";
@@ -156,6 +173,27 @@ function natureProfileSource(
   );
 }
 
+function conditionsProfileSource(contributors: {
+  met: boolean;
+  nve: boolean;
+  kartverket: boolean;
+  tides: boolean;
+  frost: boolean;
+}): ProfileSource {
+  return profileSource(
+    [
+      ...(contributors.met ? [{ id: "met", name: "MET Norway" }] : []),
+      ...(contributors.nve ? [{ id: "nve", name: "NVE" }] : []),
+      ...(contributors.kartverket ? [{ id: "kartverket", name: "Kartverket" }] : []),
+      ...(contributors.tides
+        ? [{ id: "kartverket-tides", name: "Kartverket Hydrographic Service" }]
+        : []),
+      ...(contributors.frost ? [{ id: "met-frost", name: "MET Norway Frost" }] : []),
+    ],
+    "cross-provider-conditions-profile",
+  );
+}
+
 function availableComponent<T>(
   operation: ProfileComponentOperation,
   section: ProfileComponentSection,
@@ -204,6 +242,29 @@ function failedComponent(
 }
 
 type AttemptResult<T> = { response: OpenDataResponse<T> } | { failure: Error };
+
+/**
+ * Describes one optional profile operation.
+ *
+ * An operation that was never attempted is omitted for `skipped`; one that ran
+ * and failed is a `provider-error`; one that succeeded but answered with nothing
+ * is omitted for the reason `emptyReason` gives; anything else is available.
+ */
+function sectionComponent<T>(
+  operation: ProfileComponentOperation,
+  section: ProfileComponentSection,
+  provider: Parameters<typeof responseSource>[0],
+  result: AttemptResult<T> | undefined,
+  skipped: ProfileOmissionReason,
+  emptyReason?: (data: T) => ProfileOmissionReason | undefined,
+): ProfileComponent {
+  if (result === undefined) return omittedComponent(operation, section, provider, skipped);
+  if ("failure" in result) return failedComponent(operation, section, provider, result.failure);
+  const empty = emptyReason?.(result.response.data);
+  return empty === undefined
+    ? availableComponent(operation, section, result.response)
+    : omittedComponent(operation, section, provider, empty);
+}
 
 /**
  * Converts an optional provider failure into a value so one provider outage
@@ -347,6 +408,8 @@ export type ProfileDependencies = {
   places: KartverketPlaceClient;
   environment: NaturbaseClient;
   land: NibioClient;
+  tides: TidesClient;
+  climate: ClimateClient;
   /**
    * Reports whether the current configuration satisfies a provider's declared
    * identification requirements, so a component can be skipped as
@@ -1300,6 +1363,451 @@ export class ProfileClient {
         landResources,
         nearbyPlaces,
       ),
+    );
+  }
+
+  /**
+   * Answers "what are conditions here?" for one WGS84 point from several agencies.
+   *
+   * Combines MET Norway's hourly forecast, radar nowcast, official weather
+   * warnings, sun times, ocean forecast and experimental air-quality forecast;
+   * NVE flood, avalanche and landslide warnings matched to the municipality whose
+   * official boundary contains the point; Kartverket's predicted high and low
+   * waters; and, with a Frost client ID, the latest observations at the nearest
+   * active weather station alongside its 1991-2020 monthly temperature normal.
+   *
+   * Every section degrades on its own. A missing configuration, a point outside a
+   * product's coverage, or a provider failure is recorded in `components` and
+   * leaves the other sections intact; caller cancellation rejects the whole call.
+   * Neither warning list is ever an all-clear.
+   */
+  async conditionsAtLocation(
+    parameters: ConditionsAtLocationParameters,
+    options?: RequestOptions,
+  ): Promise<OpenDataResponse<ConditionsAtLocationProfile>> {
+    const dependencies = this.#dependencies;
+    if (dependencies === undefined) {
+      throw new NotFoundError(
+        "Conditions profiles require a fully configured NorwayOpenData client.",
+      );
+    }
+    const location = parseCoordinates(
+      { latitude: parameters.latitude, longitude: parameters.longitude },
+      "profiles",
+    );
+    const hours = parameters.hours ?? 12;
+    if (!Number.isSafeInteger(hours) || hours < 1 || hours > 48) {
+      throw new InputValidationError(
+        "Conditions profile hours must be a safe integer between 1 and 48.",
+        { provider: "profiles" },
+      );
+    }
+    const signal = options?.signal;
+    const forwarded: RequestOptions = {
+      ...(signal === undefined ? {} : { signal }),
+      ...(options?.bypassCache === undefined ? {} : { bypassCache: options.bypassCache }),
+      includeRaw: options?.includeRaw === true,
+    };
+    const metConfigured = dependencies.canAuthenticate(metProvider);
+    const frostConfigured = dependencies.canAuthenticate(metFrostProvider);
+    const now = Date.now();
+    const hourStart = Math.floor(now / HOUR_MS) * HOUR_MS;
+    const minuteStart = Math.floor(now / 60_000) * 60_000;
+    const metAttempt = <T>(
+      run: () => Promise<OpenDataResponse<T>>,
+    ): Promise<AttemptResult<T>> | undefined =>
+      metConfigured ? attempt(run(), signal) : undefined;
+
+    const [
+      municipalityResult,
+      forecastResult,
+      nowcastResult,
+      warningsResult,
+      sunResult,
+      oceanResult,
+      airQualityResult,
+      tidesResult,
+      stationResult,
+    ] = await Promise.all([
+      attempt(dependencies.places.getMunicipalityAt(location, forwarded), signal),
+      metAttempt(() => dependencies.weather.forecast(location, forwarded)),
+      metAttempt(() => dependencies.weather.getNowcast(location, forwarded)),
+      metAttempt(() => dependencies.weather.getWarnings(location, forwarded)),
+      metAttempt(() => dependencies.weather.getSunTimes(location, forwarded)),
+      metAttempt(() => dependencies.weather.getOceanForecast(location, forwarded)),
+      metAttempt(() => dependencies.weather.getAirQualityForecast(location, forwarded)),
+      attempt(
+        dependencies.tides.getTideTable(
+          {
+            ...location,
+            from: new Date(minuteStart).toISOString(),
+            to: new Date(minuteStart + Math.max(hours, 24) * HOUR_MS).toISOString(),
+          },
+          forwarded,
+        ),
+        signal,
+      ),
+      frostConfigured
+        ? attempt(
+            dependencies.climate.searchStations(
+              {
+                near: { ...location, maxCount: 1 },
+                elements: ["air_temperature"],
+                activeOnly: true,
+              },
+              forwarded,
+            ),
+            signal,
+          )
+        : undefined,
+    ]);
+
+    const municipalityResponse = succeeded(municipalityResult);
+    const municipality = municipalityResponse?.data;
+    const stationResponse = succeeded(stationResult);
+    const station = stationResponse?.data[0];
+
+    const [floodResult, avalancheResult, landslideResult, latestResult, normalsResult] =
+      await Promise.all([
+        municipality === undefined
+          ? undefined
+          : attempt(dependencies.hazards.getFloodWarnings({}, forwarded), signal),
+        municipality === undefined
+          ? undefined
+          : attempt(dependencies.hazards.getAvalancheWarnings({}, forwarded), signal),
+        municipality === undefined
+          ? undefined
+          : attempt(dependencies.hazards.getLandslideWarnings({}, forwarded), signal),
+        station === undefined
+          ? undefined
+          : attempt(
+              dependencies.climate.getLatestObservations(
+                { stationIds: [station.id], elements: CONDITIONS_OBSERVED_ELEMENTS },
+                forwarded,
+              ),
+              signal,
+            ),
+        station === undefined
+          ? undefined
+          : attempt(
+              dependencies.climate.getClimateNormals(
+                {
+                  stationIds: [station.id],
+                  elements: [CONDITIONS_NORMAL_ELEMENT],
+                  period: CONDITIONS_NORMAL_PERIOD,
+                },
+                forwarded,
+              ),
+              signal,
+            ),
+      ]);
+
+    const forecastResponse = succeeded(forecastResult);
+    const nowcastResponse = succeeded(nowcastResult);
+    const warningsResponse = succeeded(warningsResult);
+    const sunResponse = succeeded(sunResult);
+    const oceanResponse = succeeded(oceanResult);
+    const airQualityResponse = succeeded(airQualityResult);
+    const tidesResponse = succeeded(tidesResult);
+    const flood = succeeded(floodResult);
+    const avalanche = succeeded(avalancheResult);
+    const landslide = succeeded(landslideResult);
+    const latestResponse = succeeded(latestResult);
+    const normalsResponse = succeeded(normalsResult);
+
+    const currentMonth = Number(osloMonthFormatter.format(now));
+    const monthlyNormal = normalsResponse?.data.find(
+      (normal) =>
+        normal.month === currentMonth && normal.day === undefined && normal.normal !== undefined,
+    );
+    const hazardMatches =
+      municipality === undefined
+        ? []
+        : [...(flood?.data ?? []), ...(avalanche?.data ?? []), ...(landslide?.data ?? [])].flatMap(
+            (warning) => {
+              const match = warningMatchesArea(warning, municipality);
+              if (match === undefined) return [];
+              const byMunicipality = match.basis.startsWith("municipality");
+              const warningArea = (
+                byMunicipality ? warning.municipalities : warning.counties
+              )?.find((area) =>
+                match.basis.endsWith("code")
+                  ? area.code === match.warningValue
+                  : area.name === match.warningValue,
+              );
+              return [
+                {
+                  warning,
+                  matchBasis: match.basis,
+                  addressArea: byMunicipality
+                    ? { code: municipality.municipalityCode, name: municipality.municipalityName }
+                    : { code: municipality.countyCode, name: municipality.countyName },
+                  warningArea: {
+                    ...(warningArea?.code === undefined ? {} : { code: warningArea.code }),
+                    ...(warningArea?.name === undefined ? {} : { name: warningArea.name }),
+                  },
+                } satisfies AddressHazardMatch,
+              ];
+            },
+          );
+
+    const nveSkipped = (operation: ProfileComponentOperation): ProfileComponent =>
+      omittedComponent(operation, "hazards", providers.nve, "not-applicable");
+    const notCovered = <T>(data: T | undefined): ProfileOmissionReason | undefined =>
+      data === undefined ? "not-covered" : undefined;
+    const frostDependent = <T>(
+      operation: ProfileComponentOperation,
+      section: ProfileComponentSection,
+      result: AttemptResult<T[]> | undefined,
+      empty: (data: T[]) => boolean,
+    ): ProfileComponent =>
+      sectionComponent(
+        operation,
+        section,
+        metFrostProvider,
+        result,
+        frostConfigured ? "not-applicable" : "not-configured",
+        (data) => (empty(data) ? "not-found" : undefined),
+      );
+
+    const components: ProfileComponent[] = [
+      sectionComponent(
+        "places.getMunicipalityAt",
+        "municipality",
+        kartverketProvider,
+        municipalityResult,
+        "not-applicable",
+        notCovered,
+      ),
+      sectionComponent(
+        "weather.forecast",
+        "forecast",
+        metProvider,
+        forecastResult,
+        "not-configured",
+      ),
+      sectionComponent(
+        "weather.getNowcast",
+        "nowcast",
+        metProvider,
+        nowcastResult,
+        "not-configured",
+        notCovered,
+      ),
+      sectionComponent(
+        "weather.getWarnings",
+        "weather-warnings",
+        metProvider,
+        warningsResult,
+        "not-configured",
+      ),
+      municipality === undefined
+        ? nveSkipped("hazards.getFloodWarnings")
+        : warningFeedComponent(
+            "hazards.getFloodWarnings",
+            floodResult,
+            flood,
+            FLOOD_WARNING_ATTRIBUTION,
+          ),
+      municipality === undefined
+        ? nveSkipped("hazards.getAvalancheWarnings")
+        : warningFeedComponent(
+            "hazards.getAvalancheWarnings",
+            avalancheResult,
+            avalanche,
+            AVALANCHE_WARNING_ATTRIBUTION,
+          ),
+      municipality === undefined
+        ? nveSkipped("hazards.getLandslideWarnings")
+        : warningFeedComponent(
+            "hazards.getLandslideWarnings",
+            landslideResult,
+            landslide,
+            LANDSLIDE_WARNING_ATTRIBUTION,
+          ),
+      sectionComponent("weather.getSunTimes", "sun", metProvider, sunResult, "not-configured"),
+      sectionComponent(
+        "weather.getOceanForecast",
+        "ocean",
+        metProvider,
+        oceanResult,
+        "not-configured",
+        notCovered,
+      ),
+      sectionComponent(
+        "tides.getTideTable",
+        "tides",
+        kartverketTidesProvider,
+        tidesResult,
+        "not-applicable",
+        notCovered,
+      ),
+      sectionComponent(
+        "weather.getAirQualityForecast",
+        "air-quality",
+        metProvider,
+        airQualityResult,
+        "not-configured",
+        notCovered,
+      ),
+      sectionComponent(
+        "climate.searchStations",
+        "observations",
+        metFrostProvider,
+        stationResult,
+        "not-configured",
+        (data) => (data.length === 0 ? "not-found" : undefined),
+      ),
+      frostDependent(
+        "climate.getLatestObservations",
+        "observations",
+        latestResult,
+        (data) => data.length === 0,
+      ),
+      frostDependent(
+        "climate.getClimateNormals",
+        "climate-normals",
+        normalsResult,
+        () => monthlyNormal === undefined,
+      ),
+    ];
+
+    const warnings: string[] = [];
+    const failures: Array<[string, AttemptResult<unknown> | undefined]> = [
+      ["Municipality lookup", municipalityResult],
+      ["Forecast", forecastResult],
+      ["Nowcast", nowcastResult],
+      ["Weather-warning lookup", warningsResult],
+      ["Flood-warning lookup", floodResult],
+      ["Avalanche-warning lookup", avalancheResult],
+      ["Landslide-warning lookup", landslideResult],
+      ["Sun-times lookup", sunResult],
+      ["Ocean forecast", oceanResult],
+      ["Tide-table lookup", tidesResult],
+      ["Air-quality forecast", airQualityResult],
+      ["Weather-station search", stationResult],
+      ["Latest-observation lookup", latestResult],
+      ["Climate-normal lookup", normalsResult],
+    ];
+    for (const [label, result] of failures) {
+      if (result !== undefined && "failure" in result) {
+        warnings.push(`${label} failed: ${result.failure.message}`);
+      }
+    }
+    const radarCoverage = nowcastResponse?.data?.radarCoverage;
+    if (radarCoverage !== undefined && radarCoverage !== "ok") {
+      warnings.push(`MET Norway reports radar coverage "${radarCoverage}" for the nowcast.`);
+    }
+    if (station?.distanceKm !== undefined && station.distanceKm > REMOTE_STATION_KM) {
+      warnings.push(
+        `The nearest active weather station, ${station.name}, is ${station.distanceKm} km away; its observations may not represent this location.`,
+      );
+    }
+
+    const ocean = oceanResponse?.data;
+    const airQuality = airQualityResponse?.data;
+    const profile: ConditionsAtLocationProfile = {
+      location,
+      ...(municipality === undefined ? {} : { municipality }),
+      ...(forecastResponse === undefined
+        ? {}
+        : {
+            forecast: forecastResponse.data.timeseries
+              .filter((entry) => Date.parse(entry.time) >= hourStart)
+              .slice(0, hours),
+          }),
+      ...(nowcastResponse?.data === undefined ? {} : { nowcast: nowcastResponse.data }),
+      ...(warningsResponse === undefined
+        ? {}
+        : { weatherWarnings: warningsResponse.data.warnings }),
+      ...(municipality === undefined ||
+      (flood === undefined && avalanche === undefined && landslide === undefined)
+        ? {}
+        : { hazards: hazardMatches.map((match) => match.warning), hazardMatches }),
+      ...(sunResponse === undefined ? {} : { sun: sunResponse.data }),
+      ...(ocean === undefined
+        ? {}
+        : {
+            ocean: {
+              ...ocean,
+              entries: ocean.entries
+                .filter((entry) => Date.parse(entry.time) >= hourStart)
+                .slice(0, hours),
+            },
+          }),
+      ...(tidesResponse?.data === undefined ? {} : { tides: tidesResponse.data }),
+      ...(airQuality === undefined
+        ? {}
+        : {
+            airQuality: {
+              ...airQuality,
+              entries: airQuality.entries
+                .filter((entry) => Date.parse(entry.to) >= now)
+                .slice(0, hours),
+            },
+          }),
+      ...(station === undefined
+        ? {}
+        : {
+            observations: {
+              station,
+              ...(latestResponse === undefined ? {} : { latest: latestResponse.data }),
+              ...(monthlyNormal === undefined ? {} : { monthlyTemperatureNormal: monthlyNormal }),
+            },
+          }),
+      warnings,
+      components,
+    };
+
+    const metResponses = presentResponses(
+      forecastResponse,
+      nowcastResponse,
+      warningsResponse,
+      sunResponse,
+      oceanResponse,
+      airQualityResponse,
+    );
+    const frostResponses = presentResponses(stationResponse, latestResponse, normalsResponse);
+    const responses = presentResponses(
+      municipalityResponse,
+      ...metResponses,
+      flood,
+      avalanche,
+      landslide,
+      tidesResponse,
+      ...frostResponses,
+    );
+    return createProfileResponse(
+      profile,
+      conditionsProfileSource({
+        met:
+          forecastResponse !== undefined ||
+          warningsResponse !== undefined ||
+          sunResponse !== undefined,
+        nve: profile.hazards !== undefined,
+        kartverket: municipality !== undefined,
+        tides: tidesResponse?.data !== undefined,
+        frost: station !== undefined,
+      }),
+      {
+        ...(municipalityResponse === undefined ? {} : { municipality: municipalityResponse.raw }),
+        ...(forecastResponse === undefined ? {} : { forecast: forecastResponse.raw }),
+        ...(nowcastResponse === undefined ? {} : { nowcast: nowcastResponse.raw }),
+        ...(warningsResponse === undefined ? {} : { weatherWarnings: warningsResponse.raw }),
+        ...(flood === undefined ? {} : { floodWarnings: flood.raw }),
+        ...(avalanche === undefined ? {} : { avalancheWarnings: avalanche.raw }),
+        ...(landslide === undefined ? {} : { landslideWarnings: landslide.raw }),
+        ...(sunResponse === undefined ? {} : { sun: sunResponse.raw }),
+        ...(oceanResponse === undefined ? {} : { ocean: oceanResponse.raw }),
+        ...(tidesResponse === undefined ? {} : { tides: tidesResponse.raw }),
+        ...(airQualityResponse === undefined ? {} : { airQuality: airQualityResponse.raw }),
+        ...(stationResponse === undefined ? {} : { stations: stationResponse.raw }),
+        ...(latestResponse === undefined ? {} : { latestObservations: latestResponse.raw }),
+        ...(normalsResponse === undefined ? {} : { climateNormals: normalsResponse.raw }),
+      },
+      responses.every((response) => response.cached),
+      options,
+      responses,
     );
   }
 

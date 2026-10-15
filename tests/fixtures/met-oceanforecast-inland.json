@@ -1,0 +1,15 @@
+{
+  "type": "Feature",
+  "geometry": {
+    "type": "Point",
+    "coordinates": [9, 61.5]
+  },
+  "properties": {
+    "meta": {
+      "updated_at": "2026-10-15T16:10:00Z",
+      "error": "no data at the given location",
+      "units": {}
+    },
+    "timeseries": []
+  }
+}

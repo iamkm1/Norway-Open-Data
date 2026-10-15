@@ -101,6 +101,9 @@ export type {
   AddressProfile,
   AddressRoadSearch,
   CompanyProfile,
+  ConditionsAtLocationParameters,
+  ConditionsAtLocationProfile,
+  ConditionsObservations,
   MunicipalityLifeExpectancy,
   MunicipalityPopulation,
   MunicipalityProfile,
@@ -276,12 +279,34 @@ export { KartverketPlaceClient } from "./providers/kartverket/place-client.js";
 export type {
   AddressSearchParameters,
   AddressSearchResult,
+  MunicipalityAtLocation,
+  MunicipalityAtLocationParameters,
   NearbyPlaceParameters,
   NorwegianAddress,
   PlaceName,
   PlaceSearchParameters,
   PlaceSearchResult,
 } from "./providers/kartverket/types.js";
+
+export { TidesClient } from "./providers/kartverket-tides/index.js";
+export type {
+  TideEvent,
+  TideLanguage,
+  TideLevel,
+  TideLocation,
+  TideReferenceLevel,
+  TideReferenceLevelParameters,
+  TideReferenceLevels,
+  TideStation,
+  TideTable,
+  TideTableParameters,
+  WaterLevelParameters,
+  WaterLevelQuality,
+  WaterLevels,
+  WaterLevelSeries,
+  WaterLevelUncertainty,
+  WaterLevelValue,
+} from "./providers/kartverket-tides/index.js";
 
 export { EnturClient } from "./providers/entur/client.js";
 export type {
@@ -298,10 +323,48 @@ export type {
 
 export { MetClient } from "./providers/met/client.js";
 export type {
+  AirQualityArea,
+  AirQualityComponent,
+  AirQualityForecast,
+  AirQualityForecastEntry,
+  CelestialEvent,
+  CelestialParameters,
+  CelestialPosition,
   ForecastParameters,
+  MetPoint,
+  MetPointParameters,
+  MoonTimes,
+  Nowcast,
+  NowcastEntry,
+  OceanForecast,
+  OceanForecastEntry,
+  SunTimes,
   WeatherForecast,
   WeatherTimeseriesEntry,
+  WeatherWarning,
+  WeatherWarningCollection,
+  WeatherWarningColor,
+  WeatherWarningEvent,
+  WeatherWarningLevel,
+  WeatherWarningParameters,
+  WeatherWarningResource,
 } from "./providers/met/types.js";
+
+export { ClimateClient } from "./providers/met-frost/index.js";
+export type {
+  ClimateCoordinates,
+  ClimateLatestObservationParameters,
+  ClimateLevel,
+  ClimateNormal,
+  ClimateNormalParameters,
+  ClimateObservation,
+  ClimateObservationParameters,
+  ClimateObservationRecord,
+  ClimateStation,
+  ClimateStationSearchParameters,
+  ClimateTimeSeries,
+  ClimateTimeSeriesParameters,
+} from "./providers/met-frost/index.js";
 
 export { DataNorgeClient } from "./providers/data-norge/client.js";
 export type {

@@ -172,6 +172,8 @@ function profileWithStubs(options: StubOptions = {}): {
     places: places as unknown as ProfileDependencies["places"],
     environment: environment as unknown as ProfileDependencies["environment"],
     land: land as unknown as ProfileDependencies["land"],
+    tides: {} as ProfileDependencies["tides"],
+    climate: {} as ProfileDependencies["climate"],
     canAuthenticate: () => true,
   };
   const profile = new ProfileClient(

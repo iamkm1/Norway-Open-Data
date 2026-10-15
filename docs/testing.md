@@ -113,6 +113,27 @@ One live probe checks a privacy guarantee rather than a contract: it reads a wid
 register and asserts that no natural person's name, postal code or town appears in the normalized
 output or in the raw payload.
 
+### Weather, tide and climate live probes
+
+`tests/live/weather-climate.live.test.ts` covers the 0.9.0 surface with a few requests per
+operation:
+
+| Variable                            | Enables                                                |
+| ----------------------------------- | ------------------------------------------------------ |
+| `NORWAY_OPEN_DATA_APPLICATION_NAME` | MET Norway warnings, nowcast, sun, ocean, air quality  |
+| `NORWAY_OPEN_DATA_CONTACT_EMAIL`    | MET Norway warnings, nowcast, sun, ocean, air quality  |
+| `MET_FROST_CLIENT_ID`               | Frost station, time-series, observation, normal probes |
+
+Kartverket's municipality lookup and tide API are anonymous, so those probes always run. The MET
+probes deliberately exercise each product's coverage boundary as well as a covered point: a nowcast
+outside the radar area, an ocean forecast inland and offshore, an air-quality forecast abroad,
+polar night and midnight sun. The tide probes check an inland position as well as a gauge. One Frost
+probe checks a privacy guarantee: station-holder names must not appear in normalized or raw output.
+
+Frost's schemas follow its published Swagger models and were written without a client ID, so these
+probes are the first verification against the live service. Run them once with
+`MET_FROST_CLIENT_ID` before relying on `climate`.
+
 SSB Klass also has a separate bounded anonymous live suite in `tests/live/klass.live.test.ts`. It
 runs serially with conservative pacing and performs only a few read-only calls: classification
 discovery, one code-list check and one known historical administrative correspondence. It needs no
@@ -136,11 +157,13 @@ Configure once in repository settings:
 | `BARENTSWATCH_AIS_CLIENT_SECRET`    | Secret   | Optional; enables the AIS and vessel-profile checks |
 | `BARENTSWATCH_CLIENT_ID`            | Secret   | Optional; enables the marine-forecast checks        |
 | `BARENTSWATCH_CLIENT_SECRET`        | Secret   | Optional; enables the marine-forecast checks        |
+| `MET_FROST_CLIENT_ID`               | Secret   | Optional; enables the Frost checks                  |
 
 A BarentsWatch client id contains the registering account's address, so it is stored as a secret
 rather than a variable even though it is not a bearer credential on its own.
 
-Geonorge, Naturbase and NIBIO require no repository variable or secret. `RUN_LIVE_TESTS` is set by
+Geonorge, Naturbase, NIBIO, Kommuneinfo and the tide API require no repository variable or
+secret. `RUN_LIVE_TESTS` is set by
 the live-test script/workflow itself rather than stored as a credential.
 
 A failure can indicate an upstream contract change, temporary provider/network trouble or an SDK

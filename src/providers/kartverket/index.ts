@@ -3,6 +3,8 @@ export { KartverketPlaceClient } from "./place-client.js";
 export type {
   AddressSearchParameters,
   AddressSearchResult,
+  MunicipalityAtLocation,
+  MunicipalityAtLocationParameters,
   NearbyPlaceParameters,
   NorwegianAddress,
   PlaceName,

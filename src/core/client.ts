@@ -72,6 +72,24 @@ const SECRET_HEADER_NAMES = new Set([
   "x-api-key",
 ]);
 
+/**
+ * A non-success response that means "the provider has nothing for this subject".
+ *
+ * @internal
+ */
+export type AbsentResponse = {
+  /** HTTP status the provider uses for the absence. */
+  status: number;
+  /**
+   * Text the response body must contain, compared case-insensitively. Narrows a
+   * match for a provider that reuses the same status for genuine failures.
+   */
+  bodyIncludes?: string;
+};
+
+/** Upper bound on the body text read when matching an {@link AbsentResponse}. */
+const MAX_ABSENT_BODY_CHARACTERS = 64 * 1024;
+
 /** @internal */
 export type HttpRequest<T> = {
   /** The provider descriptor this request belongs to. */
@@ -101,6 +119,17 @@ export type HttpRequest<T> = {
   notFoundHint?: string;
   /** Performs provider-specific semantic validation or sanitization before caching. */
   transform?: (data: T) => T;
+  /**
+   * Non-success responses that mean the provider has nothing for the requested
+   * subject rather than that the request failed.
+   *
+   * A matching response is handed to `schema` as `null`, exactly as HTTP 204 is,
+   * so the provider can model the absence as a nullable result. MET Norway, for
+   * example, answers HTTP 422 with an explanation when a point lies outside a
+   * product's model area, and Frost answers HTTP 404 when a query matches no
+   * observations. Never list a retryable status here.
+   */
+  absentResponses?: readonly AbsentResponse[];
 };
 
 /**
@@ -244,6 +273,30 @@ function providerResponseError(details: {
     // can still see how long it asked for.
     ...(retryAfterMs === undefined ? {} : { retryAfter: retryAfterSeconds(retryAfterMs) }),
   });
+}
+
+/**
+ * Whether a failed response is one the request declared as an absence.
+ *
+ * The body is read only when a candidate needs it, bounded, and never surfaced:
+ * it decides the match and is then discarded.
+ */
+async function isAbsentResponse(
+  response: Response,
+  absentResponses: readonly AbsentResponse[] | undefined,
+): Promise<boolean> {
+  const candidates = absentResponses?.filter((entry) => entry.status === response.status) ?? [];
+  if (candidates.length === 0) return false;
+  if (candidates.some((entry) => entry.bodyIncludes === undefined)) return true;
+  let body: string;
+  try {
+    body = (await response.text()).slice(0, MAX_ABSENT_BODY_CHARACTERS).toLowerCase();
+  } catch {
+    return false;
+  }
+  return candidates.some(
+    (entry) => entry.bodyIncludes !== undefined && body.includes(entry.bodyIncludes.toLowerCase()),
+  );
 }
 
 function cancellationError(
@@ -622,7 +675,8 @@ export class HttpClient {
         }
 
         const response = await this.#fetchWithSafeRedirects(providerId, request.url, init);
-        if (!response.ok) {
+        const absent = !response.ok && (await isAbsentResponse(response, request.absentResponses));
+        if (!response.ok && !absent) {
           const retryAfterMs = parseRetryAfter(response.headers.get("Retry-After"));
           // A rejected token may have been revoked upstream; drop it so a retry
           // or a later call acquires a fresh one rather than replaying a dead
@@ -659,9 +713,10 @@ export class HttpClient {
           // HTTP 204 carries no body, so parsing one would fail. It is handed to
           // the schema as `null`, letting a provider that answers "no data here"
           // with an empty response be modelled as a nullable result instead of
-          // being reported as an unreadable payload.
+          // being reported as an unreadable payload. A declared absence is
+          // handled the same way.
           payload =
-            response.status === 204
+            absent || response.status === 204
               ? null
               : request.responseType === "text"
                 ? await response.text()

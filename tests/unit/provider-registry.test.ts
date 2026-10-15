@@ -135,7 +135,10 @@ undeclared auth field. Declare it in requires, or build the header from a declar
     for (const [id, descriptor] of descriptors) {
       if (descriptor.auth === undefined) continue;
       expect(descriptor.auth.requires.length, id).toBeGreaterThan(0);
-      expect(descriptor.auth.missing, id).toMatch(/applicationName|contactEmail|apiKey/);
+      // The message must name every configuration value the provider requires.
+      for (const field of descriptor.auth.requires) {
+        expect(descriptor.auth.missing, `${id} ${field}`).toContain(field);
+      }
       // A provider that needs identification must say so in its access model.
       expect(descriptor.access, id).not.toBe("open");
     }

@@ -1,6 +1,6 @@
 {
   "name": "norway-open-data-sdk",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "One TypeScript interface for Norway's open public APIs.",
   "keywords": [
     "norway",
@@ -16,6 +16,14 @@
     "kartverket",
     "entur",
     "met",
+    "weather",
+    "weather-warnings",
+    "metalerts",
+    "climate",
+    "frost",
+    "tides",
+    "sea-level",
+    "air-quality",
     "data-norge",
     "norges-bank",
     "stortinget",

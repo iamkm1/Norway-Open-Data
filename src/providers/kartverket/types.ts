@@ -65,3 +65,19 @@ export type PlaceSearchResult = {
   items: PlaceName[];
   total: number;
 };
+
+/** A WGS84 point to resolve to its municipality. */
+export type MunicipalityAtLocationParameters = {
+  latitude: number;
+  longitude: number;
+};
+
+/** The municipality and county whose official boundary contains a point. */
+export type MunicipalityAtLocation = {
+  /** Four-digit municipality number, e.g. `0301`. */
+  municipalityCode: string;
+  municipalityName: string;
+  /** Two-digit county number, e.g. `03`. */
+  countyCode: string;
+  countyName: string;
+};

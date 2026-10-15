@@ -1,0 +1,396 @@
+{
+  "features": [
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [30.9167, 69.6832],
+            [30.85, 69.7667],
+            [30.8832, 69.8167],
+            [31.5332, 70.1667],
+            [31.1445, 70.4225],
+            [30.0332, 70.3497],
+            [30.1332, 70.1167],
+            [30.2, 69.9],
+            [30.2667, 69.7832],
+            [30.6, 69.6997],
+            [30.9167, 69.6832],
+            [30.9167, 69.6832]
+          ]
+        ],
+        "type": "Polygon"
+      },
+      "properties": {
+        "altitude_above_sea_level": 0,
+        "area": "Vardoe - Russian border",
+        "awarenessResponse": "Be aware",
+        "awarenessSeriousness": "Challenging situation",
+        "awareness_level": "2; yellow; Moderate",
+        "awareness_type": "1; Wind",
+        "ceiling_above_sea_level": 2743,
+        "certainty": "Likely",
+        "consequences": "Moderate waves: Risk of dangerous situations when in a small boat at sea. Moderately high waves: Waves with breaking crests forming spindrift. Considerable airborne spray. ",
+        "contact": "https://www.met.no/en/contact-us",
+        "county": [],
+        "description": "Thursday south occasional gale force 8. From late Thursday afternoon decreasing to near gale force 7.",
+        "event": "gale",
+        "eventAwarenessName": "Gale",
+        "geographicDomain": "marine",
+        "id": "2.49.0.1.578.0.20261015125229.014",
+        "instruction": "Do not go out in a small boat: High risk of dangerous situations when in a small boat at sea. ",
+        "resources": [
+          {
+            "description": "CAP file",
+            "mimeType": "application/xml",
+            "uri": "https://api.met.no/weatherapi/metalerts/2.0/current?cap=2.49.0.1.578.0.20261015125229.014"
+          }
+        ],
+        "riskMatrixColor": "Yellow",
+        "severity": "Moderate",
+        "status": "Actual",
+        "title": "Gale, yellow level, Vardoe - Russian border, 2026-10-15T06:00:00+00:00, 2026-10-16T15:00:00+00:00",
+        "triggerLevel": "20.8m/s",
+        "type": "Alert",
+        "web": "https://www.met.no/vaer-og-klima/ekstremvaervarsler-og-andre-farevarsler/vaerfenomener-som-kan-gi-farevarsel-fra-met/kuling-stormvarsel-for-kyst-og-naere-fiskebanker"
+      },
+      "type": "Feature",
+      "when": {
+        "interval": ["2026-10-15T06:00:00+00:00", "2026-10-16T15:00:00+00:00"]
+      }
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [5.25094, 62.2342],
+            [5.35286, 62.1667],
+            [5.35581, 62.1203],
+            [5.49783, 62.0641],
+            [5.5012, 62.0516],
+            [9.57896, 63.4461],
+            [10.0565, 63.6771],
+            [10.3897, 64.1826],
+            [10.1697, 64.2148],
+            [9.33618, 64.156],
+            [8.43015, 63.8469],
+            [5.25094, 62.2342]
+          ]
+        ],
+        "type": "Polygon"
+      },
+      "properties": {
+        "altitude_above_sea_level": 0,
+        "area": "Coastal areas in Moere and Romsdal and Troendelag",
+        "awarenessResponse": "Be aware",
+        "awarenessSeriousness": "Challenging situation",
+        "awareness_level": "2; yellow; Moderate",
+        "awareness_type": "8; forest-fire",
+        "ceiling_above_sea_level": 2743,
+        "certainty": "Likely",
+        "consequences": "Vegetation can easily catch fire: Large areas may be affected. ",
+        "contact": "https://www.met.no/en/contact-us",
+        "county": ["50", "15"],
+        "description": "Local grass- and heather fire danger in areas free of snow until significant precipitation.",
+        "event": "forestFire",
+        "eventAwarenessName": "Forest fire danger",
+        "geographicDomain": "land",
+        "id": "2.49.0.1.578.0.20260131105037.037",
+        "instruction": "Vegetation can easily catch fire: Do not use open fire. Follow instructions from local authorities. ",
+        "municipality": [
+          "1505",
+          "1506",
+          "1508",
+          "1511",
+          "1514",
+          "1515",
+          "1516",
+          "1517",
+          "1520",
+          "1528",
+          "1531",
+          "1532",
+          "1535",
+          "1547",
+          "1554",
+          "1557",
+          "1560",
+          "1573",
+          "1576",
+          "1579",
+          "1580",
+          "5014",
+          "5054",
+          "5055",
+          "5056",
+          "5057",
+          "5058",
+          "5059"
+        ],
+        "resources": [
+          {
+            "description": "CAP file",
+            "mimeType": "application/xml",
+            "uri": "https://api.met.no/weatherapi/metalerts/2.0/archive?cap=2.49.0.1.578.0.20260131105037.037&period=2026-01"
+          },
+          {
+            "description": "Map over Forest fire danger, yellow level, Coastal areas in Moere and Romsdal and Troendelag, 2026-01-27T09:30:00+00:00, 2026-02-02T12:00:00+00:00",
+            "mimeType": "image/png",
+            "uri": "https://slaps.met.no/cap-images/15370b74-c990-4a46-9a46-2334e77cff42.png"
+          }
+        ],
+        "riskMatrixColor": "Yellow",
+        "severity": "Moderate",
+        "status": "Actual",
+        "title": "Forest fire danger, yellow level, Coastal areas in Moere and Romsdal and Troendelag, 2026-01-27T09:30:00+00:00, 2026-02-02T12:00:00+00:00",
+        "type": "Update",
+        "web": "https://www.met.no/vaer-og-klima/ekstremvaervarsler-og-andre-farevarsler/vaerfenomener-som-kan-gi-farevarsel-fra-met/varsel-om-skogbrannfare"
+      },
+      "type": "Feature",
+      "when": {
+        "interval": ["2026-01-27T09:30:00+00:00", "2026-02-02T12:00:00+00:00"]
+      }
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [10.2224, 59.4895],
+            [10.083, 59.7008],
+            [9.41259, 59.5353],
+            [9.28017, 59.4037],
+            [9.8265, 59.1637],
+            [10.114, 59.2165],
+            [10.2825, 59.3249],
+            [10.2224, 59.4895],
+            [10.2224, 59.4895]
+          ]
+        ],
+        "type": "Polygon"
+      },
+      "properties": {
+        "altitude_above_sea_level": 0,
+        "area": "Deler av Telemark/Vestfold",
+        "awarenessResponse": "Sikre verdiene",
+        "awarenessSeriousness": "Ekstrem situasjon",
+        "awareness_level": "4; red; Extreme",
+        "awareness_type": "10; rain",
+        "ceiling_above_sea_level": 2743,
+        "certainty": "Likely",
+        "consequences": "Overvann vil forekomme: Det er fare for overvann i tettbygde områder. Vann kan trenge inn i hus. Veier vil bli stengt: Det vil bli vanskelige kjøreforhold på grunn av overvann og fare for vannplaning. Stor fare for stengte veier. En del steder vil midlertidig kunne miste veiforbindelsen, gjerne flere dager. Vis stor forsiktighet ved oversvømmelse: Det er fare for liv hvis du havner i sterk strøm. Overvann i veibanen: Overvann og fare for vannplaning gir vanskelige kjøreforhold. Flom og skred: NVE sender ut egne flom og skredvarsler. ",
+        "contact": "https://www.met.no/kontakt-oss",
+        "county": ["33", "39", "40"],
+        "description": "Det ventes ekstremt mye regn, lokalt 80-100 mm/12t. Hendelsen vil mange steder være blant de kraftigste de siste 25 år. ",
+        "event": "rain",
+        "eventAwarenessName": "Ekstremt mye regn",
+        "eventEndingTime": "2025-10-04T12:00:00+00:00",
+        "geographicDomain": "land",
+        "id": "2.49.0.1.578.0.20251004061908.046",
+        "incidentName": "Amy",
+        "instruction": "Overvann vil forekomme: Rens stikkrenner og avløp slik at vannet kan renne unna. Vurder forebyggende tiltak for å unngå at overvann gjør skade på gjenstander og eiendom. Veier vil bli stengt: Vær forberedt på at reisen kan ta lengre tid enn den pleier. Sjekk veimeldinger på vegvesen.no/trafikk. Vurder nøye om reisen bør og kan gjennomføres. Vær forberedt på strømbrudd: Gjør hjemmet klar for et potensielt lengre strømbrudd. Vis stor forsiktighet ved oversvømmelse: Unngå å ferdes i dypt vann. Overvann i veibanen: Unngå å kjøre i overvann, uten å vite hvor dypt det er. Flom og skred: Sjekk varslene på Varsom.no. ",
+        "municipality": [
+          "3301",
+          "3303",
+          "3314",
+          "3903",
+          "3905",
+          "3907",
+          "3909",
+          "4001",
+          "4003",
+          "4005",
+          "4010",
+          "4020"
+        ],
+        "resources": [
+          {
+            "description": "CAP file",
+            "mimeType": "application/xml",
+            "uri": "https://api.met.no/weatherapi/metalerts/2.0/archive?cap=2.49.0.1.578.0.20251004061908.046&period=2025-10"
+          },
+          {
+            "description": "Kart over Ekstremt mye regn, rødt nivå, Deler av Telemark/Vestfold, 2025-10-03T23:00:00+00:00, 2025-10-04T12:00:00+00:00",
+            "mimeType": "image/png",
+            "uri": "https://slaps.met.no/cap-images/917f2f54-d0b0-4c41-b081-0453e7f95f5c.png"
+          }
+        ],
+        "riskMatrixColor": "Red",
+        "severity": "Extreme",
+        "status": "Actual",
+        "title": "Ekstremt mye regn, rødt nivå, Deler av Telemark/Vestfold, 2025-10-03T23:00:00+00:00, 2025-10-04T12:00:00+00:00",
+        "triggerLevel": "70mm/12h",
+        "type": "Update",
+        "web": "https://www.met.no/vaer-og-klima/ekstremvaervarsler-og-andre-farevarsler/vaerfenomener-som-kan-gi-farevarsel-fra-met/farevarsel-for-nedbor"
+      },
+      "type": "Feature",
+      "when": {
+        "interval": ["2025-10-03T23:00:00+00:00", "2025-10-04T12:00:00+00:00"]
+      }
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [16.0627, 69.3322],
+            [16.333, 69.233],
+            [16.8645, 69.3163],
+            [18.0997, 69.5167],
+            [17.7997, 69.6502],
+            [17.7597, 69.6872],
+            [16.4587, 69.4257],
+            [16.0627, 69.3322],
+            [16.0627, 69.3322]
+          ]
+        ],
+        "type": "Polygon"
+      },
+      "properties": {
+        "altitude_above_sea_level": 0,
+        "area": "Andenes - Hekkingen",
+        "awarenessResponse": "Ingen",
+        "awareness_level": "1; green; Minor",
+        "awareness_type": "1; Wind",
+        "ceiling_above_sea_level": 2743,
+        "certainty": "Likely",
+        "contact": "https://www.met.no/kontakt-oss",
+        "county": [],
+        "description": "Farevarselet er kansellert. ",
+        "event": "gale",
+        "eventAwarenessName": "Kansellert kulingvarsel",
+        "geographicDomain": "marine",
+        "id": "2.49.0.1.578.0.20251024064018.086",
+        "instruction": "",
+        "resources": [
+          {
+            "description": "CAP file",
+            "mimeType": "application/xml",
+            "uri": "https://api.met.no/weatherapi/metalerts/2.0/archive?cap=2.49.0.1.578.0.20251024064018.086&period=2025-10"
+          }
+        ],
+        "riskMatrixColor": "Green",
+        "severity": "Minor",
+        "status": "Actual",
+        "title": "Kansellert varsel for kuling, Andenes - Hekkingen",
+        "triggerLevel": "13.9m/s",
+        "type": "Cancel",
+        "web": "https://www.met.no/vaer-og-klima/ekstremvaervarsler-og-andre-farevarsler/vaerfenomener-som-kan-gi-farevarsel-fra-met/kuling-stormvarsel-for-kyst-og-naere-fiskebanker"
+      },
+      "type": "Feature",
+      "when": {
+        "interval": ["2025-10-24T06:40:00+00:00", "2025-10-24T07:40:00+00:00"]
+      }
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          [
+            [8.99507, 59.0026],
+            [9.83515, 59.234],
+            [10.3934, 59.4512],
+            [10.5496, 59.5994],
+            [10.6251, 59.9732],
+            [11.1452, 60.2482],
+            [10.9279, 60.5395],
+            [10.3595, 60.6769],
+            [9.75289, 61.0304],
+            [9.36515, 60.5394],
+            [8.56598, 59.9323],
+            [8.99507, 59.0026]
+          ]
+        ],
+        "type": "Polygon"
+      },
+      "properties": {
+        "altitude_above_sea_level": 0,
+        "area": "Deler av Østlandet",
+        "awarenessResponse": "Følg med",
+        "awarenessSeriousness": "Utfordrende situasjon",
+        "awareness_level": "2; yellow; Moderate",
+        "awareness_type": "10; rain",
+        "ceiling_above_sea_level": 2743,
+        "certainty": "Likely",
+        "consequences": "Overvann kan forekomme: Det kan bli overvann i tettbygde områder. Vanskelige kjøreforhold: Det kan bli vanskelige kjøreforhold noen steder på grunn av overvann og fare for vannplaning. Veier kan bli stengt og det kan være vann i veibanen, særlig ved bekke- og elveløp. Noen reiser kan få lengre reisetid. ",
+        "contact": "https://www.met.no/kontakt-oss",
+        "county": ["32", "33", "34", "3", "39", "40"],
+        "description": "Det ventes mye regn, lokalt 50-70 mm/24t.",
+        "event": "rain",
+        "eventAwarenessName": "Mye regn",
+        "eventEndingTime": "2025-10-24T19:02:00+00:00",
+        "geographicDomain": "land",
+        "id": "2.49.0.1.578.0.20251024190008.048",
+        "instruction": "Overvann kan forekomme: Vurder å rense stikkrenner og avløp slik at vannet kan renne unna. Vanskelige kjøreforhold: Sjekk veimeldingene på vegvesen.no/trafikk. Tilpass farten og kjør etter forholdene. ",
+        "municipality": [
+          "0301",
+          "3201",
+          "3203",
+          "3212",
+          "3214",
+          "3232",
+          "3234",
+          "3236",
+          "3238",
+          "3242",
+          "3301",
+          "3303",
+          "3305",
+          "3310",
+          "3312",
+          "3314",
+          "3316",
+          "3318",
+          "3320",
+          "3332",
+          "3334",
+          "3336",
+          "3338",
+          "3442",
+          "3443",
+          "3446",
+          "3447",
+          "3448",
+          "3449",
+          "3450",
+          "3903",
+          "3905",
+          "3907",
+          "3909",
+          "4003",
+          "4005",
+          "4010",
+          "4016",
+          "4018",
+          "4020",
+          "4022",
+          "4024",
+          "4026",
+          "4028"
+        ],
+        "resources": [
+          {
+            "description": "CAP file",
+            "mimeType": "application/xml",
+            "uri": "https://api.met.no/weatherapi/metalerts/2.0/archive?cap=2.49.0.1.578.0.20251024190008.048&period=2025-10"
+          },
+          {
+            "description": "Kart over Mye regn, gult nivå, Deler av Østlandet, 2025-10-24T00:00:00+00:00, 2025-10-24T19:02:00+00:00",
+            "mimeType": "image/png",
+            "uri": "https://slaps.met.no/cap-images/64420ff2-0ca0-4e95-8b37-e14d380d8a99.png"
+          }
+        ],
+        "riskMatrixColor": "Yellow",
+        "severity": "Moderate",
+        "status": "Actual",
+        "title": "Mye regn, gult nivå, Deler av Østlandet, 2025-10-24T00:00:00+00:00, 2025-10-24T19:02:00+00:00",
+        "triggerLevel": "60mm/24h",
+        "type": "Update",
+        "web": "https://www.met.no/vaer-og-klima/ekstremvaervarsler-og-andre-farevarsler/vaerfenomener-som-kan-gi-farevarsel-fra-met/farevarsel-for-nedbor"
+      },
+      "type": "Feature",
+      "when": {
+        "interval": ["2025-10-24T00:00:00+00:00", "2025-10-24T19:02:00+00:00"]
+      }
+    }
+  ],
+  "lang": "en",
+  "lastChange": "2026-10-15T16:08:17+00:00",
+  "type": "FeatureCollection"
+}

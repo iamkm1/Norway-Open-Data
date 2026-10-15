@@ -5,7 +5,7 @@ directly. It also supports the documented third-party Hva koster strømmen? elec
 derives EUR price data from ENTSO-E and converts it to NOK using a Norges Bank exchange rate. The
 SDK has no hosted backend, database, account system, scraper, or data warehouse.
 
-The 0.8.0 public surface has 118 methods across 22 namespaces, backed by 19 official
+The 0.9.0 public surface has 135 methods across 24 namespaces, backed by 21 official
 service integrations from 15 public-sector organizations plus one third-party integration.
 Organization and integration counts are intentionally separate: one organization can operate
 independently governed services with different API contracts.
@@ -21,6 +21,7 @@ NorwayOpenData
 ├─ transport / weather / catalog / currency / parliament / roads
 ├─ energy / hazards / ais / marine / fisheries / electricity
 ├─ geodata / environment / land
+├─ tides / climate
 └─ profiles
         │
         └─ HttpClient → retry, timeout, cancellation, rate limits, cache, Zod validation
@@ -49,7 +50,10 @@ See [Adding a provider](adding-a-provider.md) for adapter structure, validation,
 documentation and review requirements.
 
 SSB is one organization represented by two service adapters: `ssb` for the PxWeb statistics API
-and `ssb-klass` for the Klass classification API. Their independently governed contracts,
+and `ssb-klass` for the Klass classification API. MET Norway (`met` for the api.met.no products,
+`met-frost` for the Frost archive) and Kartverket (`kartverket` for the open Geonorge and
+Kommuneinfo APIs, `kartverket-tides` for the Hydrographic Service's water-level API) follow the same
+rule: one organization, two descriptors, because credentials, terms or contracts differ. Their independently governed contracts,
 endpoints, response schemas, cache policies and request budgets stay separate. Klass validates
 every consumed response strictly and reports malformed successful responses as
 `ResponseValidationError`.
@@ -78,6 +82,27 @@ Protocol details and URL trust stay inside provider adapters. Geonorge may descr
 API Features, ArcGIS REST or download URL, but the catalogue client returns it as metadata only.
 The feature-page helper never follows a URL, and the public API accepts no arbitrary upstream URL.
 WMS rendering, capability traversal and a generic query engine remain out of scope.
+
+## Absences, XML and time windows
+
+Several providers answer "nothing here" with a non-success status: MET Norway returns HTTP 422 for
+a point outside the nowcast or ocean model and HTTP 400 for an air-quality location it does not
+know, Frost returns HTTP 404 or 412 when a query matches no data, and Kommuneinfo returns HTTP 404
+for a point outside every municipality. A request declares those responses as `absentResponses`,
+optionally narrowed by text the body must contain, and the HTTP client hands them to the schema as
+`null` exactly as it does HTTP 204. Every other non-success response still raises the usual error,
+so an unrelated HTTP 400 or 404 is never mistaken for an absence. Absences are never retried.
+
+Kartverket's tide API publishes XML without a schema. `src/core/xml.ts` is a small, strict reader:
+it refuses document type declarations outright, so entity-expansion and external-entity attacks
+have nothing to work with; it decodes only the five predefined entities and numeric character
+references; and it bounds input size and nesting depth. Provider parsers read named attributes
+from the resulting element tree and validate each one.
+
+`src/core/time-window.ts` validates `from` and `to` once for every provider that takes a window. A
+bound without an explicit offset is refused rather than interpreted, because Frost assumes UTC and
+the tide API assumes Norwegian standard time; requests are then sent in UTC. Each operation states
+its maximum span, chosen well inside the provider's own limit.
 
 ## Cross-provider profiles
 
@@ -122,6 +147,15 @@ resolve administrative codes explicitly with `klass.resolveMunicipalityCode()` o
 `klass.resolveCountyCode()`, inspect every official match and warning, and then decide whether a
 profile lookup is appropriate. This avoids silently choosing among merges, splits and ambiguous
 correspondences or implying statistical comparability across administrative boundaries.
+
+`profiles.conditionsAtLocation()` runs 14 operations in two phases. The first phase runs in
+parallel: Kommuneinfo's municipality lookup, six MET Norway products, the tide table and, with a
+Frost client ID, a search for the nearest active weather station. The second phase depends on the
+first: NVE warnings are requested only once the authoritative municipality is known, and the
+station's latest observations and monthly normal only once a station is found. Each operation is
+recorded with `not-configured`, `not-covered`, `not-applicable`, `not-found` or `provider-error`
+when absent. Unlike the nature profile, municipality context here comes from an administrative-
+boundary lookup rather than the nearest place name, because it decides which NVE warnings apply.
 
 `profiles.natureAtLocation()` uses a synthetic top-level profile source and retains each successful
 component's actual provider descriptor in `sources` and `components`. A failed environmental, land or
@@ -230,6 +264,11 @@ guidance.
 - NVE energy and warning feeds are anonymous.
 - NVE HydAPI station and observation methods require `credentials.nve.apiKey` from free
   registration.
+- Frost requires `credentials["met-frost"].clientId` from free registration, sent as the HTTP
+  Basic username with an empty password. A client ID that HTTP Basic cannot carry, one containing a
+  colon or non-ASCII characters, raises `ConfigurationError` before any request. The `Authorization`
+  header value is redacted from errors like every other secret header.
+- Kartverket's tide API and Kommuneinfo are anonymous.
 - Geonorge catalogue, the selected Naturbase layers and NIBIO AR50 are anonymous and introduce no
   credentials or environment variables.
 
